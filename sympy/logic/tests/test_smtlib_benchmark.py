@@ -380,3 +380,24 @@ def test_the_reference_solver_only_answers_files_that_record_no_status():
             assert asked == ['z3']
 
 
+def test_solver_none_does_not_build_the_sympy_expression():
+    # "none" is documented as only parsing the files, "which is useful for
+    # measuring the parser on its own", but the check for it happens after the
+    # transformer has run. On a large file the build costs more than the parse.
+    with tempfile.TemporaryDirectory() as directory:
+        result = run_file(_write(directory, 'sat.smt2', SAT_LRA), solver='none')
+        assert result.status == 'parsed'
+        assert set(result.times) == {'parse'}
+
+
+def test_solver_none_reports_a_file_that_parses_as_parsed():
+    # Same defect seen from the other side: a file SymPy cannot represent is
+    # reported "unsupported" under --solver none even though it parsed, so the
+    # one mode meant to isolate the parser cannot say whether the parser
+    # handled the file.
+    with tempfile.TemporaryDirectory() as directory:
+        for name, source in [('bv.smt2', BITVECTOR), ('quant.smt2', QUANTIFIED)]:
+            result = run_file(_write(directory, name, source), solver='none')
+            assert result.status == 'parsed', name
+
+
