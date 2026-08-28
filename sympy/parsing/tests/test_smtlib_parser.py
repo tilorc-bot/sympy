@@ -18,6 +18,7 @@ from sympy.parsing.smtlib import (
     SMTLibSyntaxError, UnknownSMTLibCommandError, UnknownSMTLibOperatorError,
     parse_smtlib
 )
+from sympy.parsing.smtlib.lark import LarkSMTLibParser, SMTLibTransformer
 from sympy.testing.pytest import raises
 
 lark = import_module('lark')
@@ -708,3 +709,30 @@ def test_roundtrip_uninterpreted_function():
     f = Function('f')
     _check_roundtrip([Eq(f(n), 0)],
                      symbol_table={f: typing.Callable[[int], int]})
+
+
+# ---------------------------------------------------------------------------
+# Regression test for a known defect in the transformer. It FAILS against the
+# current implementation; see the docstring for what is wrong.
+# ---------------------------------------------------------------------------
+
+def _set_info(source):
+    """The attributes ``source`` records with ``set-info``."""
+    parser = LarkSMTLibParser(transform=False)
+    transformer = SMTLibTransformer()
+    transformer.transform(parser.doparse(source))
+    return transformer.get_info()
+
+
+def test_a_parenthesised_attribute_value_is_a_list_of_plain_values():
+    # SMT-LIB writes an attribute value as a constant, a symbol, or a
+    # parenthesised sequence. SMTLibTransformer.attribute_value() collapses a
+    # one-element sequence to a bare value, so `(note (a))` cannot be told
+    # apart from `(note a)`, and the sequence elements come back as lark Tree
+    # objects rather than the values they hold. get_info() is public API, so
+    # this is the shape callers have to work with.
+    assert _set_info('(set-info :note a)')[':note'] == 'a'
+    assert _set_info('(set-info :note 2)')[':note'] == 2
+    assert _set_info('(set-info :note ())')[':note'] == []
+    assert _set_info('(set-info :note (a))')[':note'] == ['a']
+    assert _set_info('(set-info :note (a b))')[':note'] == ['a', 'b']
