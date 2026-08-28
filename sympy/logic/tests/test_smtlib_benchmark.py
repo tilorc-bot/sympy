@@ -7,6 +7,7 @@ thing for each kind of input.
 
 from __future__ import annotations
 
+import io
 import multiprocessing
 import os
 import tempfile
@@ -318,10 +319,25 @@ def test_main_rejects_a_directory_with_no_benchmarks():
 # is fixed. Nothing here is a fix; see the individual docstrings for what is
 # wrong and where.
 # ---------------------------------------------------------------------------
+
+TIMEOUT_STATUS = """
+(set-logic QF_LRA)
+(set-info :status sat)
+(declare-const x Real)
+(assert (> x 3))
+(check-sat)
+"""
+
+
 def _slow_reference(text, reference, timeout=None):
     """A reference solver that takes longer than the solver timeout."""
     time.sleep(5)
     return 'sat'
+
+
+def _die_without_reporting(path, solver, reference, results):
+    """A worker that dies without putting anything on the queue."""
+    os._exit(1)
 
 
 class _replaced:
@@ -419,3 +435,51 @@ def test_a_propositional_solver_is_not_run_on_a_theory_problem():
             assert result.status == 'unsupported', solver
 
 
+def test_a_timed_out_file_still_reports_its_recorded_status():
+    # The status is recorded in the file and costs nothing to read, but it is
+    # only picked up in the child, so a file that times out reports no expected
+    # answer at all and the summary cannot say how many timeouts were unsat.
+    with tempfile.TemporaryDirectory() as directory:
+        result = run_file_with_timeout(
+            _write(directory, 'sat.smt2', TIMEOUT_STATUS), timeout=0)
+        assert result.status == 'timeout'
+        assert result.expected == 'sat'
+
+
+def test_a_worker_that_dies_is_not_reported_as_a_timeout():
+    # When the child dies without producing a result the parent waits out the
+    # whole timeout and then blames the solver for being slow. Over a suite run
+    # with the default 30s timeout that is a long wait for a wrong diagnosis.
+    with tempfile.TemporaryDirectory() as directory:
+        path = _write(directory, 'sat.smt2', SAT_LRA)
+        with _replaced('_worker', _die_without_reporting):
+            result = run_file_with_timeout(path, timeout=10)
+        assert result.total < 5
+        assert 'gave up' not in result.reason
+
+
+def test_an_interrupted_run_still_prints_its_summary():
+    # A suite run takes hours, so Ctrl-C is how it usually ends. main() lets
+    # KeyboardInterrupt escape, discarding the report for every file already
+    # run.
+    seen = []
+
+    def interrupt_after_the_first_file(path, solver, timeout, reference):
+        if seen:
+            raise KeyboardInterrupt
+        seen.append(path)
+        return run_file_with_timeout(path, solver, timeout, reference)
+
+    with tempfile.TemporaryDirectory() as directory:
+        _write(directory, 'a.smt2', SAT_LRA)
+        _write(directory, 'b.smt2', UNSAT_LRA)
+        buffer = io.StringIO()
+        with _replaced('run_file_with_timeout', interrupt_after_the_first_file):
+            try:
+                with redirect_stdout(buffer), redirect_stderr(buffer):
+                    main([directory])
+            except KeyboardInterrupt:
+                raise AssertionError(
+                    "main() let KeyboardInterrupt escape, so the results of "
+                    "every file already run were discarded")
+        assert 'summary' in buffer.getvalue()
