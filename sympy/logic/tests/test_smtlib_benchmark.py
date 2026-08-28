@@ -7,13 +7,16 @@ thing for each kind of input.
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import tempfile
+import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from sympy.external import import_module
 from sympy.testing.pytest import skip
+from sympy.logic.utilities import smtlib_benchmark
 from sympy.logic.utilities.smtlib_benchmark import (
     FileResult, collect_files, main, run_file, run_file_with_timeout
 )
@@ -304,3 +307,76 @@ def test_main_returns_nonzero_only_for_a_wrong_answer():
 def test_main_rejects_a_directory_with_no_benchmarks():
     with tempfile.TemporaryDirectory() as directory:
         assert _main([directory]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for known defects in the benchmarking utility.
+#
+# Every test below FAILS against the current implementation. They record what
+# the tool is documented to do, so that whoever fixes a defect can tell when it
+# is fixed. Nothing here is a fix; see the individual docstrings for what is
+# wrong and where.
+# ---------------------------------------------------------------------------
+def _slow_reference(text, reference, timeout=None):
+    """A reference solver that takes longer than the solver timeout."""
+    time.sleep(5)
+    return 'sat'
+
+
+class _replaced:
+    """Put ``value`` on the benchmark module as ``name`` for the block."""
+
+    def __init__(self, name, value):
+        self.name, self.value = name, value
+
+    def __enter__(self):
+        self.saved = getattr(smtlib_benchmark, self.name)
+        setattr(smtlib_benchmark, self.name, self.value)
+        return self.value
+
+    def __exit__(self, *exc):
+        setattr(smtlib_benchmark, self.name, self.saved)
+
+
+def test_the_reference_solver_does_not_consume_the_solve_timeout():
+    # run_file() calls _reference_answer() inside the child process that
+    # --timeout kills, so a slow reference discards an answer SymPy already
+    # found. The reference is documented as running "only once the file has
+    # been timed", which should mean the timeout does not apply to it.
+    if 'fork' not in multiprocessing.get_all_start_methods():
+        skip("the child has to inherit the patched reference solver")
+    with tempfile.TemporaryDirectory() as directory:
+        path = _write(directory, 'sat.smt2', SAT_LRA)
+        # SymPy answers this file in well under a second
+        assert run_file_with_timeout(path, timeout=5).status == 'sat'
+        with _replaced('_reference_answer', _slow_reference):
+            result = run_file_with_timeout(path, timeout=5, reference='z3')
+        # the answer SymPy found has to survive; whether the reference is moved
+        # out of the child or given its own budget is up to whoever fixes this
+        assert result.status == 'sat'
+
+
+def test_the_reference_solver_only_answers_files_that_record_no_status():
+    # main() says it checks answers "where a file records no :status", but
+    # run_file() calls the reference for every file. For a file that does
+    # record one the answer cannot be used: FileResult.answer prefers
+    # `expected`, and `reference` is never printed. It is only wasted time,
+    # and it is what makes the timeout above apply to every file.
+    asked = []
+
+    def counting_reference(text, reference, timeout=None):
+        asked.append(reference)
+        return 'sat'
+
+    with tempfile.TemporaryDirectory() as directory:
+        with _replaced('_reference_answer', counting_reference):
+            recorded = run_file(_write(directory, 'sat.smt2', SAT_LRA),
+                                reference='z3')
+            assert recorded.check == 'ok'
+            assert asked == []
+
+            # a file with no status of its own still needs the reference
+            run_file(_write(directory, 'plain.smt2', NO_STATUS), reference='z3')
+            assert asked == ['z3']
+
+
