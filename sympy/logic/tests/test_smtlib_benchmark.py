@@ -18,7 +18,8 @@ from sympy.external import import_module
 from sympy.testing.pytest import skip
 from sympy.logic.utilities import smtlib_benchmark
 from sympy.logic.utilities.smtlib_benchmark import (
-    FileResult, collect_files, main, run_file, run_file_with_timeout
+    SOLVER_MODULES, FileResult, collect_files, main, run_file,
+    run_file_with_timeout
 )
 
 lark = import_module('lark')
@@ -399,5 +400,22 @@ def test_solver_none_reports_a_file_that_parses_as_parsed():
         for name, source in [('bv.smt2', BITVECTOR), ('quant.smt2', QUANTIFIED)]:
             result = run_file(_write(directory, name, source), solver='none')
             assert result.status == 'parsed', name
+
+
+def test_a_propositional_solver_is_not_run_on_a_theory_problem():
+    # dpll, dpll2, pycosat and minisat22 treat `x > 3` as an opaque
+    # proposition, so every unsat arithmetic file comes back "sat" and is
+    # reported WRONG, which says nothing about the solver. run_file() already
+    # asks _has_theory_atoms() before choosing lra over dpll2; the guard in the
+    # other direction is missing.
+    solvers = ['dpll', 'dpll2']
+    solvers += [s for s in ('pycosat', 'minisat22')
+                if import_module(SOLVER_MODULES[s]) is not None]
+    with tempfile.TemporaryDirectory() as directory:
+        path = _write(directory, 'unsat.smt2', UNSAT_LRA)
+        for solver in solvers:
+            result = run_file(path, solver=solver)
+            assert result.check != 'WRONG', solver
+            assert result.status == 'unsupported', solver
 
 
