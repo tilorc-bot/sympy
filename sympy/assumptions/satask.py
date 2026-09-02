@@ -161,20 +161,14 @@ def _encode_with_selector(prop, _prop, factbase):
     return true_false_guarded, selector
 
 
-# The relation each sign predicate is a statement about. Q.positive(x) says
-# the same thing about a real x as x > 0 does, and the extended predicates say
-# it too once x is known to be a real number rather than an infinity.
-_SIGN_RELATION = {
-    Q.positive: Q.gt, Q.negative: Q.lt, Q.zero: Q.eq,
-    Q.nonpositive: Q.le, Q.nonnegative: Q.ge, Q.nonzero: Q.ne,
-    Q.extended_positive: Q.gt, Q.extended_negative: Q.lt,
-    Q.extended_nonpositive: Q.le, Q.extended_nonnegative: Q.ge,
-    Q.extended_nonzero: Q.ne,
-}
-
 # Q.ne is the one relation the theory solver has no boundary for, so it is
 # encoded as the two strict inequalities it is the union of.
 _RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
+
+_SIGN_RELATION = {
+    Q.positive: Q.gt, Q.negative: Q.lt, Q.zero: Q.eq,
+    Q.nonpositive: Q.le, Q.nonnegative: Q.ge, Q.nonzero: Q.ne,
+}
 
 
 def _asked_about(prop):
