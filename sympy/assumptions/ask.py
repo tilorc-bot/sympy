@@ -343,6 +343,13 @@ def _extract_all_facts(assump, exprs):
     """
     facts = set()
 
+    if len(exprs) > 1:
+        # Literals are keyed by predicate only, so argument identity is lost.
+        # For a polyadic proposition that merges facts about different
+        # arguments into one variable (Q.positive(x) & Q.negative(y) becomes
+        # Q.positive & Q.negative), which is spuriously unsatisfiable.
+        return CNF(facts)
+
     for clause in assump.clauses:
         args = []
         for literal in clause:

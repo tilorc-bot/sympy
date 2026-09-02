@@ -434,3 +434,51 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_satask_linear_arithmetic():
+    # Facts about different expressions are related by the theory solver, so
+    # a compound expression is decided by what is known about its parts.
+    assert satask(Q.gt(x - y, 0), Q.nonnegative(x) & Q.negative(y)) is True
+    assert satask(Q.lt(0, x - y), Q.nonnegative(x) & Q.negative(y)) is True
+    assert satask(Q.le(x - y, 0), Q.nonnegative(x) & Q.negative(y)) is False
+    assert satask(Q.positive(y - x), Q.positive(x) & Q.negative(y)) is False
+    assert satask(Q.zero(y - x), Q.positive(x) & Q.negative(y)) is False
+
+    # A sign predicate says the same thing as the relation it unfolds to.
+    assert satask(Q.positive(-x), Q.nonnegative(x)) is False
+    assert satask(Q.nonpositive(-x), Q.nonnegative(x)) is True
+    assert satask(Q.eq(x, y), Q.positive(x) & Q.negative(y)) is False
+    assert satask(Q.ne(x, y), Q.positive(x) & Q.negative(y)) is True
+
+    # Relations that are decided without a variable to solve for.
+    assert satask(Q.gt(S(3), S(2))) is True
+    assert satask(Q.positive(S(2))) is True
+    assert satask(Q.zero(S(2))) is False
+
+
+def test_satask_arithmetic_needs_real():
+    # The arithmetic is only available where the facts force the arguments to
+    # be real numbers, since neither an inequality between complex numbers nor
+    # one between infinities means what the theory solver would take it to.
+    assert satask(Q.lt(I, 1)) is None
+    assert satask(Q.gt(x, 0), Q.imaginary(x)) is None
+    assert satask(Q.gt(x, 0), ~Q.le(x, 1)) is None
+    assert satask(Q.gt(x, 0), ~Q.le(x, 1) & Q.real(x)) is True
+
+    # Q.positive(x) means x is a real number, Q.gt(x, 0) does not: oo > 0.
+    assert satask(Q.positive(x), Q.gt(x, 0)) is None
+    assert satask(Q.positive(x), Q.gt(x, 0) & Q.real(x)) is True
+
+    # Nonlinear arguments are left to the boolean layer rather than handed to
+    # the theory solver as if they were linear.
+    assert satask(Q.gt(x*y, 0), Q.real(x) & Q.real(y)) is None
+    assert satask(Q.positive(x*y), Q.positive(x) & Q.positive(y)) is True
+
+
+def test_satask_no_lra_theory():
+    # The theory solver is what decides these, so turning it off turns them
+    # back into the questions the boolean layer cannot answer.
+    assert satask(Q.gt(x - y, 0), Q.nonnegative(x) & Q.negative(y),
+                  use_lra_theory=False) is None
+    assert satask(Q.positive(-x), Q.nonnegative(x), use_lra_theory=False) is None

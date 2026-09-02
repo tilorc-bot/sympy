@@ -3,20 +3,23 @@ Module to evaluate the proposition with assumptions using SAT algorithm.
 """
 from __future__ import annotations
 
+from sympy.core.add import Add
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
+from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
 from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.logic.algorithms.lra_theory import ALLOWED_PRED, LRASolver, UnhandledInput
+from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
 
 
 def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
-           early_return=False):
+           early_return=False, use_lra_theory=True):
     """
     Function to evaluate the proposition with assumptions using SAT algorithm.
 
@@ -50,6 +53,12 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
         If ``True``, answer from the propagated facts alone, trusting
         *assumptions* to be consistent. Default is ``False``.
 
+    use_lra_theory : bool, optional.
+        If ``True``, the predicates that say something about linear real
+        arithmetic are given to a theory solver alongside the SAT solver,
+        which lets facts about different expressions be combined. Default
+        is ``True``.
+
     Returns
     =======
 
@@ -74,18 +83,23 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
         use_known_facts=use_known_facts, iterations=iterations)
     sat.add_from_cnf(assumptions)
 
-    return check_satisfiability(props, _props, sat, early_return)
+    return check_satisfiability(props, _props, sat, early_return, use_lra_theory)
 
 
-def check_satisfiability(prop, _prop, factbase, early_return=False):
+def check_satisfiability(prop, _prop, factbase, early_return=False,
+                         use_lra_theory=True):
     if {0} in factbase.data:
         raise ValueError("Inconsistent assumptions")
 
     true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
 
+    lra = None
+    if use_lra_theory:
+        lra = _add_arithmetic(true_false_guarded, _asked_about(prop))
+
     # Run `propogate()` on the assumptions
-    solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
-                       true_false_guarded.symbols + [selector])
+    solver = SATSolver(true_false_guarded.data, true_false_guarded.variables,
+                       set(), true_false_guarded.symbols, lra_theory=lra)
     if solver.propagate() == IpasirStatus.UNSATISFIABLE:
         raise ValueError("Inconsistent assumptions")
 
@@ -136,7 +150,7 @@ def _encode_with_selector(prop, _prop, factbase):
              for side in (prop, _prop)]
 
     # One past the last predicate, so the selector is a variable of its own.
-    selector = len(true_false_guarded.encoding) + 1
+    selector = true_false_guarded.add_variable(Symbol("selector"))
 
     for clauses, guard in zip(sides, (-selector, selector)):
         # Dropping the 0 that encodes False leaves a side nothing can satisfy
@@ -145,6 +159,254 @@ def _encode_with_selector(prop, _prop, factbase):
                                     for clause in clauses]
 
     return true_false_guarded, selector
+
+
+# The relation each sign predicate is a statement about. Q.positive(x) says
+# the same thing about a real x as x > 0 does, and the extended predicates say
+# it too once x is known to be a real number rather than an infinity.
+_SIGN_RELATION = {
+    Q.positive: Q.gt, Q.negative: Q.lt, Q.zero: Q.eq,
+    Q.nonpositive: Q.le, Q.nonnegative: Q.ge, Q.nonzero: Q.ne,
+    Q.extended_positive: Q.gt, Q.extended_negative: Q.lt,
+    Q.extended_nonpositive: Q.le, Q.extended_nonnegative: Q.ge,
+    Q.extended_nonzero: Q.ne,
+}
+
+# Q.ne is the one relation the theory solver has no boundary for, so it is
+# encoded as the two strict inequalities it is the union of.
+_RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
+
+
+def _asked_about(prop):
+    """The expressions *prop* is a statement about."""
+    return {arg for pred in prop.all_predicates()
+            if isinstance(pred, AppliedPredicate) for arg in pred.arguments}
+
+
+def _add_arithmetic(enc, asked_about=frozenset()):
+    """Give the predicates of *enc* that are linear constraints an arithmetic
+    reading, and return the ``LRASolver`` that reads them, or ``None``.
+
+    Each such predicate is tied to a fresh variable that only the theory
+    solver knows the meaning of, under a guard on the realness of the
+    arguments::
+
+        Q.real(lhs) & Q.real(rhs) >> Implies(Q.gt(lhs, rhs), lhs - rhs > 0)
+
+    and the converse, so that the tie is an equivalence. The arithmetic is
+    therefore available exactly when the facts force the arguments to be real
+    numbers -- which the fact base can do for a compound expression, since
+    ``Q.real(x) & Q.real(y) >> Q.real(x - y)`` is one of the class facts --
+    and the predicate stays an opaque boolean when they do not. That keeps
+    ``Q.gt(I, 1)`` and its like out of the theory instead of handing it a
+    variable that is not a real number.
+    """
+    candidates = []
+    settled = []
+    relational = False
+    for pred in list(enc.encoding):
+        relation = _as_relation(pred)
+        if relation is None:
+            continue
+        function, lhs, rhs = relation
+
+        guards = _realness_guards(enc, (lhs, rhs))
+        if guards is None:
+            continue
+
+        try:
+            expr = lhs - rhs
+        except TypeError:
+            # Kinds are not implemented everywhere, so the two sides can still
+            # turn out to be things that cannot be subtracted from each other.
+            continue
+
+        if not expr.free_symbols:
+            # There is nothing for a theory solver to decide here.
+            holds = _settle(function, expr)
+            if holds is not None:
+                var = enc.encoding[pred]
+                settled.append(guards | {var if holds else -var})
+            continue
+
+        terms = _terms(expr)
+        if terms is None:
+            continue
+
+        # The question first, then the simple terms: a term the theory cannot
+        # take should not be the one that claims a symbol the others need.
+        rank = (expr not in asked_about,
+                max(len(term.free_symbols) for term in terms), len(terms))
+        candidates.append((rank, enc.encoding[pred], function, expr, guards, terms))
+        relational = relational or pred.function in _RELATIONS
+
+    lra = None
+    if relational or _relates_expressions(candidates):
+        lra = _bridge(enc, candidates)
+    enc.data += settled
+    return lra
+
+
+def _bridge(enc, candidates):
+    """Tie each of *candidates* to a variable the theory solver reads as a
+    constraint, and return the solver, or ``None`` if it cannot be built.
+    """
+    atoms = {}
+    owner = {}
+    clauses = []
+
+    def atom(function, expr, terms):
+        """The variable the theory solver reads as ``function(expr, 0)``."""
+        key = function(expr, S.Zero)
+        if key not in atoms:
+            if not _claim(owner, terms):
+                return None
+            atoms[key] = enc.add_variable(key)
+        return atoms[key]
+
+    for _, var, function, expr, guards, terms in sorted(candidates):
+        if function is Q.ne:
+            # x != y is x > y or x < y, both of which the theory can take.
+            greater = atom(Q.gt, expr, terms)
+            less = atom(Q.lt, expr, terms)
+            if greater is None or less is None:
+                continue
+            clauses.append(guards | {-var, greater, less})
+            clauses.append(guards | {var, -greater})
+            clauses.append(guards | {var, -less})
+        else:
+            constraint = atom(function, expr, terms)
+            if constraint is None:
+                continue
+            clauses.append(guards | {-var, constraint})
+            clauses.append(guards | {var, -constraint})
+
+    if not atoms:
+        return None
+
+    try:
+        lra, conflicts = LRASolver.from_encoded_cnf(EncodedCNF([], dict(atoms)))
+    except (UnhandledInput, ValueError, AssertionError, NotImplementedError,
+            TypeError, AttributeError):
+        # The theory is an extra, so being unable to build it is not an error.
+        return None
+
+    enc.data += clauses + [set(conflict) for conflict in conflicts]
+    return lra
+
+
+def _settle(function, expr):
+    """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
+    when that cannot be decided.
+    """
+    if function is Q.ne:
+        holds = ALLOWED_PRED[Q.gt](expr, S.Zero) | ALLOWED_PRED[Q.lt](expr, S.Zero)
+    else:
+        holds = ALLOWED_PRED[function](expr, S.Zero)
+
+    if holds is S.true:
+        return True
+    if holds is S.false:
+        return False
+    return None
+
+
+
+def _as_relation(pred):
+    """Return *pred* as ``(relation, lhs, rhs)``, or ``None`` when it does not
+    say anything about linear real arithmetic.
+    """
+    if not isinstance(pred, AppliedPredicate):
+        return None
+
+    function = pred.function
+    if function in _RELATIONS:
+        lhs, rhs = pred.arguments
+    elif function in _SIGN_RELATION:
+        lhs, rhs = pred.arguments[0], S.Zero
+        function = _SIGN_RELATION[function]
+    else:
+        return None
+
+    return function, lhs, rhs
+
+
+def _realness_guards(enc, sides):
+    """Return the literals that make the guard false, one for each side whose
+    realness is not already settled, or ``None`` if no guard can open.
+
+    A side that is known real needs no literal, and one that is known not to
+    be -- an infinity, or an imaginary number -- leaves a guard that could
+    never open, so the caller has nothing to encode.
+    """
+    guards = set()
+    for side in sides:
+        # UndefinedKind is checked for as well since the kind system isn't
+        # fully implemented; Abs(x) and sin(x) have no kind of their own.
+        if side.kind not in (NumberKind, UndefinedKind) or side is S.NaN:
+            return None
+
+        real = side.is_real
+        if real is True:
+            continue
+        if real is False:
+            return None
+
+        guards.add(-enc.encode_arg(Literal(Q.real(side), False)))
+
+    return guards
+
+
+def _terms(expr):
+    """The terms the theory solver will read *expr* as a sum of, or ``None``
+    when there are none for it to read.
+    """
+    terms = []
+    for term in Add.make_args(expr):
+        _, rest = term.as_coeff_Mul()
+        if rest.free_symbols:
+            terms.append(rest)
+
+    return terms or None
+
+
+def _claim(owner, terms):
+    """Give each symbol of *terms* to the term it appears in, refusing when
+    another term already has it.
+
+    The theory solver reads a symbol shared by two of its terms as
+    nonlinearity and gives up on the whole formula, so the terms it is given
+    have to be kept variable disjoint.
+    """
+    if any(owner.get(symbol, term) != term
+           for term in terms for symbol in term.free_symbols):
+        return False
+
+    for term in terms:
+        for symbol in term.free_symbols:
+            owner[symbol] = term
+
+    return True
+
+
+def _relates_expressions(candidates):
+    """Whether two of *candidates* constrain different expressions built from
+    a common symbol.
+
+    Sign predicates about one expression are already related to each other by
+    the known facts, so where that is all there is a theory solver would cost
+    time and answer nothing new. A binary relation is not in the known facts
+    at all, so its presence is reason enough on its own.
+    """
+    seen = []
+    for candidate in candidates:
+        expr = candidate[3]
+        if any(expr != other and expr.free_symbols & other.free_symbols
+               for other in seen):
+            return True
+        seen.append(expr)
+
+    return False
 
 
 def extract_predargs(proposition, assumptions=None):

@@ -2,6 +2,8 @@ from __future__ import annotations
 from sympy.assumptions.lra_satask import lra_satask
 from sympy.logic.algorithms.lra_theory import UnhandledInput
 from sympy.assumptions.ask import Q, ask
+from sympy.assumptions.refine import refine
+from sympy.core.singleton import S
 
 from sympy.core import symbols, Symbol
 from sympy.matrices.expressions.matexpr import MatrixSymbol
@@ -171,3 +173,41 @@ def test_equality_failing():
     assert ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
     assert ask(Q.real(x), Q.eq(x, y) & Q.real(y)) is True
     assert ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is True
+
+
+def test_strict_inequality_refine():
+    # https://github.com/sympy/sympy/issues/30324
+    a, b = symbols("a b")
+    assumptions = Q.nonnegative(a) & Q.negative(b)
+
+    assert refine(a - b > 0, assumptions) is S.true
+    assert refine(a - b >= 0, assumptions) is S.true
+    assert refine(b - a < 0, assumptions) is S.true
+    assert refine(b - a <= 0, assumptions) is S.true
+
+    # Without the assumptions there is nothing to refine it with.
+    assert refine(a - b > 0, True) == (a - b > 0)
+
+
+def test_polyadic_proposition_consistency():
+    # Opposite signs on the two operands of a relation are consistent
+    # assumptions, and used to be reported as an inconsistency.
+    a, b = symbols("a b")
+
+    assert ask(a > b, Q.positive(a) & Q.negative(b)) is True
+    assert ask(a < b, Q.positive(a) & Q.negative(b)) is False
+    assert ask(Q.eq(a, b), Q.positive(a) & Q.negative(b)) is False
+    assert ask(a > b, Q.nonnegative(a) & Q.negative(b)) is True
+
+
+def test_compound_sign_queries():
+    # A sign is carried through a negation and through a sum, in both
+    # directions rather than only where it can be confirmed.
+    a, b = symbols("a b")
+
+    assert ask(Q.positive(-a), Q.nonnegative(a)) is False
+    assert ask(Q.nonpositive(-a), Q.nonnegative(a)) is True
+    assert ask(Q.negative(-a), Q.positive(a)) is True
+    assert ask(Q.positive(b - a), Q.positive(a) & Q.negative(b)) is False
+    assert ask(Q.negative(b - a), Q.positive(a) & Q.negative(b)) is True
+    assert ask(Q.extended_nonnegative(b - a), Q.positive(a) & Q.negative(b)) is False

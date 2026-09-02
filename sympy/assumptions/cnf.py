@@ -410,6 +410,15 @@ class EncodedCNF:
         new_data = [set(clause) for clause in self.data]
         return EncodedCNF(new_data, dict(self.encoding))
 
+    def add_variable(self, symbol):
+        """Add a variable standing for *symbol* and return it.
+
+        Unlike the variables ``encode`` hands out, this one cannot be reached
+        from a predicate, so only the clauses built by the caller mention it.
+        """
+        self._symbols.append(symbol)
+        return len(self._symbols)
+
     def add_prop(self, prop):
         cnf = CNF.from_prop(prop)
         self.add_from_cnf(cnf)
