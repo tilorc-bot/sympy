@@ -311,7 +311,7 @@ class AssumptionKeys:
 
 Q = AssumptionKeys()
 
-def _extract_all_facts(assump: CNF, exprs: tuple) -> CNF:
+def _extract_all_facts(assump, exprs: tuple) -> CNF:
     """
     Extract all relevant assumptions from *assump* with respect to given *exprs*.
 
@@ -341,7 +341,7 @@ def _extract_all_facts(assump: CNF, exprs: tuple) -> CNF:
     {frozenset({Literal(Q.positive, False)})}
 
     """
-    facts: set[frozenset[Literal]] = set()
+    facts = set()
 
     if len(exprs) > 1:
         # Literals are keyed by predicate only, so argument identity is lost.
@@ -351,7 +351,7 @@ def _extract_all_facts(assump: CNF, exprs: tuple) -> CNF:
         return CNF(facts)
 
     for clause in assump.clauses:
-        args: list[Literal] = []
+        args = []
         for literal in clause:
             if isinstance(literal.lit, AppliedPredicate) and len(literal.lit.arguments) == 1:
                 if literal.lit.arg in exprs:
