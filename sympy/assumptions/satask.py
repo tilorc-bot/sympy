@@ -3,6 +3,8 @@ Module to evaluate the proposition with assumptions using SAT algorithm.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sympy.core.add import Add
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
@@ -177,13 +179,13 @@ _SIGN_RELATION = {
 _RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
 
 
-def _asked_about(prop):
+def _asked_about(prop) -> set[Any]:
     """The expressions *prop* is a statement about."""
     return {arg for pred in prop.all_predicates()
             if isinstance(pred, AppliedPredicate) for arg in pred.arguments}
 
 
-def _add_arithmetic(enc, asked_about=frozenset()):
+def _add_arithmetic(enc, asked_about=frozenset()) -> LRASolver | None:
     """Give the predicates of *enc* that are linear constraints an arithmetic
     reading, and return the ``LRASolver`` that reads them, or ``None``.
 
@@ -247,7 +249,7 @@ def _add_arithmetic(enc, asked_about=frozenset()):
     return lra
 
 
-def _bridge(enc, candidates):
+def _bridge(enc, candidates) -> LRASolver | None:
     """Tie each of *candidates* to a variable the theory solver reads as a
     constraint, and return the solver, or ``None`` if it cannot be built.
     """
@@ -295,7 +297,7 @@ def _bridge(enc, candidates):
     return lra
 
 
-def _settle(function, expr):
+def _settle(function, expr) -> bool | None:
     """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
     when that cannot be decided.
     """
@@ -312,7 +314,7 @@ def _settle(function, expr):
 
 
 
-def _as_relation(pred):
+def _as_relation(pred) -> tuple[Any, Any, Any] | None:
     """Return *pred* as ``(relation, lhs, rhs)``, or ``None`` when it does not
     say anything about linear real arithmetic.
     """
@@ -331,7 +333,7 @@ def _as_relation(pred):
     return function, lhs, rhs
 
 
-def _realness_guards(enc, sides):
+def _realness_guards(enc, sides) -> set[int] | None:
     """Return the literals that make the guard false, one for each side whose
     realness is not already settled, or ``None`` if no guard can open.
 
@@ -357,7 +359,7 @@ def _realness_guards(enc, sides):
     return guards
 
 
-def _terms(expr):
+def _terms(expr) -> list[Any] | None:
     """The terms the theory solver will read *expr* as a sum of, or ``None``
     when there are none for it to read.
     """
@@ -370,7 +372,7 @@ def _terms(expr):
     return terms or None
 
 
-def _claim(owner, terms):
+def _claim(owner, terms) -> bool:
     """Give each symbol of *terms* to the term it appears in, refusing when
     another term already has it.
 
@@ -389,7 +391,7 @@ def _claim(owner, terms):
     return True
 
 
-def _relates_expressions(candidates):
+def _relates_expressions(candidates) -> bool:
     """Whether two of *candidates* constrain different expressions built from
     a common symbol.
 
