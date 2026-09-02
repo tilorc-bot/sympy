@@ -165,11 +165,10 @@ def _encode_with_selector(prop, _prop, factbase):
 # encoded as the two strict inequalities it is the union of.
 _RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
 
-_SIGN_RELATION = {
+_SIGN_FACTS = {
     Q.positive: Q.gt, Q.negative: Q.lt, Q.zero: Q.eq,
     Q.nonpositive: Q.le, Q.nonnegative: Q.ge, Q.nonzero: Q.ne,
 }
-
 
 def _asked_about(prop):
     """The expressions *prop* is a statement about."""
@@ -200,6 +199,10 @@ def _add_arithmetic(enc, asked_about=frozenset()):
     relational = False
     for pred in list(enc.encoding):
         relation = _as_relation(pred)
+        if relation is None and isinstance(pred, AppliedPredicate):
+            function = _SIGN_FACTS.get(pred.function)
+            if function is not None:
+                relation = (function, pred.arguments[0], S.Zero)
         if relation is None:
             continue
         function, lhs, rhs = relation
@@ -316,9 +319,6 @@ def _as_relation(pred):
     function = pred.function
     if function in _RELATIONS:
         lhs, rhs = pred.arguments
-    elif function in _SIGN_RELATION:
-        lhs, rhs = pred.arguments[0], S.Zero
-        function = _SIGN_RELATION[function]
     else:
         return None
 

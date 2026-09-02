@@ -444,12 +444,12 @@ def test_satask_linear_arithmetic():
     assert satask(Q.le(x - y, 0), Q.nonnegative(x) & Q.negative(y)) is False
     assert satask(Q.positive(y - x), Q.positive(x) & Q.negative(y)) is False
     assert satask(Q.zero(y - x), Q.positive(x) & Q.negative(y)) is False
+    assert satask(Q.eq(x, y), Q.positive(x) & Q.negative(y)) is False
+    assert satask(Q.ne(x, y), Q.positive(x) & Q.negative(y)) is True
 
     # A sign predicate says the same thing as the relation it unfolds to.
     assert satask(Q.positive(-x), Q.nonnegative(x)) is False
     assert satask(Q.nonpositive(-x), Q.nonnegative(x)) is True
-    assert satask(Q.eq(x, y), Q.positive(x) & Q.negative(y)) is False
-    assert satask(Q.ne(x, y), Q.positive(x) & Q.negative(y)) is True
 
     # Relations that are decided without a variable to solve for.
     assert satask(Q.gt(S(3), S(2))) is True
