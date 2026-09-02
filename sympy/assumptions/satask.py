@@ -200,9 +200,16 @@ def _add_arithmetic(enc, asked_about=frozenset()):
     and the predicate stays an opaque boolean when they do not. That keeps
     ``Q.gt(I, 1)`` and its like out of the theory instead of handing it a
     variable that is not a real number.
+
+    The relation is handed to the theory solver as it stands. Subtracting one
+    side from the other and comparing the difference against zero is left to
+    ``LRASolver.from_encoded_cnf``, which does that to whatever it is given
+    anyway, so nothing on this path builds an expression -- which would cost
+    time here, and would make what the encoding says depend on automatic
+    evaluation.
     """
     candidates = []
-    settled = []
+    signs = []
     relational = False
     for pred in list(enc.encoding):
         relation = _as_relation(pred)
@@ -214,37 +221,23 @@ def _add_arithmetic(enc, asked_about=frozenset()):
         if guards is None:
             continue
 
-        try:
-            expr = lhs - rhs
-        except TypeError:
-            # Kinds are not implemented everywhere, so the two sides can still
-            # turn out to be things that cannot be subtracted from each other.
-            continue
-
-        if not expr.free_symbols:
-            # There is nothing for a theory solver to decide here.
-            holds = _settle(function, expr)
-            if holds is not None:
-                var = enc.encoding[pred]
-                settled.append(guards | {var if holds else -var})
-            continue
-
-        terms = _terms(expr)
-        if terms is None:
-            continue
-
+        terms = _terms(lhs, rhs)
         # The question first, then the simple terms: a term the theory cannot
         # take should not be the one that claims a symbol the others need.
-        rank = (expr not in asked_about,
-                max(len(term.free_symbols) for term in terms), len(terms))
-        candidates.append((rank, enc.encoding[pred], function, expr, guards, terms))
-        relational = relational or pred.function in _RELATIONS
+        rank = (not {lhs, rhs} & asked_about,
+                max((len(term.free_symbols) for term in terms), default=0),
+                len(terms))
+        candidates.append((rank, enc.encoding[pred], function, lhs, rhs,
+                           guards, terms))
+        if pred.function in _RELATIONS:
+            relational = True
+        else:
+            signs.append(lhs)
 
-    lra = None
-    if relational or _relates_expressions(candidates):
-        lra = _bridge(enc, candidates)
-    enc.data += settled
-    return lra
+    if not (relational or _relates_expressions(signs)):
+        return None
+
+    return _bridge(enc, candidates)
 
 
 def _bridge(enc, candidates):
@@ -255,61 +248,65 @@ def _bridge(enc, candidates):
     owner = {}
     clauses = []
 
-    def atom(function, expr, terms):
-        """The variable the theory solver reads as ``function(expr, 0)``."""
-        key = function(expr, S.Zero)
-        if key not in atoms:
+    def atom(constraint, terms):
+        """The variable the theory solver reads as *constraint*."""
+        if constraint not in atoms:
             if not _claim(owner, terms):
                 return None
-            atoms[key] = enc.add_variable(key)
-        return atoms[key]
+            atoms[constraint] = enc.add_variable(constraint)
+        return atoms[constraint]
 
-    for _, var, function, expr, guards, terms in sorted(candidates):
+    for _, var, function, lhs, rhs, guards, terms in sorted(candidates):
         if function is Q.ne:
             # x != y is x > y or x < y, both of which the theory can take.
-            greater = atom(Q.gt, expr, terms)
-            less = atom(Q.lt, expr, terms)
+            greater = atom(Q.gt(lhs, rhs), terms)
+            less = atom(Q.lt(lhs, rhs), terms)
             if greater is None or less is None:
                 continue
             clauses.append(guards | {-var, greater, less})
             clauses.append(guards | {var, -greater})
             clauses.append(guards | {var, -less})
         else:
-            constraint = atom(function, expr, terms)
+            constraint = atom(function(lhs, rhs), terms)
             if constraint is None:
                 continue
             clauses.append(guards | {-var, constraint})
             clauses.append(guards | {var, -constraint})
 
-    if not atoms:
-        return None
+    solved = _theory(atoms)
+    if solved is None:
+        # A relation between constants that does not come out one way or the
+        # other is input the theory solver refuses outright. Leave those to
+        # the boolean structure -- an atom it has no boundary for is a
+        # variable it never assigns -- and keep the rest of the arithmetic.
+        constant = {constraint for constraint in atoms
+                    if not any(arg.free_symbols
+                               for arg in constraint.arguments)}
+        if not constant:
+            return None
+        solved = _theory({constraint: var for constraint, var in atoms.items()
+                          if constraint not in constant})
+        if solved is None:
+            return None
 
-    try:
-        lra, conflicts = LRASolver.from_encoded_cnf(EncodedCNF([], dict(atoms)))
-    except (UnhandledInput, ValueError, AssertionError, NotImplementedError,
-            TypeError, AttributeError):
-        # The theory is an extra, so being unable to build it is not an error.
-        return None
-
+    lra, conflicts = solved
     enc.data += clauses + [set(conflict) for conflict in conflicts]
     return lra
 
 
-def _settle(function, expr):
-    """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
-    when that cannot be decided.
+def _theory(atoms):
+    """The theory solver that reads *atoms*, together with the conflicts it
+    found while being built, or ``None`` when it cannot read them.
     """
-    if function is Q.ne:
-        holds = ALLOWED_PRED[Q.gt](expr, S.Zero) | ALLOWED_PRED[Q.lt](expr, S.Zero)
-    else:
-        holds = ALLOWED_PRED[function](expr, S.Zero)
+    if not atoms:
+        return None
 
-    if holds is S.true:
-        return True
-    if holds is S.false:
-        return False
-    return None
-
+    try:
+        return LRASolver.from_encoded_cnf(EncodedCNF([], dict(atoms)))
+    except (UnhandledInput, ValueError, AssertionError, NotImplementedError,
+            TypeError, AttributeError):
+        # The theory is an extra, so being unable to build it is not an error.
+        return None
 
 
 def _as_relation(pred):
@@ -357,17 +354,23 @@ def _realness_guards(enc, sides):
     return guards
 
 
-def _terms(expr):
-    """The terms the theory solver will read *expr* as a sum of, or ``None``
-    when there are none for it to read.
+def _terms(lhs, rhs):
+    """The terms the theory solver will read the two sides as sums of, with
+    their coefficients stripped the way it strips them.
+
+    This reads the sides as they are rather than subtracting one from the
+    other, so a term the subtraction would have cancelled is still counted.
+    That can only cost an atom the theory would have accepted, never admit
+    one it would have refused.
     """
     terms = []
-    for term in Add.make_args(expr):
-        _, rest = term.as_coeff_Mul()
-        if rest.free_symbols:
-            terms.append(rest)
+    for side in (lhs, rhs):
+        for term in Add.make_args(side):
+            _, rest = term.as_coeff_Mul()
+            if rest.free_symbols:
+                terms.append(rest)
 
-    return terms or None
+    return terms
 
 
 def _claim(owner, terms):
@@ -389,9 +392,9 @@ def _claim(owner, terms):
     return True
 
 
-def _relates_expressions(candidates):
-    """Whether two of *candidates* constrain different expressions built from
-    a common symbol.
+def _relates_expressions(exprs):
+    """Whether two of *exprs* are different expressions built from a common
+    symbol.
 
     Sign predicates about one expression are already related to each other by
     the known facts, so where that is all there is a theory solver would cost
@@ -399,8 +402,7 @@ def _relates_expressions(candidates):
     at all, so its presence is reason enough on its own.
     """
     seen = []
-    for candidate in candidates:
-        expr = candidate[3]
+    for expr in exprs:
         if any(expr != other and expr.free_symbols & other.free_symbols
                for other in seen):
             return True

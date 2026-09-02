@@ -2,6 +2,7 @@ from __future__ import annotations
 from sympy.assumptions.ask import Q
 from sympy.core.numbers import (I, pi, E)
 from sympy.core.relational import (Eq, Gt)
+from sympy.core.function import Function
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols, Dummy
 from sympy.functions.elementary.complexes import Abs
@@ -482,3 +483,15 @@ def test_satask_no_lra_theory():
     assert satask(Q.gt(x - y, 0), Q.nonnegative(x) & Q.negative(y),
                   use_lra_theory=False) is None
     assert satask(Q.positive(-x), Q.nonnegative(x), use_lra_theory=False) is None
+
+
+def test_satask_arithmetic_partial():
+    # An atom the theory solver cannot read should cost only itself. Both of
+    # these are refused -- x*y is nonlinear, and f(1) > 0 has no variable to
+    # solve for and does not come out either way -- while x > 1 is still
+    # enough to answer the question.
+    f = Function('f')
+    assert satask(Q.gt(x, 0),
+                  Q.gt(x*y, 0) & Q.gt(x, 1) & Q.real(x) & Q.real(y)) is True
+    assert satask(Q.gt(x, 0),
+                  Q.gt(f(1), 0) & Q.gt(x, 1) & Q.real(x) & Q.real(f(1))) is True
