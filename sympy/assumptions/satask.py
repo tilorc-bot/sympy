@@ -214,30 +214,23 @@ def _add_arithmetic(enc, asked_about=frozenset()):
         if guards is None:
             continue
 
-        try:
-            expr = lhs - rhs
-        except TypeError:
-            # Kinds are not implemented everywhere, so the two sides can still
-            # turn out to be things that cannot be subtracted from each other.
-            continue
-
-        if not expr.free_symbols:
+        if not (lhs.free_symbols or rhs.free_symbols):
             # There is nothing for a theory solver to decide here.
-            holds = _settle(function, expr)
+            holds = _settle(function, lhs, rhs)
             if holds is not None:
                 var = enc.encoding[pred]
                 settled.append(guards | {var if holds else -var})
             continue
 
-        terms = _terms(expr)
+        terms = (_terms(lhs) or []) + (_terms(rhs) or [])
         if terms is None:
             continue
 
         # The question first, then the simple terms: a term the theory cannot
         # take should not be the one that claims a symbol the others need.
-        rank = (expr not in asked_about,
+        rank = (lhs not in asked_about and rhs not in asked_about,
                 max(len(term.free_symbols) for term in terms), len(terms))
-        candidates.append((rank, enc.encoding[pred], function, expr, guards, terms))
+        candidates.append((rank, enc.encoding[pred], function, lhs, rhs, guards, terms))
         relational = relational or pred.function in _RELATIONS
 
     lra = None
@@ -255,27 +248,27 @@ def _bridge(enc, candidates):
     owner = {}
     clauses = []
 
-    def atom(function, expr, terms):
-        """The variable the theory solver reads as ``function(expr, 0)``."""
-        key = function(expr, S.Zero)
+    def atom(function, lhs, rhs, terms):
+        """The variable the theory solver reads as ``function(lhs, rhs)``."""
+        key = function(lhs, rhs)
         if key not in atoms:
             if not _claim(owner, terms):
                 return None
             atoms[key] = enc.add_variable(key)
         return atoms[key]
 
-    for _, var, function, expr, guards, terms in sorted(candidates):
+    for _, var, function, lhs, rhs, guards, terms in sorted(candidates):
         if function is Q.ne:
             # x != y is x > y or x < y, both of which the theory can take.
-            greater = atom(Q.gt, expr, terms)
-            less = atom(Q.lt, expr, terms)
+            greater = atom(Q.gt, lhs, rhs, terms)
+            less = atom(Q.lt, lhs, rhs, terms)
             if greater is None or less is None:
                 continue
             clauses.append(guards | {-var, greater, less})
             clauses.append(guards | {var, -greater})
             clauses.append(guards | {var, -less})
         else:
-            constraint = atom(function, expr, terms)
+            constraint = atom(function, lhs, rhs, terms)
             if constraint is None:
                 continue
             clauses.append(guards | {-var, constraint})
@@ -295,14 +288,14 @@ def _bridge(enc, candidates):
     return lra
 
 
-def _settle(function, expr):
+def _settle(function, lhs, rhs):
     """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
     when that cannot be decided.
     """
     if function is Q.ne:
-        holds = ALLOWED_PRED[Q.gt](expr, S.Zero) | ALLOWED_PRED[Q.lt](expr, S.Zero)
+        holds = (lhs > rhs) | (lhs < rhs)
     else:
-        holds = ALLOWED_PRED[function](expr, S.Zero)
+        holds = ALLOWED_PRED[function](lhs, rhs)
 
     if holds is S.true:
         return True
@@ -368,6 +361,14 @@ def _terms(expr):
             terms.append(rest)
 
     return terms or None
+
+
+def _difference_terms(lhs, rhs):
+    """Return additive terms for ``lhs - rhs`` without constructing a sum."""
+    try:
+        return Add.make_args(lhs) + tuple(-term for term in Add.make_args(rhs))
+    except TypeError:
+        return None
 
 
 def _claim(owner, terms):
