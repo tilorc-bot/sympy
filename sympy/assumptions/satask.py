@@ -8,7 +8,8 @@ from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.sathandlers import class_fact_registry
+from sympy.assumptions.sathandlers import class_fact_registry, predicate_fact_registry
+from sympy.logic.algorithms.lra_theory import LRASolver, LRA_PRED
 from sympy.core import oo
 from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
 from sympy.assumptions.cnf import CNF, EncodedCNF
@@ -84,8 +85,9 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
 
     # Run `propogate()` on the assumptions
-    solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
-                       true_false_guarded.symbols + [selector])
+    lra, conflicts = _lra_theory(true_false_guarded)
+    solver = SATSolver(true_false_guarded.data + conflicts, range(1, selector + 1), set(),
+                       true_false_guarded.symbols + [selector], lra_theory=lra)
     if solver.propagate() == IpasirStatus.UNSATISFIABLE:
         raise ValueError("Inconsistent assumptions")
 
@@ -147,6 +149,16 @@ def _encode_with_selector(prop, _prop, factbase):
     return true_false_guarded, selector
 
 
+def _lra_theory(encoded_cnf):
+    """Build an LRA solver only when extracted facts gave it useful atoms."""
+    atoms = [pred for pred in encoded_cnf.encoding
+             if isinstance(pred, AppliedPredicate) and pred.function in set(LRA_PRED.values())]
+    if not atoms:
+        return None, []
+    lra, conflicts = LRASolver.from_encoded_cnf(encoded_cnf)
+    return lra, [set(conflict) for conflict in conflicts]
+
+
 def extract_predargs(proposition, assumptions=None):
     """
     Extract every expression in the argument of predicates from *proposition*,
@@ -172,6 +184,19 @@ def extract_predargs(proposition, assumptions=None):
     {x, y, Abs(x*y)}
 
     """
+    keys = extract_predicates(proposition, assumptions)
+
+    exprs = set()
+    for key in keys:
+        if isinstance(key, AppliedPredicate):
+            exprs |= set(key.arguments)
+        else:
+            exprs.add(key)
+    return exprs
+
+
+def extract_predicates(proposition, assumptions=None):
+    """Return the predicates relevant to *proposition* and *assumptions*."""
     req_keys = find_symbols(proposition)
     keys = proposition.all_predicates()
     # XXX: We need this since True/False are not Basic
@@ -191,13 +216,7 @@ def extract_predargs(proposition, assumptions=None):
         req_keys |= tmp_keys
     keys |= {l for l in lkeys if find_symbols(l) & req_keys != set()}
 
-    exprs = set()
-    for key in keys:
-        if isinstance(key, AppliedPredicate):
-            exprs |= set(key.arguments)
-        else:
-            exprs.add(key)
-    return exprs
+    return keys
 
 def find_symbols(pred):
     """
@@ -302,6 +321,21 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     return newexprs - exprs, relevant_facts
 
 
+def get_relevant_predfacts(predicates, relevant_facts=None):
+    """Extract facts registered for applied predicates in *predicates*."""
+    if not relevant_facts:
+        relevant_facts = CNF()
+
+    newpredicates = set()
+    for pred in predicates:
+        for fact in predicate_fact_registry(pred):
+            newfact = CNF.to_CNF(fact)
+            relevant_facts = relevant_facts._and(newfact)
+            newpredicates |= newfact.all_predicates()
+
+    return newpredicates - predicates, relevant_facts
+
+
 def get_all_relevant_facts(proposition, assumptions,
         use_known_facts=True, iterations=oo):
     """
@@ -356,12 +390,25 @@ def get_all_relevant_facts(proposition, assumptions,
     while True:
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)
+            predicates = extract_predicates(proposition, assumptions)
+            # Predicate facts are local translations of atoms already present
+            # in the formula. Include constant and reflexive relations even
+            # when their symbols are irrelevant: Q.eq(z, z), for example, is
+            # an immediate arithmetic conflict when negated.
+            input_predicates = proposition.all_predicates() | assumptions.all_predicates()
+            predicates |= {pred for pred in input_predicates
+                           if (pred in (S.true, S.false, True, False) or
+                               not find_symbols(pred) or
+                               (isinstance(pred, AppliedPredicate) and
+                                pred.function in LRA_PRED and
+                                pred.arguments[0] == pred.arguments[1]))}
         all_exprs |= exprs
         exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        predicates, relevant_facts = get_relevant_predfacts(predicates, relevant_facts)
         i += 1
         if i >= iterations:
             break
-        if not exprs:
+        if not exprs and not predicates:
             break
 
     if use_known_facts:

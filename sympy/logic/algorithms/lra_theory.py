@@ -303,6 +303,12 @@ def _normalize_prop(prop):
     # x, 2 <- _sep_const_coeff(2x)
     # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
     vars, var_coeff = _sep_const_coeff(vars)
+    # A syntactically real expression can still have been written in terms of
+    # an imaginary symbol (``im(x)`` for imaginary ``x`` is ``-I*x``). The
+    # tableau has no representation for that non-real coefficient, so this
+    # atom is one the theory must leave to the Boolean layer.
+    if var_coeff.is_real is False:
+        return None
     const = const / var_coeff
     # Example: [2x, 3y] <- Add.make_args(2x + 3y)
     terms = Add.make_args(vars)

@@ -4,13 +4,15 @@ from sympy.core.numbers import (I, pi, E)
 from sympy.core.relational import (Eq, Gt)
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols, Dummy
+from sympy.core.function import Function
 from sympy.functions.elementary.complexes import Abs
 from sympy.logic.boolalg import Equivalent, Implies, Xor
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.satask import (satask, extract_predargs,
-    get_relevant_clsfacts)
-from sympy.assumptions.sathandlers import class_fact_registry
+    get_relevant_clsfacts, get_relevant_predfacts)
+from sympy.assumptions.sathandlers import class_fact_registry, predicate_fact_registry
+from sympy.logic.algorithms.lra_theory import LRA_PRED
 
 from sympy.testing.pytest import raises, XFAIL
 
@@ -434,3 +436,45 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_predicate_lra_facts():
+    facts = predicate_fact_registry(Q.gt(x, y))
+    assert facts == {Implies(Q.real(x) & Q.real(y),
+        Equivalent(Q.gt(x, y), LRA_PRED[Q.gt](x, y)))}
+
+    predicates, facts = get_relevant_predfacts({Q.ne(x, y)})
+    assert LRA_PRED[Q.gt](x, y) in predicates
+    assert LRA_PRED[Q.lt](x, y) in predicates
+
+
+def test_satask_linear_arithmetic():
+    # These facts concern different expressions, so their relationship is
+    # supplied by the LRA theory rather than the ordinary predicate rules.
+    assert satask(Q.gt(x - y, 0), Q.nonnegative(x) & Q.negative(y)) is True
+    assert satask(Q.le(x - y, 0), Q.nonnegative(x) & Q.negative(y)) is False
+    assert satask(Q.positive(-x), Q.nonnegative(x)) is False
+    assert satask(Q.eq(x, y), Q.positive(x) & Q.negative(y)) is False
+    assert satask(Q.ne(x, y), Q.positive(x) & Q.negative(y)) is True
+
+    # Constant comparisons still arrive at the theory as immediate clauses.
+    assert satask(Q.gt(S(3), S(2))) is True
+
+
+def test_satask_arithmetic_needs_real():
+    # The bridge is inactive without realness evidence, so an ordinary
+    # comparison remains an opaque boolean for complex and infinite values.
+    assert satask(Q.lt(I, 1)) is None
+    assert satask(Q.gt(x, 0), Q.imaginary(x)) is None
+    assert satask(Q.gt(x, 0), ~Q.le(x, 1)) is None
+    assert satask(Q.gt(x, 0), ~Q.le(x, 1) & Q.real(x)) is True
+    assert satask(Q.positive(x), Q.gt(x, 0)) is None
+    assert satask(Q.positive(x), Q.gt(x, 0) & Q.real(x)) is True
+
+
+def test_satask_keeps_usable_atoms():
+    # The solver drops the nonlinear atom itself and still uses x > 1.
+    assert satask(Q.gt(x, 0), Q.real(x) & Q.real(y) & Q.gt(x*y, 0) & Q.gt(x, 1)) is True
+    # A relation it cannot normalize likewise does not cost its neighbour.
+    f = Function('f')
+    assert satask(Q.gt(x, 0), Q.real(x) & Q.gt(f(1), 0) & Q.gt(x, 1)) is True

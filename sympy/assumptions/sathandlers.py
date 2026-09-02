@@ -2,6 +2,10 @@ from __future__ import annotations
 from collections import defaultdict
 
 from sympy.assumptions.ask import Q
+from sympy.assumptions.assume import AppliedPredicate
+from sympy.logic.algorithms.lra_theory import LRA_PRED
+from sympy.core.kind import NumberKind, UndefinedKind
+from sympy.core.singleton import S
 from sympy.core import (Add, Mul, Pow, Number, NumberSymbol, Symbol)
 from sympy.core.numbers import ImaginaryUnit
 from sympy.functions.elementary.complexes import Abs
@@ -191,6 +195,103 @@ class ClassFactRegistry:
         return ret
 
 class_fact_registry = ClassFactRegistry()
+
+
+class PredicateFactRegistry:
+    """Register fact handlers against applied-predicate functions.
+
+    Unlike :class:`ClassFactRegistry`, predicate functions have no inheritance
+    hierarchy to search: a handler for ``Q.gt`` applies only to ``Q.gt``.
+    """
+    def __init__(self):
+        self.singlefacts = defaultdict(frozenset)
+        self.multifacts = defaultdict(frozenset)
+
+    def register(self, predicate):
+        def _(func):
+            self.singlefacts[predicate] |= {func}
+            return func
+        return _
+
+    def multiregister(self, *predicates):
+        def _(func):
+            for predicate in predicates:
+                self.multifacts[predicate] |= {func}
+            return func
+        return _
+
+    def __call__(self, pred):
+        if not isinstance(pred, AppliedPredicate):
+            return set()
+        ret = {handler(pred) for handler in self.singlefacts[pred.function]}
+        for handler in self.multifacts[pred.function]:
+            ret.update(handler(pred))
+        return ret
+
+
+predicate_fact_registry = PredicateFactRegistry()
+
+
+def _arithmetic_realness_guard(*sides):
+    """The realness condition under which *sides* can be read by LRA.
+
+    ``None`` means that the predicate has no arithmetic interpretation. A
+    side known real does not need a guard; a side known non-real must never be
+    handed to the real-arithmetic theory.
+    """
+    guards = []
+    for side in sides:
+        # UndefinedKind is included until every scalar expression has a more
+        # precise kind (for example, Abs(x) and sin(x)).
+        if side.kind not in (NumberKind, UndefinedKind) or side is S.NaN:
+            return None
+        if side.is_real is False:
+            return None
+        if side.is_real is not True:
+            guards.append(Q.real(side))
+    return And(*guards)
+
+
+@predicate_fact_registry.multiregister(Q.eq, Q.lt, Q.gt, Q.le, Q.ge)
+def _(pred):
+    lhs, rhs = pred.arguments
+    guard = _arithmetic_realness_guard(lhs, rhs)
+    if guard is None:
+        return []
+    return [Implies(guard, Equivalent(pred, LRA_PRED[pred.function](lhs, rhs)))]
+
+
+@predicate_fact_registry.register(Q.ne)
+def _(pred):
+    lhs, rhs = pred.arguments
+    guard = _arithmetic_realness_guard(lhs, rhs)
+    if guard is None:
+        return []
+    return Implies(guard, Equivalent(pred,
+        LRA_PRED[Q.gt](lhs, rhs) | LRA_PRED[Q.lt](lhs, rhs)))
+
+
+_SIGN_RELATION = {
+    Q.positive: Q.gt, Q.negative: Q.lt, Q.zero: Q.eq,
+    Q.nonpositive: Q.le, Q.nonnegative: Q.ge, Q.nonzero: Q.ne,
+    Q.extended_positive: Q.gt, Q.extended_negative: Q.lt,
+    Q.extended_nonpositive: Q.le, Q.extended_nonnegative: Q.ge,
+    Q.extended_nonzero: Q.ne,
+}
+
+
+@predicate_fact_registry.multiregister(*_SIGN_RELATION)
+def _(pred):
+    lhs = pred.arguments[0]
+    guard = _arithmetic_realness_guard(lhs, S.Zero)
+    if guard is None:
+        return []
+    relation = _SIGN_RELATION[pred.function]
+    if relation is Q.ne:
+        arithmetic = LRA_PRED[Q.gt](lhs, S.Zero) | LRA_PRED[Q.lt](lhs, S.Zero)
+    else:
+        arithmetic = LRA_PRED[relation](lhs, S.Zero)
+    return [Implies(guard, Equivalent(pred, arithmetic))]
 
 
 
