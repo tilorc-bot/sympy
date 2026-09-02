@@ -179,13 +179,15 @@ _SIGN_RELATION = {
 _RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
 
 
-def _asked_about(prop) -> set[Any]:
+def _asked_about(prop: CNF) -> set[Any]:
     """The expressions *prop* is a statement about."""
     return {arg for pred in prop.all_predicates()
             if isinstance(pred, AppliedPredicate) for arg in pred.arguments}
 
 
-def _add_arithmetic(enc, asked_about=frozenset()) -> LRASolver | None:
+def _add_arithmetic(enc: EncodedCNF,
+                    asked_about: set[Any] | frozenset[Any] = frozenset()
+                    ) -> LRASolver | None:
     """Give the predicates of *enc* that are linear constraints an arithmetic
     reading, and return the ``LRASolver`` that reads them, or ``None``.
 
@@ -203,9 +205,9 @@ def _add_arithmetic(enc, asked_about=frozenset()) -> LRASolver | None:
     ``Q.gt(I, 1)`` and its like out of the theory instead of handing it a
     variable that is not a real number.
     """
-    candidates = []
-    settled = []
-    relational = False
+    candidates: list[tuple[Any, int, Any, Any, set[int], list[Any]]] = []
+    settled: list[set[int]] = []
+    relational: bool = False
     for pred in list(enc.encoding):
         relation = _as_relation(pred)
         if relation is None:
@@ -249,15 +251,17 @@ def _add_arithmetic(enc, asked_about=frozenset()) -> LRASolver | None:
     return lra
 
 
-def _bridge(enc, candidates) -> LRASolver | None:
+def _bridge(enc: EncodedCNF,
+            candidates: list[tuple[Any, int, Any, Any, set[int], list[Any]]]
+            ) -> LRASolver | None:
     """Tie each of *candidates* to a variable the theory solver reads as a
     constraint, and return the solver, or ``None`` if it cannot be built.
     """
-    atoms = {}
-    owner = {}
-    clauses = []
+    atoms: dict[Any, int] = {}
+    owner: dict[Any, Any] = {}
+    clauses: list[set[int]] = []
 
-    def atom(function, expr, terms):
+    def atom(function: Any, expr: Any, terms: list[Any]) -> int | None:
         """The variable the theory solver reads as ``function(expr, 0)``."""
         key = function(expr, S.Zero)
         if key not in atoms:
@@ -297,7 +301,7 @@ def _bridge(enc, candidates) -> LRASolver | None:
     return lra
 
 
-def _settle(function, expr) -> bool | None:
+def _settle(function: Any, expr: Any) -> bool | None:
     """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
     when that cannot be decided.
     """
@@ -314,7 +318,7 @@ def _settle(function, expr) -> bool | None:
 
 
 
-def _as_relation(pred) -> tuple[Any, Any, Any] | None:
+def _as_relation(pred: Any) -> tuple[Any, Any, Any] | None:
     """Return *pred* as ``(relation, lhs, rhs)``, or ``None`` when it does not
     say anything about linear real arithmetic.
     """
@@ -333,7 +337,7 @@ def _as_relation(pred) -> tuple[Any, Any, Any] | None:
     return function, lhs, rhs
 
 
-def _realness_guards(enc, sides) -> set[int] | None:
+def _realness_guards(enc: EncodedCNF, sides: tuple[Any, Any]) -> set[int] | None:
     """Return the literals that make the guard false, one for each side whose
     realness is not already settled, or ``None`` if no guard can open.
 
@@ -341,7 +345,7 @@ def _realness_guards(enc, sides) -> set[int] | None:
     be -- an infinity, or an imaginary number -- leaves a guard that could
     never open, so the caller has nothing to encode.
     """
-    guards = set()
+    guards: set[int] = set()
     for side in sides:
         # UndefinedKind is checked for as well since the kind system isn't
         # fully implemented; Abs(x) and sin(x) have no kind of their own.
@@ -359,11 +363,11 @@ def _realness_guards(enc, sides) -> set[int] | None:
     return guards
 
 
-def _terms(expr) -> list[Any] | None:
+def _terms(expr: Any) -> list[Any] | None:
     """The terms the theory solver will read *expr* as a sum of, or ``None``
     when there are none for it to read.
     """
-    terms = []
+    terms: list[Any] = []
     for term in Add.make_args(expr):
         _, rest = term.as_coeff_Mul()
         if rest.free_symbols:
@@ -372,7 +376,7 @@ def _terms(expr) -> list[Any] | None:
     return terms or None
 
 
-def _claim(owner, terms) -> bool:
+def _claim(owner: dict[Any, Any], terms: list[Any]) -> bool:
     """Give each symbol of *terms* to the term it appears in, refusing when
     another term already has it.
 
@@ -391,7 +395,9 @@ def _claim(owner, terms) -> bool:
     return True
 
 
-def _relates_expressions(candidates) -> bool:
+def _relates_expressions(
+    candidates: list[tuple[Any, int, Any, Any, set[int], list[Any]]]
+) -> bool:
     """Whether two of *candidates* constrain different expressions built from
     a common symbol.
 
@@ -400,7 +406,7 @@ def _relates_expressions(candidates) -> bool:
     time and answer nothing new. A binary relation is not in the known facts
     at all, so its presence is reason enough on its own.
     """
-    seen = []
+    seen: list[Any] = []
     for candidate in candidates:
         expr = candidate[3]
         if any(expr != other and expr.free_symbols & other.free_symbols

@@ -410,7 +410,7 @@ class EncodedCNF:
         new_data = [set(clause) for clause in self.data]
         return EncodedCNF(new_data, dict(self.encoding))
 
-    def add_variable(self, symbol) -> int:
+    def add_variable(self, symbol: object) -> int:
         """Add a variable standing for *symbol* and return it.
 
         Unlike the variables ``encode`` hands out, this one cannot be reached
