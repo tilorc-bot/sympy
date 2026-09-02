@@ -3,6 +3,9 @@ Module to evaluate the proposition with assumptions using SAT algorithm.
 """
 from __future__ import annotations
 
+from typing import Any
+
+from sympy.core.basic import Basic
 from sympy.core.add import Add
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
@@ -18,8 +21,9 @@ from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
 
 
-def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
-           early_return=False, use_lra_theory=True):
+def satask(proposition: Any, assumptions: Any = True,
+           use_known_facts: bool = True, iterations: int | Basic = oo,
+           early_return: bool = False, use_lra_theory: bool = True) -> bool | None:
     """
     Function to evaluate the proposition with assumptions using SAT algorithm.
 
@@ -86,14 +90,15 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
     return check_satisfiability(props, _props, sat, early_return, use_lra_theory)
 
 
-def check_satisfiability(prop, _prop, factbase, early_return=False,
-                         use_lra_theory=True):
+def check_satisfiability(prop: CNF, _prop: CNF, factbase: EncodedCNF,
+                         early_return: bool = False,
+                         use_lra_theory: bool = True) -> bool | None:
     if {0} in factbase.data:
         raise ValueError("Inconsistent assumptions")
 
     true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
 
-    lra = None
+    lra: Any = None
     if use_lra_theory:
         lra = _add_arithmetic(true_false_guarded, _asked_about(prop))
 
@@ -141,13 +146,15 @@ def check_satisfiability(prop, _prop, factbase, early_return=False,
         raise ValueError("Inconsistent assumptions")
 
 
-def _encode_with_selector(prop, _prop, factbase):
+def _encode_with_selector(prop: CNF, _prop: CNF,
+                          factbase: EncodedCNF) -> tuple[EncodedCNF, int]:
     """Return *factbase* with the clauses of prop and _prop added to it, and
     the selector variable that activates prop when true and _prop when false.
     """
     true_false_guarded = factbase.copy()
-    sides = [[true_false_guarded.encode(clause) for clause in side.clauses]
-             for side in (prop, _prop)]
+    sides: list[list[set[int]]] = [
+        [true_false_guarded.encode(clause) for clause in side.clauses]
+        for side in (prop, _prop)]
 
     # One past the last predicate, so the selector is a variable of its own.
     selector = true_false_guarded.add_variable(Symbol("selector"))
@@ -177,13 +184,13 @@ _SIGN_RELATION = {
 _RELATIONS = ALLOWED_PRED.keys() | {Q.ne}
 
 
-def _asked_about(prop):
+def _asked_about(prop: CNF) -> set:
     """The expressions *prop* is a statement about."""
     return {arg for pred in prop.all_predicates()
             if isinstance(pred, AppliedPredicate) for arg in pred.arguments}
 
 
-def _add_arithmetic(enc, asked_about=frozenset()):
+def _add_arithmetic(enc: EncodedCNF, asked_about: set = frozenset()) -> Any:
     """Give the predicates of *enc* that are linear constraints an arithmetic
     reading, and return the ``LRASolver`` that reads them, or ``None``.
 
@@ -201,56 +208,56 @@ def _add_arithmetic(enc, asked_about=frozenset()):
     ``Q.gt(I, 1)`` and its like out of the theory instead of handing it a
     variable that is not a real number.
     """
-    candidates = []
-    settled = []
-    relational = False
+    candidates: list[tuple] = []
+    settled: list[set[int]] = []
+    relational: bool = False
     for pred in list(enc.encoding):
-        relation = _as_relation(pred)
+        relation: tuple[Any, Basic, Basic] | None = _as_relation(pred)
         if relation is None:
             continue
         function, lhs, rhs = relation
 
-        guards = _realness_guards(enc, (lhs, rhs))
+        guards: set[int] | None = _realness_guards(enc, (lhs, rhs))
         if guards is None:
             continue
 
         if not (lhs.free_symbols or rhs.free_symbols):
             # There is nothing for a theory solver to decide here.
-            holds = _settle(function, lhs, rhs)
+            holds: bool | None = _settle(function, lhs, rhs)
             if holds is not None:
                 var = enc.encoding[pred]
                 settled.append(guards | {var if holds else -var})
             continue
 
-        terms = (_terms(lhs) or []) + (_terms(rhs) or [])
-        if terms is None:
+        terms: list[Basic] = (_terms(lhs) or []) + (_terms(rhs) or [])
+        if not terms:
             continue
 
         # The question first, then the simple terms: a term the theory cannot
         # take should not be the one that claims a symbol the others need.
-        rank = (lhs not in asked_about and rhs not in asked_about,
+        rank: tuple[bool, int, int] = (lhs not in asked_about and rhs not in asked_about,
                 max(len(term.free_symbols) for term in terms), len(terms))
         candidates.append((rank, enc.encoding[pred], function, lhs, rhs, guards, terms))
         relational = relational or pred.function in _RELATIONS
 
-    lra = None
+    lra: Any = None
     if relational or _relates_expressions(candidates):
         lra = _bridge(enc, candidates)
     enc.data += settled
     return lra
 
 
-def _bridge(enc, candidates):
+def _bridge(enc: EncodedCNF, candidates: list) -> Any:
     """Tie each of *candidates* to a variable the theory solver reads as a
     constraint, and return the solver, or ``None`` if it cannot be built.
     """
-    atoms = {}
-    owner = {}
-    clauses = []
+    atoms: dict[Any, int] = {}
+    owner: dict[Any, Basic] = {}
+    clauses: list[set[int]] = []
 
-    def atom(function, lhs, rhs, terms):
+    def atom(function, lhs, rhs, terms) -> int | None:
         """The variable the theory solver reads as ``function(lhs, rhs)``."""
-        key = function(lhs, rhs)
+        key: Any = function(lhs, rhs)
         if key not in atoms:
             if not _claim(owner, terms):
                 return None
@@ -288,7 +295,7 @@ def _bridge(enc, candidates):
     return lra
 
 
-def _settle(function, lhs, rhs):
+def _settle(function, lhs, rhs) -> bool | None:
     """Whether ``function(expr, 0)`` holds for a constant *expr*, or ``None``
     when that cannot be decided.
     """
@@ -305,7 +312,7 @@ def _settle(function, lhs, rhs):
 
 
 
-def _as_relation(pred):
+def _as_relation(pred) -> tuple[Any, Basic, Basic] | None:
     """Return *pred* as ``(relation, lhs, rhs)``, or ``None`` when it does not
     say anything about linear real arithmetic.
     """
@@ -324,7 +331,7 @@ def _as_relation(pred):
     return function, lhs, rhs
 
 
-def _realness_guards(enc, sides):
+def _realness_guards(enc: EncodedCNF, sides: tuple[Basic, Basic]) -> set[int] | None:
     """Return the literals that make the guard false, one for each side whose
     realness is not already settled, or ``None`` if no guard can open.
 
@@ -332,14 +339,14 @@ def _realness_guards(enc, sides):
     be -- an infinity, or an imaginary number -- leaves a guard that could
     never open, so the caller has nothing to encode.
     """
-    guards = set()
+    guards: set[int] = set()
     for side in sides:
         # UndefinedKind is checked for as well since the kind system isn't
         # fully implemented; Abs(x) and sin(x) have no kind of their own.
         if side.kind not in (NumberKind, UndefinedKind) or side is S.NaN:
             return None
 
-        real = side.is_real
+        real: bool | None = side.is_real
         if real is True:
             continue
         if real is False:
@@ -350,11 +357,11 @@ def _realness_guards(enc, sides):
     return guards
 
 
-def _terms(expr):
+def _terms(expr: Basic) -> list[Basic] | None:
     """The terms the theory solver will read *expr* as a sum of, or ``None``
     when there are none for it to read.
     """
-    terms = []
+    terms: list[Basic] = []
     for term in Add.make_args(expr):
         _, rest = term.as_coeff_Mul()
         if rest.free_symbols:
@@ -363,7 +370,7 @@ def _terms(expr):
     return terms or None
 
 
-def _difference_terms(lhs, rhs):
+def _difference_terms(lhs: Basic, rhs: Basic) -> tuple[Basic, ...] | None:
     """Return additive terms for ``lhs - rhs`` without constructing a sum."""
     try:
         return Add.make_args(lhs) + tuple(-term for term in Add.make_args(rhs))
@@ -371,7 +378,7 @@ def _difference_terms(lhs, rhs):
         return None
 
 
-def _claim(owner, terms):
+def _claim(owner: dict, terms: list[Basic]) -> bool:
     """Give each symbol of *terms* to the term it appears in, refusing when
     another term already has it.
 
@@ -390,7 +397,7 @@ def _claim(owner, terms):
     return True
 
 
-def _relates_expressions(candidates):
+def _relates_expressions(candidates: list) -> bool:
     """Whether two of *candidates* constrain different expressions built from
     a common symbol.
 
@@ -399,7 +406,7 @@ def _relates_expressions(candidates):
     time and answer nothing new. A binary relation is not in the known facts
     at all, so its presence is reason enough on its own.
     """
-    seen = []
+    seen: list[Basic] = []
     for candidate in candidates:
         expr = candidate[3]
         if any(expr != other and expr.free_symbols & other.free_symbols
