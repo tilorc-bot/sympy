@@ -18,7 +18,7 @@ from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
 
 from sympy.logic.algorithms.z3_wrapper import z3_satisfiable
 from sympy.assumptions.cnf import CNF, EncodedCNF
-from sympy.logic.algorithms.lra_theory import LRASolver
+from sympy.logic.algorithms.lra_theory import LRASolver, assume_real
 from sympy.logic.tests.test_lra_theory import make_random_problem
 from sympy.core.random import randint, choice
 
@@ -172,7 +172,7 @@ def test_satsolver_propagate():
     x = symbols('x')
     enc = EncodedCNF()
     enc.from_cnf(CNF.from_prop((x > 1) & (x < 0)))
-    lra, conflicts = LRASolver.from_encoded_cnf(enc)
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc))
     s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
                   lra_theory=lra)
     assert s.propagate() == IpasirStatus.UNSATISFIABLE
@@ -182,7 +182,7 @@ def test_satsolver_propagate():
     # theory as well, so propagating on its own cannot report satisfiable.
     enc = EncodedCNF()
     enc.from_cnf(CNF.from_prop((x > 1) & (x < 5)))
-    lra, conflicts = LRASolver.from_encoded_cnf(enc)
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc))
     s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
                   lra_theory=lra)
     assert s.propagate() == IpasirStatus.UNKNOWN
