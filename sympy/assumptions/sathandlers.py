@@ -2,9 +2,13 @@ from __future__ import annotations
 from collections import defaultdict
 
 from sympy.assumptions.ask import Q
+from sympy.assumptions.assume import AppliedPredicate
 from sympy.core import (Add, Mul, Pow, Number, NumberSymbol, Symbol)
+from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.core.numbers import ImaginaryUnit
+from sympy.core.singleton import S
 from sympy.functions.elementary.complexes import Abs
+from sympy.logic.algorithms.lra_theory import LRA_PRED, lra_ne
 from sympy.logic.boolalg import (Equivalent, And, Or, Implies)
 from sympy.matrices.expressions import MatMul
 
@@ -192,6 +196,103 @@ class ClassFactRegistry:
 
 class_fact_registry = ClassFactRegistry()
 
+
+### Arithmetic facts ###
+
+# Every predicate that has a reading as real arithmetic, as the relation it
+# becomes and the right-hand side to read it against. A sign predicate is a
+# relation against zero, which is all there is to say about one.
+_ARITHMETIC_READING = {
+    Q.eq: (Q.eq, None), Q.lt: (Q.lt, None), Q.gt: (Q.gt, None),
+    Q.le: (Q.le, None), Q.ge: (Q.ge, None), Q.ne: (Q.ne, None),
+
+    Q.positive: (Q.gt, S.Zero), Q.negative: (Q.lt, S.Zero),
+    Q.zero: (Q.eq, S.Zero), Q.nonzero: (Q.ne, S.Zero),
+    Q.nonpositive: (Q.le, S.Zero), Q.nonnegative: (Q.ge, S.Zero),
+
+    # The extended predicates admit +-oo, which the guard below rules out, so
+    # under it they say exactly what their plain counterparts say. They are
+    # here because a query reaches them anyway: `ask(Q.eq(x, y), ...)` becomes
+    # `Q.zero(x - y)`, whose negation the known facts state as
+    # `Q.extended_nonzero(x - y)`, and that is the atom the theory refutes.
+    Q.extended_positive: (Q.gt, S.Zero),
+    Q.extended_negative: (Q.lt, S.Zero),
+    Q.extended_nonpositive: (Q.le, S.Zero),
+    Q.extended_nonnegative: (Q.ge, S.Zero),
+    Q.extended_nonzero: (Q.ne, S.Zero),
+}
+
+
+def arithmetic_facts(pred):
+    """Return the bridge from *pred* to the theory's own atoms, or ``()``.
+
+    Explanation
+    ===========
+
+    ``Q.gt(x, 1)`` and ``lra_gt(x, 1)`` are not the same claim: the first
+    holds of ``oo`` and the second says ``x - 1`` is a positive real number.
+    The fact tying them together is therefore stated under a guard saying
+    that the sides are real, which is what leaves ``Q.gt(x, 1)`` with
+    ``Q.imaginary(x)``, and ``Q.gt(I, 1)``, opaque to the theory.
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.sathandlers import arithmetic_facts
+    >>> arithmetic_facts(Q.positive(x))
+    (Implies(Q.real(x), Equivalent(Q.positive(x), lra_gt(x, 0))),)
+    >>> arithmetic_facts(Q.prime(x))
+    ()
+
+    """
+    if not isinstance(pred, AppliedPredicate):
+        return ()
+    reading = _ARITHMETIC_READING.get(pred.function)
+    if reading is None:
+        return ()
+
+    relation, rhs = reading
+    if rhs is None:
+        lhs, rhs = pred.arguments
+    else:
+        lhs = pred.arguments[0]
+
+    guard = _arithmetic_realness_guard(lhs, rhs)
+    if guard is None:
+        return ()
+    # A disequality is not a bound, so the theory reads it as a disjunction;
+    # `lra_ne` is where that rule is written down.
+    arithmetic = lra_ne(lhs, rhs) if relation is Q.ne else LRA_PRED[relation](lhs, rhs)
+    facts = [Implies(guard, Equivalent(pred, arithmetic))]
+    if relation is Q.eq:
+        # `assert_lit` has no single bound to assert for a negated equality
+        # and so ignores one, which would leave `~Q.eq(x, y)` saying nothing
+        # to the theory at all. Say the negation separately, as the
+        # disjunction the theory can read.
+        facts.append(Implies(guard, Equivalent(~pred, lra_ne(lhs, rhs))))
+    return tuple(facts)
+
+
+def _arithmetic_realness_guard(*sides):
+    """The realness condition under which *sides* can be read by LRA.
+
+    ``None`` means that the predicate has no arithmetic interpretation. A
+    side known real does not need a guard; a side known non-real must never be
+    handed to the real-arithmetic theory.
+    """
+    guards = []
+    for side in sides:
+        # UndefinedKind is included until every scalar expression has a more
+        # precise kind (for example, Abs(x) and sin(x)).
+        if side.kind not in (NumberKind, UndefinedKind) or side is S.NaN:
+            return None
+        if side.is_real is False:
+            return None
+        if side.is_real is not True:
+            guards.append(Q.real(side))
+    return And(*guards)
 
 
 ### Class fact registration ###

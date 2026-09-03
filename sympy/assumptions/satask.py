@@ -8,11 +8,21 @@ from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.sathandlers import class_fact_registry
+from sympy.assumptions.sathandlers import (_ARITHMETIC_READING,
+    arithmetic_facts, class_fact_registry)
+from sympy.logic.algorithms.lra_theory import LRA_PRED, LRASolver
 from sympy.core import oo
 from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
 from sympy.assumptions.cnf import CNF, EncodedCNF
 from sympy.matrices.kind import MatrixKind
+
+# the atoms the theory reads, as `arithmetic_facts` emits them
+_LRA_PREDICATES = frozenset(LRA_PRED.values())
+
+# and the predicates it reads them from that relate two expressions, rather
+# than stating the sign of one
+_RELATION_PREDICATES = frozenset(pred for pred, (_, rhs)
+                                 in _ARITHMETIC_READING.items() if rhs is None)
 
 
 def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
@@ -82,9 +92,10 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
         raise ValueError("Inconsistent assumptions")
 
     true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
+    lra, conflicts = _lra_theory(true_false_guarded)
 
     # Run `propogate()` on the assumptions
-    solver = _solver_for(true_false_guarded, selector)
+    solver = _solver_for(true_false_guarded, selector, conflicts, lra)
     if solver.propagate() == IpasirStatus.UNSATISFIABLE:
         raise ValueError("Inconsistent assumptions")
 
@@ -110,7 +121,8 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     # `assume()`, and one search saved is not worth being the only caller that
     # has to know that.
     witnessed = solver.val(selector)
-    other_side = _solver_for(true_false_guarded, selector, [{-witnessed}])
+    other_side = _solver_for(true_false_guarded, selector,
+                             conflicts + [{-witnessed}], lra)
     other = other_side.solve() == IpasirStatus.SATISFIABLE
 
     can_be_true = witnessed > 0 or other
@@ -132,14 +144,78 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
         raise ValueError("Inconsistent assumptions")
 
 
-def _solver_for(true_false_guarded, selector, extra_clauses=()):
+def _solver_for(true_false_guarded, selector, extra_clauses=(), lra=None):
     """A solver over *true_false_guarded*, whose last variable is *selector*.
 
-    *extra_clauses* are added to the ones the encoding already carries.
+    *extra_clauses* are added to the ones the encoding already carries. *lra*
+    is handed over as it was built, since the solver about to read it starts
+    from the root level.
     """
+    if lra is not None:
+        lra.reset()
     return SATSolver(true_false_guarded.data + list(extra_clauses),
                      range(1, selector + 1), set(),
-                     true_false_guarded.symbols + [selector])
+                     true_false_guarded.symbols + [selector], lra_theory=lra)
+
+
+def _lra_theory(encoded_cnf):
+    """Build a theory solver for *encoded_cnf*, if its atoms could relate
+    anything, along with the clauses it knows before any search.
+
+    Explanation
+    ===========
+
+    Sign predicates about one expression are already related to each other by
+    the known facts, and the bridge gives each of them the atom the theory
+    would, so a problem built out of those alone costs time and learns
+    nothing new: `Q.positive(x)` contradicting `Q.negative(x)` is something
+    the SAT solver settles on its own. Two of them about different
+    expressions built from a common symbol are another matter, and so is a
+    relation -- `Q.le(x, 0)` appears in no known fact at all, so one of those
+    is reason enough on its own.
+
+    Whether a predicate is one or the other is asked of the predicate the
+    bridge read, not of the atom it produced: `Q.le(x, 0)` and
+    `Q.nonpositive(x)` become the same atom and are not the same question.
+
+    """
+    sides = []
+    relation = False
+    for pred in encoded_cnf.encoding:
+        if not isinstance(pred, AppliedPredicate):
+            continue
+        if pred.function in _LRA_PREDICATES:
+            sides.append(pred.arguments[0])
+        elif pred.function in _RELATION_PREDICATES:
+            relation = True
+
+    if not sides:
+        return None, []
+    if not relation and not _relates_expressions(sides):
+        return None, []
+    return _build_lra_theory(encoded_cnf)
+
+
+def _build_lra_theory(encoded_cnf):
+    # satask reads the theory's verdict and never its model, so the atoms it
+    # cannot hold as independent variables are relaxed rather than dropped;
+    # see `LRASolver.from_encoded_cnf`.
+    lra, conflicts = LRASolver.from_encoded_cnf(encoded_cnf, realizable_models=False)
+    return lra, [set(clause) for clause in conflicts + lra.bound_conflicts()]
+
+
+def _relates_expressions(exprs):
+    """Whether two of *exprs* are different expressions built from a common
+    symbol.
+    """
+    seen = []
+    for expr in exprs:
+        if any(expr != other and expr.free_symbols & other.free_symbols
+               for other in seen):
+            return True
+        seen.append(expr)
+
+    return False
 
 
 def _encode_with_selector(prop, _prop, factbase):
@@ -187,6 +263,45 @@ def extract_predargs(proposition, assumptions=None):
     {x, y, Abs(x*y)}
 
     """
+    return predicate_args(extract_predicates(proposition, assumptions))
+
+
+def predicate_args(predicates):
+    """Return every expression in the arguments of *predicates*."""
+    exprs = set()
+    for key in predicates:
+        if isinstance(key, AppliedPredicate):
+            exprs |= set(key.arguments)
+        else:
+            exprs.add(key)
+    return exprs
+
+
+def extract_predicates(proposition, assumptions=None):
+    """
+    Extract every predicate of *proposition* and *assumptions* that is
+    relevant to *proposition*.
+
+    Parameters
+    ==========
+
+    proposition : sympy.assumptions.cnf.CNF
+
+    assumptions : sympy.assumptions.cnf.CNF, optional.
+
+    Examples
+    ========
+
+    >>> from sympy import Q, Abs
+    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.satask import extract_predicates
+    >>> from sympy.abc import x, y
+    >>> props = CNF.from_prop(Q.zero(Abs(x*y)))
+    >>> assump = CNF.from_prop(Q.zero(x))
+    >>> extract_predicates(props, assump) == {Q.zero(Abs(x*y)), Q.zero(x)}
+    True
+
+    """
     req_keys = find_symbols(proposition)
     keys = proposition.all_predicates()
     # XXX: We need this since True/False are not Basic
@@ -206,13 +321,7 @@ def extract_predargs(proposition, assumptions=None):
         req_keys |= tmp_keys
     keys |= {l for l in lkeys if find_symbols(l) & req_keys != set()}
 
-    exprs = set()
-    for key in keys:
-        if isinstance(key, AppliedPredicate):
-            exprs |= set(key.arguments)
-        else:
-            exprs.add(key)
-    return exprs
+    return keys
 
 def find_symbols(pred):
     """
@@ -317,6 +426,52 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     return newexprs - exprs, relevant_facts
 
 
+def get_relevant_predfacts(predicates, relevant_facts=None):
+    """
+    Extract the facts registered for the applied predicates in *predicates*.
+
+    Parameters
+    ==========
+
+    predicates : set of AppliedPredicate
+
+    relevant_facts : sympy.assumptions.cnf.CNF, optional
+        Return this with the extracted facts added to it.
+
+    Returns
+    =======
+
+    (predicates, relevant_facts)
+
+    predicates : set of AppliedPredicate
+        The predicates the extracted facts mention that were not given.
+
+    relevant_facts : sympy.assumptions.cnf.CNF
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.assumptions.satask import get_relevant_predfacts
+    >>> from sympy.abc import x
+    >>> new, facts = get_relevant_predfacts({Q.positive(x)})
+    >>> sorted(new, key=str)
+    [Q.real(x), lra_gt(x, 0)]
+
+    """
+    if not relevant_facts:
+        relevant_facts = CNF()
+
+    newpredicates = set()
+    for pred in predicates:
+        for fact in arithmetic_facts(pred):
+            newfact = CNF.to_CNF(fact)
+            relevant_facts = relevant_facts._and(newfact)
+            newpredicates |= newfact.all_predicates()
+
+    return newpredicates - predicates, relevant_facts
+
+
 def get_all_relevant_facts(proposition, assumptions,
         use_known_facts=True, iterations=oo):
     """
@@ -370,13 +525,22 @@ def get_all_relevant_facts(proposition, assumptions,
     all_exprs = set()
     while True:
         if i == 0:
-            exprs = extract_predargs(proposition, assumptions)
+            # Both passes read the same relevant predicates, so they are
+            # found once rather than once each.
+            predicates = extract_predicates(proposition, assumptions)
+            exprs = predicate_args(predicates)
         all_exprs |= exprs
         exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        predicates, relevant_facts = get_relevant_predfacts(predicates, relevant_facts)
+        # A predicate fact may name an expression nothing has classified yet
+        # -- `Q.real(x + y)` for `Q.positive(x + y)` -- so its arguments go
+        # back round with the rest. Without this a handler could only ever
+        # mention what it was handed, which is a rule nothing states.
+        exprs |= predicate_args(predicates) - all_exprs
         i += 1
         if i >= iterations:
             break
-        if not exprs:
+        if not exprs and not predicates:
             break
 
     if use_known_facts:
