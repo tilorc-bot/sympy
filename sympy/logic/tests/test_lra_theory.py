@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sympy.core.numbers import Rational, I, oo
+from sympy.core.numbers import Rational, I, oo, pi
 from sympy.core.relational import Eq
 from sympy.core.symbol import symbols
 from sympy.core.singleton import S
@@ -13,7 +13,7 @@ from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import cos
 from sympy.external import import_module
 
-from sympy.logic.algorithms.lra_theory import LRASolver, UnhandledInput, LRARational, HANDLE_NEGATION, \
+from sympy.logic.algorithms.lra_theory import LRASolver, LRARational, HANDLE_NEGATION, \
     LRA_PRED, assume_real, \
     _sep_const_terms, _sep_const_coeff
 from sympy.core.random import random, choice, randint
@@ -416,13 +416,23 @@ def test_negation():
     assert all(i > 0 for i in conflict)
 
 
-def test_unhandled_input():
-    # A bound the solver has no way to represent is still refused outright:
-    # unlike an atom it cannot read, it is not something the rest of the
-    # problem can be solved without.
-    bf = Q.gt(x, sqrt(2))
-    enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True))
+def test_non_rational_atoms_are_skipped():
+    # Every number the tableau holds is rational, so an atom that would put
+    # one there is skipped like any other atom the theory cannot read --
+    # rather than costing the formula it stands in, as it once did.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x, sqrt(2)))
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    assert (lra.atom_id_to_boundaries, conflicts) == ({}, [])
+
+    for bad in [Q.gt(x, sqrt(2)), Q.gt(sqrt(2)*x, 1), Q.gt(x, pi),
+                Q.gt(x + I*y, 1), Q.gt(I*x, 1)]:
+        enc = boolean_formula_to_encoded_cnf(bad & Q.gt(z, 1))
+        assert kept_atoms(enc) == {enc.encoding[Q.gt(z, 1)]}
+
+    # An irrational coefficient the bound survives is not a problem: the
+    # boundary it gives is a rational one either way.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(sqrt(2)*x, 0))
+    assert kept_atoms(enc) == {enc.encoding[Q.gt(sqrt(2)*x, 0)]}
 
 
 def test_skipped_atoms():
