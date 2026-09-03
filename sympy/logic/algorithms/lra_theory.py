@@ -304,6 +304,26 @@ def _normalize_prop(prop):
     const = const / var_coeff
     # Example: [2x, 3y] <- Add.make_args(2x + 3y)
     terms = Add.make_args(vars)
+
+    # Every number the tableau holds has to be rational -- the bound of each
+    # boundary, and each entry of the matrix -- so an atom whose numbers are
+    # not is one more the theory cannot read. It is skipped here alongside
+    # the others rather than refused once the matrix exists: refusing cost
+    # the caller every other atom of the formula as well, and since satask
+    # builds a solver out of whatever a user asked about, the refusal came
+    # back out of `ask()` and `refine()` as an exception.
+    if not isinstance(const, Rational):
+        return None
+    # One term at a time, because `_sep_const_coeff` of an `Add` returns 1:
+    # the `I` of `x + I*y` is in no coefficient but its own term's.
+    if any(not isinstance(_sep_const_coeff(term)[1], Rational) for term in terms):
+        return None
+    # `var_coeff` was divided out and is not in the matrix, but its sign is
+    # which way the boundary points, so it has to have one. `I*x` reaches
+    # here as `x` with a coefficient of `I`.
+    if var_coeff.is_extended_real is not True:
+        return None
+
     return vars, const, var_coeff, terms
 
 
@@ -368,11 +388,11 @@ class LRASolver():
         self.run_checks = testing_mode
         self.s_subs = s_subs  # used only for test_lra_theory.test_random_problems
 
-        if any(not isinstance(a, Rational) for a in A):
-            raise UnhandledInput("Non-rational numbers are not handled")
-        if not all(isinstance(b.bound, Rational)
-               for bs in atom_id_to_boundaries.values() for b in bs):
-            raise UnhandledInput("Non-rational numbers are not handled")
+        # `_normalize_prop` skips whatever it cannot give rational numbers
+        # for, so by here these hold of every atom that was kept.
+        assert all(isinstance(a, Rational) for a in A)
+        assert all(isinstance(b.bound, Rational)
+                   for bs in atom_id_to_boundaries.values() for b in bs)
         m, n = len(slack_variables), len(slack_variables)+len(nonslack_variables)
         if m != 0:
             assert A.shape == (m, n)
