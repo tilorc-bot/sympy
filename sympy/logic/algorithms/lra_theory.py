@@ -167,8 +167,6 @@ class _LRARelation(Predicate):
     these, or ``LRA_PRED`` to build one directly.
 
     """
-    __slots__ = ()
-
     def __new__(cls, name):
         if not isinstance(name, Str):
             name = Str(name)
