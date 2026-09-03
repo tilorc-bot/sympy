@@ -320,6 +320,10 @@ def extract_predicates(proposition, assumptions=None):
         tmp_keys = tmp - req_keys
         req_keys |= tmp_keys
     keys |= {l for l in lkeys if find_symbols(l) & req_keys != set()}
+    # A relation between constants is relevant to itself: Q.gt(S(3), S(2))
+    # has no symbols to share with the proposition but still has a truth
+    # value the theory can supply.
+    keys |= {l for l in lkeys if not find_symbols(l)}
 
     return keys
 
