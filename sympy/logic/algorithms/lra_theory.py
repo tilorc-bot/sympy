@@ -133,6 +133,7 @@ from sympy.core.singleton import S
 from sympy.core.numbers import Rational, oo
 from sympy.matrices.dense import Matrix
 from sympy.utilities.iterables import sift
+from sympy.core.sorting import default_sort_key
 from collections import defaultdict
 import math
 
@@ -358,15 +359,19 @@ def _select_atoms(atoms):
     problem, and neither can the two terms of ``x + x**2``. Atoms are
     considered simplest first -- fewest symbols in a term, then fewest terms
     -- and one that would claim a symbol some other atom's term already owns
-    is dropped. Ties are broken by the order the atoms are given in, so the
-    selection is a function of the encoding.
+    is dropped. Ties are broken by ``default_sort_key`` of the atom's
+    content (everything but the atom id, which follows the encoding's
+    hash-seeded iteration order), so the selection does not depend on
+    PYTHONHASHSEED.
 
     Dropping an atom leaves the solver with one constraint fewer, which can
     only cost it conflicts it would otherwise have found. Refusing the whole
     formula, which is what an earlier version did, costs the caller every
     other atom in it as well.
     """
-    order = sorted(range(len(atoms)), key=lambda i: (_atom_complexity(atoms[i]), i))
+    order = sorted(range(len(atoms)),
+                   key=lambda i: (_atom_complexity(atoms[i]),
+                                  default_sort_key(atoms[i][1:])))
     owner = {}  # symbol -> the term that owns it
     kept = []
     for i in order:
