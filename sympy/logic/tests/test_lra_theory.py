@@ -843,3 +843,25 @@ def test_backtracking_empty_history():
     lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     raises(ValueError, lambda: lra.backtrack())
+
+def test_relaxed_nonlinear_atoms():
+    # With realizable_models=False the terms are no longer variable disjoint:
+    # x*y becomes a column of its own rather than costing one of the atoms.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x*y, 0) & Q.gt(x, 1))
+    assert kept_atoms(enc) == {enc.encoding[Q.gt(x, 1)]}
+
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), realizable_models=False)
+    assert set(lra.atom_id_to_boundaries) == set(enc.encoding.values())
+
+    # The relaxation still refutes what is genuinely infeasible: it has all
+    # the constraints the disjoint problem had and more.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x*y, 0) & Q.lt(x*y, 0))
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), realizable_models=False)
+    assert lra.assert_lit(enc.encoding[Q.gt(x*y, 0)]) is None
+    assert lra.assert_lit(enc.encoding[Q.lt(x*y, 0)])[0] is False
+
+    # An atom nonlinear in itself is kept too.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x**2 + x, 2))
+    assert kept_atoms(enc) == set()
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), realizable_models=False)
+    assert set(lra.atom_id_to_boundaries) == set(enc.encoding.values())
