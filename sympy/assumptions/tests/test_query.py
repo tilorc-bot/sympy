@@ -1,6 +1,6 @@
 from __future__ import annotations
 from sympy.abc import t, w, x, y, z, n, k, m, p, i
-from sympy.assumptions import (ask, AssumptionsContext, Q)
+from sympy.assumptions import (ask, AssumptionsContext, Q, refine)
 from sympy.assumptions.assume import (assuming, global_assumptions, Predicate)
 from sympy.assumptions.ask import _ask_recursive
 from sympy.assumptions.cnf import CNF, Literal
@@ -2610,3 +2610,33 @@ def test_queries_require_satask():
     assert _ask_recursive(Q.real(x) | ~Q.real(x)) is True
     assert _ask_recursive(Q.real(x) & ~Q.real(x)) is False
     assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.positive(y)) is False
+
+
+def test_ask_arithmetic_assumptions():
+    R = Q.real
+    # Relations in the assumptions used to say nothing to ask(); now they are
+    # bridged to the theory solver's own atoms and read as arithmetic.
+    assert ask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z) & R(x) & R(y) & R(z)) is True
+    assert ask(Q.gt(x, y), Q.gt(x, 1) & Q.lt(y, 1) & R(x) & R(y)) is True
+    assert ask(Q.eq(x, y), Q.ge(x, y) & Q.le(x, y) & R(x) & R(y)) is True
+    assert ask(Q.gt(x + y, 0), Q.gt(x, 0) & Q.gt(y, 0) & R(x) & R(y)) is True
+    assert ask(Q.gt(2*x, 2), Q.gt(x, 1) & R(x)) is True
+    assert ask(Q.positive(x), Q.gt(x, 0) & R(x)) is True
+
+    # An atom the theory cannot read costs only itself, not the constraint
+    # standing next to it.
+    assert ask(Q.gt(x, 0), Q.gt(x*y, 0) & Q.gt(x, 1) & R(x) & R(y)) is True
+    assert ask(Q.gt(x, 0), Q.gt(Symbol('f'), 0) & Q.gt(x, 1) & R(x)) is True
+
+    # Q.gt says nothing about its arguments being real -- oo > 0 is True --
+    # so without a source for that the relation stays opaque.
+    assert ask(Q.positive(x), Q.gt(x, 0)) is None
+    assert ask(Q.gt(x, 1), Q.imaginary(x)) is None
+
+
+def test_ask_arithmetic_the_theory_cannot_hold():
+    # A bound that is not a rational number is skipped, so these answer
+    # rather than raising out of the theory solver.
+    assert ask(Q.positive(x), Q.gt(x, sqrt(2))) is None
+    assert ask(Q.positive(x), Q.gt(x, pi) & Q.real(x)) in (None, True)
+    assert refine(Abs(x), Q.gt(x, sqrt(2))) == Abs(x)
