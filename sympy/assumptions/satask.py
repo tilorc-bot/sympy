@@ -84,8 +84,7 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
 
     # Run `propogate()` on the assumptions
-    solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
-                       true_false_guarded.symbols + [selector])
+    solver = _solver_for(true_false_guarded, selector)
     if solver.propagate() == IpasirStatus.UNSATISFIABLE:
         raise ValueError("Inconsistent assumptions")
 
@@ -104,9 +103,15 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
         raise ValueError("Inconsistent assumptions")
 
     # The model settles the side it activated, so ask about the other one.
+    # A solver of its own, rather than `assume(-witnessed)` on the one that
+    # just answered: an assumption is a decision the search is not allowed to
+    # take back, so `_find_model` puts it on a level of its own that it makes
+    # by hand rather than through `_create_level`. Nothing else in sympy calls
+    # `assume()`, and one search saved is not worth being the only caller that
+    # has to know that.
     witnessed = solver.val(selector)
-    solver.assume(-witnessed)
-    other = solver.solve() == IpasirStatus.SATISFIABLE
+    other_side = _solver_for(true_false_guarded, selector, [{-witnessed}])
+    other = other_side.solve() == IpasirStatus.SATISFIABLE
 
     can_be_true = witnessed > 0 or other
     can_be_false = witnessed < 0 or other
@@ -125,6 +130,16 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
         # assumptions, global_assumptions, and relevant_facts are
         # inconsistent.
         raise ValueError("Inconsistent assumptions")
+
+
+def _solver_for(true_false_guarded, selector, extra_clauses=()):
+    """A solver over *true_false_guarded*, whose last variable is *selector*.
+
+    *extra_clauses* are added to the ones the encoding already carries.
+    """
+    return SATSolver(true_false_guarded.data + list(extra_clauses),
+                     range(1, selector + 1), set(),
+                     true_false_guarded.symbols + [selector])
 
 
 def _encode_with_selector(prop, _prop, factbase):
