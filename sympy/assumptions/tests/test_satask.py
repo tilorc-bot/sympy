@@ -1,15 +1,18 @@
 from __future__ import annotations
 from sympy.assumptions.ask import Q
-from sympy.core.numbers import (I, pi, E)
+from sympy.core.numbers import (I, oo, pi, E)
 from sympy.core.relational import (Eq, Gt)
+from sympy.core.function import Function
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols, Dummy
 from sympy.functions.elementary.complexes import Abs
+from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.logic.boolalg import Equivalent, Implies, Xor
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.satask import (satask, extract_predargs,
-    get_relevant_clsfacts)
+    extract_predicates, get_all_relevant_facts, get_relevant_clsfacts,
+    _lra_theory)
 from sympy.assumptions.sathandlers import class_fact_registry
 
 from sympy.testing.pytest import raises, XFAIL
@@ -434,3 +437,119 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_arithmetic_is_read_by_the_theory():
+    R = Q.real
+    assert satask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z) & R(x) & R(y) & R(z)) is True
+    assert satask(Q.gt(x, y), Q.gt(x, 1) & Q.lt(y, 1) & R(x) & R(y)) is True
+    # `assert_lit` has no bound for a negated equality, so the theory
+    # cannot refute `~Q.eq(x, y)` and satask leaves this one open;
+    # `ask` answers it through `Q.extended_nonzero(x - y)`.
+    assert satask(Q.eq(x, y), Q.ge(x, y) & Q.le(x, y) & R(x) & R(y)) is None
+    assert satask(Q.gt(x + y, 0), Q.gt(x, 0) & Q.gt(y, 0) & R(x) & R(y)) is True
+    assert satask(Q.gt(2*x, 2), Q.gt(x, 1) & R(x)) is True
+    assert satask(Q.lt(x, 0), Q.gt(x, 0) & R(x)) is False
+
+    # A sign predicate and the relation it is a reading of are the same atom,
+    # so this one is answered without any arithmetic at all.
+    assert satask(Q.positive(x), Q.gt(x, 0) & R(x)) is True
+    assert satask(Q.nonzero(x), Q.gt(x, 0) & R(x)) is True
+    assert satask(Q.extended_positive(x), Q.gt(x, 0) & R(x)) is True
+
+
+def test_arithmetic_needs_a_realness_source():
+    # Q.gt says nothing about its arguments being real -- oo > 0 is True --
+    # so without something saying they are, the theory is not entitled to
+    # read the relation and the answer stays open.
+    assert satask(Q.gt(x, 0)) is None
+    assert satask(Q.positive(x), Q.gt(x, 0)) is None
+    assert satask(Q.gt(x, z), Q.gt(x, y) & Q.gt(y, z)) is None
+
+    # and where the arguments are known not to be real, it never applies
+    assert satask(Q.gt(I, 1)) is None
+    assert satask(Q.gt(x, 1), Q.imaginary(x)) is None
+    assert satask(Q.positive(oo)) is False
+
+
+def test_extract_predicates():
+    props = CNF.from_prop(Q.zero(Abs(x*y)))
+    assump = CNF.from_prop(Q.zero(x) & Q.positive(z))
+    # z is not relevant to the proposition, so its predicate is not extracted
+    assert extract_predicates(props, assump) == {Q.zero(Abs(x*y)), Q.zero(x)}
+    assert extract_predargs(props, assump) == {x, Abs(x*y)}
+
+
+def test_arithmetic_between_constants():
+    assert satask(Q.gt(S(3), S(2))) is True
+    assert satask(Q.lt(S(3), S(2))) is False
+    assert satask(Q.eq(S(2), S(2))) is True
+    assert satask(Q.eq(x, x), Q.real(x)) is True
+
+
+def test_arithmetic_reading_of_non_numbers():
+    A = MatrixSymbol('A', 2, 2)
+    B = MatrixSymbol('B', 2, 2)
+    # A relation between operands the theory has no arithmetic for is left
+    # alone rather than bridged.
+    assert satask(Q.ne(A, B)) is None
+    assert satask(Q.eq(A, B)) is None
+
+
+def test_atom_the_theory_cannot_read_costs_only_itself():
+    R = Q.real
+    # f(1) > 0 is opaque, sqrt(2) is not rational, and x*y makes the problem
+    # nonlinear. None of them may cost the usable constraint alongside them.
+    f = Function('f')
+    assert satask(Q.gt(y, 0), Q.gt(f(1), 0) & Q.gt(y, 1) & R(y)) is True
+    assert satask(Q.gt(y, 0), Q.gt(x, sqrt(2)) & Q.gt(y, 1) & R(x) & R(y)) is True
+    assert satask(Q.gt(x, 0), Q.gt(x*y, 0) & Q.gt(x, 1) & R(x) & R(y)) is True
+
+
+def test_lra_theory_is_not_built_without_something_to_relate():
+    R = Q.real
+    factbase = _factbase(Q.positive(x), Q.positive(x) & R(x))
+    assert _lra_theory(factbase)[0] is None
+
+    # two sign predicates over expressions sharing a symbol do relate
+    factbase = _factbase(Q.positive(x), Q.positive(x) & Q.positive(x*y) & R(x) & R(y))
+    assert _lra_theory(factbase)[0] is not None
+
+    # and a relation is reason enough on its own
+    factbase = _factbase(Q.gt(x, 1), Q.gt(x, 1) & R(x))
+    assert _lra_theory(factbase)[0] is not None
+
+    # nothing arithmetic at all
+    factbase = _factbase(Q.even(x), Q.integer(x))
+    assert _lra_theory(factbase)[0] is None
+
+
+def _factbase(proposition, assumptions):
+    """The encoding `check_satisfiability` would be given for this query."""
+    props = CNF.from_prop(proposition)
+    assumptions = CNF.from_prop(assumptions)
+    sat = get_all_relevant_facts(props, assumptions)
+    sat.add_from_cnf(assumptions)
+    return sat
+
+
+def test_large_factbase_terminates():
+    # The theory's own conflicts are handed to the SAT solver up front, so a
+    # query this size does not spend the search rediscovering one of them.
+    R = Q.real
+    assert satask(~Q.eq(1, x + y),
+                  R(x) & R(y) & Q.ne(1, x + y) & ~Q.eq(1, 2*x)
+                  & ~Q.positive(x - y)) in (None, True, False)
+
+
+def test_inconsistent_constant_assumption():
+    # A relation between constants is relevant to itself, so a false one in
+    # the assumptions makes the context inconsistent even though it shares no
+    # symbol with the proposition.
+    R = Q.real
+    raises(ValueError, lambda: satask(Q.gt(x, 0), Q.gt(S(2), S(3))))
+    raises(ValueError, lambda: satask(Q.positive(x), Q.gt(S(2), S(3)) & R(x)))
+    raises(ValueError, lambda: satask(Q.real(x), ~Q.eq(S(2), S(2))))
+    # the consistent direction answers instead of raising
+    assert satask(Q.gt(x, 0), Q.gt(S(3), S(2)) & R(x) & Q.gt(x, 1)) is True
+
