@@ -265,14 +265,12 @@ def arithmetic_facts(pred):
     # A disequality is not a bound, so the theory reads it as a disjunction;
     # `lra_ne` is where that rule is written down.
     arithmetic = lra_ne(lhs, rhs) if relation is Q.ne else LRA_PRED[relation](lhs, rhs)
-    facts = [Implies(guard, Equivalent(pred, arithmetic))]
-    if relation is Q.eq:
-        # `assert_lit` has no single bound to assert for a negated equality
-        # and so ignores one, which would leave `~Q.eq(x, y)` saying nothing
-        # to the theory at all. Say the negation separately, as the
-        # disjunction the theory can read.
-        facts.append(Implies(guard, Equivalent(~pred, lra_ne(lhs, rhs))))
-    return tuple(facts)
+    # One fact, and only this one.  `assert_lit` has no single bound to assert
+    # for a negated equality and so ignores one; saying the negation separately
+    # as `Equivalent(~pred, lra_ne(lhs, rhs))` would tell the theory about it,
+    # but it gives every equality two more atoms for the search to assign, and
+    # `ask(Q.eq(x, z), Q.eq(x, y) & Q.eq(y, z))` goes from 0.1s to minutes.
+    return (Implies(guard, Equivalent(pred, arithmetic)),)
 
 
 def _arithmetic_realness_guard(*sides):
