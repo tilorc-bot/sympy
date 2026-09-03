@@ -412,7 +412,7 @@ class LRASolver():
         self.bound_history = [BoundLevel()]
 
     @staticmethod
-    def from_encoded_cnf(encoded_cnf, testing_mode=False):
+    def from_encoded_cnf(encoded_cnf, testing_mode=False, realizable_models=True):
         """
         Creates an LRASolver from an EncodedCNF object
         and a list of conflict clauses for propositions
@@ -439,6 +439,25 @@ class LRASolver():
         testing_mode : bool
             Setting testing_mode to True enables some slow assert statements
             and sorting to reduce nonterministic behavior.
+
+        realizable_models : bool
+            Whether a model this solver reports has to be one real numbers
+            could produce. The terms it takes as its variables are variable
+            disjoint when this is ``True``, which is what ``_select_atoms``
+            makes them by dropping atoms; ``x*y`` and ``x`` cannot then be
+            columns of the same problem. When it is ``False`` every atom is
+            kept and ``x*y`` becomes a column of its own, unconnected to
+            ``x`` and ``y``.
+
+            That second problem is a relaxation of the first: every
+            assignment to the symbols gives each column a value and
+            satisfies every row, so its solutions include all of the real
+            ones and some that are not real at all -- ``x = 0`` with
+            ``x*y > 0``, say. A caller that reads a model has to say
+            ``True`` here; one that only trusts ``check()`` reporting
+            *unsatisfiable* -- infeasible under the relaxation is infeasible
+            in the reals too -- can say ``False`` and keep the atoms that
+            would otherwise have been dropped.
 
         Returns
         =======
@@ -530,7 +549,10 @@ class LRASolver():
 
             atoms.append((atom_id, prop.function) + normalized)
 
-        for atom_id, function, vars, const, var_coeff, terms in _select_atoms(atoms):
+        if realizable_models:
+            atoms = _select_atoms(atoms)
+
+        for atom_id, function, vars, const, var_coeff, terms in atoms:
             for term in terms:
                 term, _ = _sep_const_coeff(term)
                 assert len(term.free_symbols) > 0
@@ -565,11 +587,12 @@ class LRASolver():
                 b = Boundary(var_to_lra_var[var], -const, upper, strict)
                 atom_id_to_boundaries[atom_id] = [b]
 
-        # `_select_atoms` has already dropped whatever was not linear
         fs = [v.free_symbols for v in nonbasic + basic]
         assert all(len(syms) > 0 for syms in fs)
-        fs_count = sum(len(syms) for syms in fs)
-        assert len(fs) == 0 or len(set.union(*fs)) == fs_count
+        if realizable_models:
+            # `_select_atoms` has already dropped whatever was not linear
+            fs_count = sum(len(syms) for syms in fs)
+            assert len(fs) == 0 or len(set.union(*fs)) == fs_count
 
         A, _ = linear_eq_to_matrix(A, nonbasic + basic)
         # matrix A is guaranteed to able to be simplified
