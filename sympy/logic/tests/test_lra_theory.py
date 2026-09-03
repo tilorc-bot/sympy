@@ -844,6 +844,46 @@ def test_backtracking_empty_history():
 
     raises(ValueError, lambda: lra.backtrack())
 
+def test_bound_conflicts():
+    # Every conflict `assert_lit` can report is a pair of bounds on one
+    # variable that have crossed, and which pairs those are follows from the
+    # boundaries alone.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x, 1) & Q.lt(x, 0) & Q.gt(y, 1))
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    gt1, lt0 = enc.encoding[Q.gt(x, 1)], enc.encoding[Q.lt(x, 0)]
+    assert lra.bound_conflicts() == [sorted([-gt1, -lt0], key=abs)]
+
+    # asserting the pair really is what that clause rules out
+    assert lra.assert_lit(gt1) is None
+    assert lra.assert_lit(lt0)[0] is False
+
+    # An equality is only ever asserted positively, so only its positive
+    # literal appears.
+    enc = boolean_formula_to_encoded_cnf(Q.eq(x, 1) & Q.gt(x, 2))
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    eq1, gt2 = enc.encoding[Q.eq(x, 1)], enc.encoding[Q.gt(x, 2)]
+    assert lra.bound_conflicts() == [sorted([-eq1, -gt2], key=abs)]
+
+
+def test_bound_conflicts_are_what_assert_lit_refuses():
+    # The clauses are meant to be exactly the pairs the search would
+    # otherwise have to find for itself, so ask `assert_lit` about every one.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x, 1) & Q.lt(x, 5) & Q.gt(y, 1)
+                                         & Q.eq(x, 2) & Q.lt(y, 0) & Q.ge(x, 5))
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    clauses = {frozenset(clause) for clause in lra.bound_conflicts()}
+
+    literals = [lit for atom_id in sorted(lra.atom_id_to_boundaries)
+                for lit in (atom_id, -atom_id)]
+    for first, second in itertools.combinations(literals, 2):
+        if abs(first) == abs(second):
+            continue
+        lra.reset()
+        conflict = lra.assert_lit(first) or lra.assert_lit(second)
+        refused = conflict is not None and conflict[0] is False
+        assert refused == (frozenset({-first, -second}) in clauses), (first, second)
+    assert clauses  # the formula has to have some, or this proves nothing
+
 def test_relaxed_nonlinear_atoms():
     # With realizable_models=False the terms are no longer variable disjoint:
     # x*y becomes a column of its own rather than costing one of the atoms.

@@ -133,6 +133,7 @@ from sympy.core.singleton import S
 from sympy.core.numbers import Rational, oo
 from sympy.matrices.dense import Matrix
 from sympy.utilities.iterables import sift
+from collections import defaultdict
 import math
 
 
@@ -193,6 +194,19 @@ _lra_le = _LRARelation("lra_le")
 # the theory's own predicate for each relation of ALLOWED_PRED
 LRA_PRED = {Q.eq: _lra_eq, Q.gt: _lra_gt, Q.lt: _lra_lt,
             Q.le: _lra_le, Q.ge: _lra_ge}
+
+
+def lra_ne(lhs, rhs):
+    """``lhs != rhs``, as atoms this theory can read.
+
+    There is deliberately no ``_lra_ne``. A boundary is an upper or a lower
+    bound on one variable and a disequality is neither, so the theory reads
+    ``x != y`` as the two strict relations it is the disjunction of. Every
+    caller with a disequality to bridge needs that rule, so it is written
+    down once here rather than in each of them.
+    """
+    return _lra_gt(lhs, rhs) | _lra_lt(lhs, rhs)
+
 
 # the relational each one is normalized with, as in ALLOWED_PRED
 _PRED_RELATIONAL = {_lra_eq: Eq, _lra_gt: Gt, _lra_lt: Lt,
@@ -608,6 +622,67 @@ class LRASolver():
         solver = LRASolver(A, basic, nonbasic, atom_id_to_boundaries,
                            s_subs, testing_mode)
         return solver, conflicts
+
+    def bound_conflicts(self):
+        """
+        Return a conflict clause for each pair of literals whose bounds
+        cannot both hold.
+
+        Explanation
+        ===========
+
+        Every conflict `assert_lit` can report is a pair: `_assert_bound`
+        returns ``[-conflicting_lit, -literal]`` for an upper and a lower
+        bound on one variable that have crossed. Which pairs those are
+        follows from the boundaries alone, so they can be handed to the SAT
+        solver before the search rather than found again inside it, and a
+        search that never assigns such a pair never puts one to the theory.
+
+        That is worth doing because `dpll2` backtracks chronologically and
+        never forgets a clause: a conflict it reaches twice is a clause it
+        stores twice. A formula whose search keeps returning to one pair of
+        bounds can spend its time re-deriving that pair and growing the
+        clause database while it does.
+
+        Nothing here is a substitute for `check`, which is where the
+        conflicts between *several* bounds are found.
+
+        Examples
+        ========
+
+        >>> from sympy.assumptions.cnf import CNF, EncodedCNF
+        >>> from sympy.logic.algorithms.lra_theory import LRASolver, assume_real
+        >>> from sympy.abc import x
+        >>> enc = EncodedCNF()
+        >>> enc.from_cnf(CNF.from_prop((x > 1) & (x < 0)))
+        >>> lra, _ = LRASolver.from_encoded_cnf(assume_real(enc))
+        >>> lra.bound_conflicts()
+        [[-1, -2]]
+
+        """
+        bounds_of = defaultdict(list)
+        for atom_id, boundaries in self.atom_id_to_boundaries.items():
+            for literal in (atom_id, -atom_id):
+                negated = literal < 0
+                if negated and (not HANDLE_NEGATION or len(boundaries) > 1):
+                    # What `assert_lit` declines to assert: negation turned
+                    # off, and a negated equality, which is left whole to
+                    # the Boolean layer.
+                    continue
+                for boundary in boundaries:
+                    bound, upper = boundary.to_rational(is_negated=negated)
+                    bounds_of[boundary.var].append((literal, bound, upper))
+
+        clauses = set()
+        for bounds in bounds_of.values():
+            for i, (literal, bound, upper) in enumerate(bounds):
+                for other, other_bound, other_upper in bounds[i + 1:]:
+                    if upper == other_upper or abs(literal) == abs(other):
+                        continue
+                    hi, lo = (bound, other_bound) if upper else (other_bound, bound)
+                    if hi < lo:
+                        clauses.add((-literal, -other))
+        return [sorted(clause, key=abs) for clause in sorted(clauses)]
 
     def reset(self):
         """
