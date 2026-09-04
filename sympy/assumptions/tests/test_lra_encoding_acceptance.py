@@ -1,4 +1,6 @@
 """Acceptance cases for the LRA bridge. Shared between implementations."""
+from __future__ import annotations
+
 import subprocess
 import sys
 
@@ -7,6 +9,7 @@ from sympy.abc import x, y, z
 from sympy.assumptions.satask import satask
 from sympy.core.symbol import Symbol
 from sympy.matrices.expressions import MatrixSymbol
+from sympy.testing.pytest import skip_under_pyodide
 
 R = Q.real
 f = Symbol('f')
@@ -91,6 +94,7 @@ _DET = (
 )
 
 
+@skip_under_pyodide("Emscripten does not support subprocesses")
 def test_selection_does_not_depend_on_hash_seed():
     seen = set()
     for seed in ('0', '1', '2', '3', '5', '7', '11', '13'):
