@@ -13,9 +13,10 @@ Here's an example of how that would work:
     >>> from sympy.abc import x, y
     >>> f = ((x > 0) | (x < 0)) & (Eq(x, 0) | Eq(y, 1)) & (~Eq(y, 1) | Eq(1, 2))
 
-    First a preprocessing step should be done on f. During preprocessing,
-    f should be checked for any predicates such as `Q.prime` that can't be
-    handled. Also unequality like `~Eq(y, 1)` should be split.
+    First a preprocessing step should be done on f. Unequality like
+    `~Eq(y, 1)` should be split. Predicates such as `Q.prime` that the
+    solver has no reading for do not need to be removed: they simply go
+    unconstrained by the theory.
 
     I should mention that the paper says to split both equalities and
     unequality, but this implementation only requires that unequality
@@ -24,14 +25,17 @@ Here's an example of how that would work:
     >>> f = ((x > 0) | (x < 0)) & (Eq(x, 0) | Eq(y, 1)) & ((y < 1) | (y > 1) | Eq(1, 2))
 
     Then an LRASolver instance needs to be initialized with this formula.
+    The solver reads only its own predicates, so the encoding is translated
+    with `assume_real` first. That is the step where the caller claims that
+    the arguments of every relation in f are real numbers.
 
     >>> from sympy.assumptions.cnf import CNF, EncodedCNF
     >>> from sympy.assumptions.ask import Q
-    >>> from sympy.logic.algorithms.lra_theory import LRASolver
+    >>> from sympy.logic.algorithms.lra_theory import LRASolver, assume_real
     >>> cnf = CNF.from_prop(f)
     >>> enc = EncodedCNF()
     >>> enc.add_from_cnf(cnf)
-    >>> lra, conflicts = LRASolver.from_encoded_cnf(enc)
+    >>> lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc))
 
     Any immediate one-lital conflicts clauses will be detected here.
     In this example, `~Eq(1, 2)` is one such conflict clause. We'll
@@ -118,10 +122,12 @@ from sympy.matrices.dense import eye
 from sympy.assumptions import Predicate
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.ask import Q
+from sympy.assumptions.cnf import EncodedCNF
 from sympy.core import Dummy
 from sympy.core.mul import Mul
 from sympy.core.add import Add
-from sympy.core.relational import Eq, Ge, Gt, Le, Lt
+from sympy.core.relational import Eq, Ge, Gt, Le, Lt, Relational
+from sympy.core.symbol import Str
 from sympy.core.sympify import sympify
 from sympy.core.singleton import S
 from sympy.core.numbers import Rational, oo
@@ -136,11 +142,212 @@ class UnhandledInput(Exception):
     or non-rational numbers are present.
     """
 
-# predicates that LRASolver understands and makes use of
+# the relations that can be read as real arithmetic, and the relational
+# each one is normalized with. LRASolver reads the predicates of LRA_PRED
+# below rather than these; see _LRARelation.
 ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
+
+
+class _LRARelation(Predicate):
+    """
+    A relation that LRASolver reads as a constraint on real numbers.
+
+    Explanation
+    ===========
+
+    These predicates are deliberately not attached to ``Q``. ``Q.gt(x, y)``
+    says nothing about ``x`` and ``y`` being real numbers -- ``oo > 0`` is
+    ``True`` -- so a solver that reads it has to decide for itself whether
+    the arithmetic applies. ``_lra_gt(x, y)`` means "``x - y`` is a positive
+    real number" and nothing else, so only a caller that has already decided
+    the arguments are real numbers builds one, and ``from_encoded_cnf`` can
+    read one without checking anything about its arguments.
+
+    Use ``assume_real`` to translate an encoding of ordinary relations into
+    these, or ``LRA_PRED`` to build one directly.
+
+    """
+    __slots__ = ()
+
+    def __new__(cls, name):
+        if not isinstance(name, Str):
+            name = Str(name)
+        return super().__new__(cls, name)
+
+    @property
+    def name(self):
+        return self.args[0]
+
+    def _hashable_content(self):
+        return (self.name,)
+
+    def _sympystr(self, printer, *args):
+        # not "Q.lra_gt": there is no such attribute of Q to print
+        return str(self.name)
+
+
+_lra_eq = _LRARelation("lra_eq")
+_lra_gt = _LRARelation("lra_gt")
+_lra_lt = _LRARelation("lra_lt")
+_lra_ge = _LRARelation("lra_ge")
+_lra_le = _LRARelation("lra_le")
+
+# the theory's own predicate for each relation of ALLOWED_PRED
+LRA_PRED = {Q.eq: _lra_eq, Q.gt: _lra_gt, Q.lt: _lra_lt,
+            Q.le: _lra_le, Q.ge: _lra_ge}
+
+# the relational each one is normalized with, as in ALLOWED_PRED
+_PRED_RELATIONAL = {_lra_eq: Eq, _lra_gt: Gt, _lra_lt: Lt,
+                    _lra_le: Le, _lra_ge: Ge}
+
+# and the other way around, for a relation written as ``x > y``
+_RELATIONAL_PRED = {rel: pred for pred, rel in _PRED_RELATIONAL.items()}
 
 # if true ~Q.gt(x, y) implies Q.le(x, y)
 HANDLE_NEGATION = True
+
+
+def _as_lra_relation(prop):
+    """
+    Return *prop* as one of the theory's own relations, or ``None`` if it
+    is not a relation.
+    """
+    if isinstance(prop, AppliedPredicate):
+        pred, args = LRA_PRED.get(prop.function), prop.arguments
+    elif isinstance(prop, Relational):
+        pred, args = _RELATIONAL_PRED.get(type(prop)), prop.args
+    else:
+        return None
+    if pred is None or len(args) != 2:
+        return None
+    return pred(*args)
+
+
+def assume_real(encoded_cnf):
+    """
+    Return *encoded_cnf* with every relation in it read as an arithmetic
+    constraint on real numbers.
+
+    Explanation
+    ===========
+
+    ``LRASolver.from_encoded_cnf`` only reads the predicates of
+    ``LRA_PRED``, so an encoding whose relations are the ordinary ``Q.gt``,
+    ``x > y`` and the like has to be translated before it is handed over.
+    Translating asserts that the arguments of every relation in the encoding
+    are real numbers, which is a claim about the formula that only its
+    caller can make -- hence a separate step rather than something the
+    solver does on its own.
+
+    Atom ids are left alone, so the boundaries of a solver built from the
+    result line up with the literals of *encoded_cnf*.
+
+    Examples
+    ========
+
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.cnf import CNF, EncodedCNF
+    >>> from sympy.logic.algorithms.lra_theory import assume_real
+    >>> enc = EncodedCNF()
+    >>> enc.from_cnf(CNF.from_prop(x > 0))
+    >>> enc.encoding
+    {Q.gt(x, 0): 1}
+    >>> assume_real(enc).encoding
+    {lra_gt(x, 0): 1}
+
+    """
+    encoding = {}
+    for prop, atom_id in encoded_cnf.encoding.items():
+        relation = _as_lra_relation(prop)
+        # Two relations can only translate to the same one if they were
+        # already equivalent, and the solver still needs to tell the two
+        # atoms apart, so the second one is left as it is and skipped.
+        if relation is not None and relation not in encoding:
+            prop = relation
+        encoding[prop] = atom_id
+    return EncodedCNF(encoded_cnf.data, encoding)
+
+
+def _normalize_prop(prop):
+    """
+    Return ``(vars, const, var_coeff, terms)`` for the constraint *prop*
+    places on ``lhs - rhs``, ``S.true`` or ``S.false`` if it is constant, or
+    ``None`` if the theory cannot read it.
+    """
+    if len(prop.arguments) != 2:
+        return None
+    lhs, rhs = prop.arguments
+
+    if lhs == S.NaN or rhs == S.NaN:
+        return None
+    if lhs.is_imaginary or rhs.is_imaginary:
+        return None
+    if lhs == oo or rhs == oo:
+        return None
+
+    expr = lhs - rhs
+    pred = _PRED_RELATIONAL[prop.function](expr, S.Zero)
+    if pred == True:
+        return S.true
+    if pred == False:
+        return S.false
+    if not expr.free_symbols:
+        return None
+
+    if prop.function in [_lra_ge, _lra_gt]:
+        expr = -expr
+
+    # Example: 2x + 3y, 2 <- _sep_const_terms(2x + 3y + 2)
+    vars, const = _sep_const_terms(expr)
+    # Examples:
+    # x, 2 <- _sep_const_coeff(2x)
+    # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
+    vars, var_coeff = _sep_const_coeff(vars)
+    const = const / var_coeff
+    # Example: [2x, 3y] <- Add.make_args(2x + 3y)
+    terms = Add.make_args(vars)
+    return vars, const, var_coeff, terms
+
+
+def _atom_complexity(atom):
+    terms = atom[-1]
+    return max(len(term.free_symbols) for term in terms), len(terms)
+
+
+def _select_atoms(atoms):
+    """
+    Return the atoms of *atoms* that can share one linear problem.
+
+    Explanation
+    ===========
+
+    The terms the solver takes as its variables have to be variable
+    disjoint: ``x*y`` and ``x`` cannot both be variables of the same linear
+    problem, and neither can the two terms of ``x + x**2``. Atoms are
+    considered simplest first -- fewest symbols in a term, then fewest terms
+    -- and one that would claim a symbol some other atom's term already owns
+    is dropped. Ties are broken by the order the atoms are given in, so the
+    selection is a function of the encoding.
+
+    Dropping an atom leaves the solver with one constraint fewer, which can
+    only cost it conflicts it would otherwise have found. Refusing the whole
+    formula, which is what an earlier version did, costs the caller every
+    other atom in it as well.
+    """
+    order = sorted(range(len(atoms)), key=lambda i: (_atom_complexity(atoms[i]), i))
+    owner = {}  # symbol -> the term that owns it
+    kept = []
+    for i in order:
+        terms = {_sep_const_coeff(term)[0] for term in atoms[i][-1]}
+        claimed = {sym: term for term in terms for sym in term.free_symbols}
+        if len(claimed) != sum(len(term.free_symbols) for term in terms):
+            continue  # two terms of the atom itself share a symbol
+        if any(owner.get(sym, term) != term for sym, term in claimed.items()):
+            continue
+        owner.update(claimed)
+        kept.append(i)
+    return [atoms[i] for i in sorted(kept)]
+
 
 class LRASolver():
     """
@@ -193,6 +400,19 @@ class LRASolver():
         and a list of conflict clauses for propositions
         that can be simplified to True or False.
 
+        Explanation
+        ===========
+
+        Only the predicates of ``LRA_PRED`` are read as arithmetic; see
+        ``assume_real`` for translating an encoding into those. Every other
+        atom of *encoded_cnf* is skipped, and so is one this solver cannot
+        take -- an infinite or imaginary side, or a term that would make the
+        problem nonlinear. A skipped atom simply gets no boundary, which
+        leaves the SAT solver free to assign it either way, so the theory
+        admits every model it would otherwise have admitted and possibly
+        more. Its caller therefore learns less than it might have, never
+        something false.
+
         Parameters
         ==========
 
@@ -219,7 +439,7 @@ class LRASolver():
         >>> from sympy.core.relational import Eq
         >>> from sympy.assumptions.cnf import CNF, EncodedCNF
         >>> from sympy.assumptions.ask import Q
-        >>> from sympy.logic.algorithms.lra_theory import LRASolver
+        >>> from sympy.logic.algorithms.lra_theory import LRASolver, assume_real
         >>> from sympy.abc import x, y, z
         >>> phi = (x >= 0) & ((x + y <= 2) | (x + 2 * y - z >= 6))
         >>> phi = phi & (Eq(x + y, 2) | (x + 2 * y - z > 4))
@@ -227,6 +447,7 @@ class LRASolver():
         >>> cnf = CNF.from_prop(phi)
         >>> enc = EncodedCNF()
         >>> enc.from_cnf(cnf)
+        >>> enc = assume_real(enc)
         >>> lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
         >>> lra #doctest: +SKIP
         <sympy.logic.algorithms.lra_theory.LRASolver object at 0x7fdcb0e15b70>
@@ -234,7 +455,7 @@ class LRASolver():
         [[4]]
         """
         # This function has three main jobs:
-        # - raise errors if the input formula is not handled
+        # - pick out the atoms of the formula the theory can read
         # - preprocesses the formula into a matrix and single variable constraints
         # - create one-literal conflict clauses from predicates that are always True
         #   or always False such as Q.gt(3, 2)
@@ -259,54 +480,39 @@ class LRASolver():
         else:
             encoded_cnf_items = encoded_cnf.encoding.items()
 
-        empty_var = Dummy()
         var_to_lra_var = {}
         conflicts = []
+        atoms = []
 
         for prop, atom_id in encoded_cnf_items:
-            if isinstance(prop, Predicate):
-                prop = prop(empty_var)
             if not isinstance(prop, AppliedPredicate):
                 if prop == True:
                     conflicts.append([atom_id])
-                    continue
-                if prop == False:
+                elif prop == False:
                     conflicts.append([-atom_id])
-                    continue
+                continue
 
-                raise ValueError(f"Unhandled Predicate: {prop}")
+            if prop.function not in _PRED_RELATIONAL:
+                # An atom the theory has no reading for -- an ordinary
+                # predicate, or a relation nobody claimed is about real
+                # numbers -- is left to the SAT solver. It gets no boundary,
+                # so `assert_lit` ignores it and it is free to be assigned
+                # either way.
+                continue
 
-            assert prop.function in ALLOWED_PRED
-            if prop.lhs == S.NaN or prop.rhs == S.NaN:
-                raise ValueError(f"{prop} contains nan")
-            if prop.lhs.is_imaginary or prop.rhs.is_imaginary:
-                raise UnhandledInput(f"{prop} contains an imaginary component")
-            if prop.lhs == oo or prop.rhs == oo:
-                raise UnhandledInput(f"{prop} contains infinity")
-
-            expr = prop.lhs - prop.rhs
-            pred = ALLOWED_PRED[prop.function](expr, S.Zero)
-            if pred == True:
+            normalized = _normalize_prop(prop)
+            if normalized is None:
+                continue
+            if normalized is S.true:
                 conflicts.append([atom_id])
                 continue
-            if pred == False:
+            if normalized is S.false:
                 conflicts.append([-atom_id])
                 continue
-            if not expr.free_symbols:
-                raise UnhandledInput(f"{prop} could not be simplified")
 
-            if prop.function in [Q.ge, Q.gt]:
-                expr = -expr
+            atoms.append((atom_id, prop.function) + normalized)
 
-            # Example: 2x + 3y, 2 <- _sep_const_terms(2x + 3y + 2)
-            vars, const = _sep_const_terms(expr)
-            # Examples:
-            # x, 2 <- _sep_const_coeff(2x)
-            # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
-            vars, var_coeff = _sep_const_coeff(vars)
-            const = const / var_coeff
-            # Example: [2x, 3y] <- Add.make_args(2x + 3y)
-            terms = Add.make_args(vars)
+        for atom_id, function, vars, const, var_coeff, terms in _select_atoms(atoms):
             for term in terms:
                 term, _ = _sep_const_coeff(term)
                 assert len(term.free_symbols) > 0
@@ -330,8 +536,8 @@ class LRASolver():
 
             assert var_coeff != 0
 
-            equality = prop.function == Q.eq
-            strict = prop.function in [Q.gt, Q.lt]
+            equality = function == _lra_eq
+            strict = function in [_lra_gt, _lra_lt]
             if equality:
                 b1 = Boundary(var_to_lra_var[var], -const, True, False)  # x <= c
                 b2 = Boundary(var_to_lra_var[var], -const, False, False) # x >= c
@@ -341,11 +547,11 @@ class LRASolver():
                 b = Boundary(var_to_lra_var[var], -const, upper, strict)
                 atom_id_to_boundaries[atom_id] = [b]
 
+        # `_select_atoms` has already dropped whatever was not linear
         fs = [v.free_symbols for v in nonbasic + basic]
         assert all(len(syms) > 0 for syms in fs)
         fs_count = sum(len(syms) for syms in fs)
-        if len(fs) > 0 and  len(set.union(*fs)) < fs_count:
-            raise UnhandledInput("Nonlinearity is not handled")
+        assert len(fs) == 0 or len(set.union(*fs)) == fs_count
 
         A, _ = linear_eq_to_matrix(A, nonbasic + basic)
         # matrix A is guaranteed to able to be simplified

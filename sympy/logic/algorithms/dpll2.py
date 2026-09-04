@@ -20,7 +20,7 @@ from heapq import heappush, heappop
 from sympy.core.sorting import ordered
 from sympy.assumptions.cnf import EncodedCNF
 
-from sympy.logic.algorithms.lra_theory import LRASolver
+from sympy.logic.algorithms.lra_theory import LRASolver, assume_real
 
 
 class IpasirStatus(Enum):
@@ -60,7 +60,11 @@ def dpll_satisfiable(expr, all_models=False, use_lra_theory=False):
         return False
 
     if use_lra_theory:
-        lra, immediate_conflicts = LRASolver.from_encoded_cnf(expr)
+        # There is no assumption context here that could contradict it, so
+        # every relation of expr is read as one on real numbers. The atom
+        # ids are shared, so the theory's boundaries line up with the
+        # literals the SAT solver assigns.
+        lra, immediate_conflicts = LRASolver.from_encoded_cnf(assume_real(expr))
     else:
         lra = None
         immediate_conflicts = []

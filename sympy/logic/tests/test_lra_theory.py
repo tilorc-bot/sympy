@@ -9,10 +9,12 @@ from sympy.assumptions.ask import Q
 from sympy.logic.boolalg import And
 from sympy.abc import x, y, z
 from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import cos
 from sympy.external import import_module
 
 from sympy.logic.algorithms.lra_theory import LRASolver, UnhandledInput, LRARational, HANDLE_NEGATION, \
+    LRA_PRED, assume_real, \
     _sep_const_terms, _sep_const_coeff
 from sympy.core.random import random, choice, randint
 from sympy.core.sympify import sympify
@@ -104,6 +106,12 @@ def boolean_formula_to_encoded_cnf(bf):
     return enc
 
 
+def kept_atoms(enc):
+    """The atoms of enc that the solver built from it reads as constraints."""
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    return set(lra.atom_id_to_boundaries)
+
+
 def test_from_encoded_cnf():
     s1, s2 = symbols("s1 s2")
 
@@ -111,7 +119,7 @@ def test_from_encoded_cnf():
     # Example is from section 3 of paper.
     phi = (x >= 0) & ((x + y <= 2) | (x + 2 * y - z >= 6)) & (Eq(x + y, 2) | (x + 2 * y - z > 4))
     enc = boolean_formula_to_encoded_cnf(phi)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     assert lra.A.shape == (0, 3)
     assert str(lra.basic) == '[]'
     assert {str(v) for v in lra.nonbasic} == {'x', '_s1', '_s2'}
@@ -132,7 +140,7 @@ def test_problem():
     cnf = CNF().from_prop(And(*cons))
     enc = EncodedCNF()
     enc.from_cnf(cnf)
-    lra, _ = LRASolver.from_encoded_cnf(enc)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc))
     lra.assert_lit(1)
     lra.assert_lit(2)
     lra.assert_lit(3)
@@ -202,7 +210,7 @@ def test_random_problems():
         enc.from_cnf(cnf)
         assert all(0 not in clause for clause in enc.data)
 
-        lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+        lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
         s_subs = lra.s_subs
 
         lra.run_checks = True
@@ -259,7 +267,7 @@ def test_random_problems():
 def test_pos_neg_zero():
     bf = Q.positive(x) & Q.negative(x) & Q.zero(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -268,7 +276,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.lt(x, -1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -277,7 +285,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.zero(x)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -286,7 +294,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.zero(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -298,7 +306,7 @@ def test_pos_neg_zero():
 def test_pos_neg_infinite():
     bf = Q.positive_infinite(x) & Q.lt(x, 10000000) & Q.positive_infinite(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -307,7 +315,7 @@ def test_pos_neg_infinite():
 
     bf = Q.positive_infinite(x) & Q.gt(x, 10000000) & Q.positive_infinite(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -316,7 +324,7 @@ def test_pos_neg_infinite():
 
     bf = Q.positive_infinite(x) & Q.negative_infinite(x)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -327,13 +335,13 @@ def test_pos_neg_infinite():
 def test_binrel_evaluation():
     bf = Q.gt(3, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     assert len(lra.atom_id_to_boundaries) == 0
     assert conflicts == [[1]]
 
     bf = Q.lt(3, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     assert len(lra.atom_id_to_boundaries) == 0
     assert conflicts == [[-1]]
 
@@ -342,7 +350,7 @@ def test_negation():
     assert HANDLE_NEGATION is True
     bf = Q.gt(x, 1) & ~Q.gt(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     conflict = None
     for clause in enc.data:
         for lit in clause:
@@ -355,7 +363,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 1) & ~Q.lt(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -368,7 +376,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 0) & ~Q.lt(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -380,7 +388,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 0) & ~Q.le(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -393,7 +401,7 @@ def test_negation():
 
     bf = ~Q.le(x+y, 2) & ~Q.ge(x-y, 2) & ~Q.ge(y, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -409,31 +417,92 @@ def test_negation():
 
 
 def test_unhandled_input():
-    nan = S.NaN
-    bf = Q.gt(3, nan) & Q.gt(x, nan)
+    # A bound the solver has no way to represent is still refused outright:
+    # unlike an atom it cannot read, it is not something the rest of the
+    # problem can be solved without.
+    bf = Q.gt(x, sqrt(2))
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(ValueError, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True))
 
-    bf = Q.gt(3, I) & Q.gt(x, I)
-    enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
 
-    bf = Q.gt(3, float("inf")) & Q.gt(x, float("inf"))
+def test_skipped_atoms():
+    # A predicate that is not a relation is not arithmetic. It gets no
+    # boundary, so asserting it either way tells the theory nothing, while
+    # the relations standing next to it are solved as usual.
+    bf = Q.gt(x, 1) & Q.lt(x, 0) & Q.prime(x)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    assert conflicts == []
+    assert set(lra.atom_id_to_boundaries) == {enc.encoding[Q.gt(x, 1)],
+                                             enc.encoding[Q.lt(x, 0)]}
+    assert lra.assert_lit(enc.encoding[Q.prime(x)]) is None
+    assert lra.assert_lit(-enc.encoding[Q.prime(x)]) is None
+    assert lra.assert_lit(enc.encoding[Q.gt(x, 1)]) is None
+    assert lra.assert_lit(enc.encoding[Q.lt(x, 0)])[0] is False
 
-    bf = Q.gt(3, oo) & Q.gt(x, oo)
-    enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    # A relation nobody claimed is about real numbers is skipped as well.
+    enc = EncodedCNF()
+    enc.from_cnf(CNF.from_prop(Q.gt(x, 1)))
+    lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    assert (lra.atom_id_to_boundaries, conflicts) == ({}, [])
 
-    # test non-linearity
-    bf = Q.gt(x**2 + x, 2)
-    enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    # An atom whose sides the solver cannot make sense of costs only itself.
+    for bad in [Q.gt(x, S.NaN), Q.gt(3, S.NaN), Q.gt(x, I), Q.gt(3, I),
+                Q.gt(x, oo), Q.gt(3, oo), Q.gt(x, float("inf"))]:
+        enc = boolean_formula_to_encoded_cnf(bad & Q.gt(y, 1))
+        assert kept_atoms(enc) == {enc.encoding[Q.gt(y, 1)]}
 
-    bf = Q.gt(cos(x) + x, 2)
-    enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    # A constant relation is still reported as a one literal conflict clause.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(3, 2) & Q.gt(x, 1))
+    lra, conflicts = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
+    assert conflicts == [[enc.encoding[Q.gt(3, 2)]]]
+    assert set(lra.atom_id_to_boundaries) == {enc.encoding[Q.gt(x, 1)]}
+
+
+def test_nonlinear_atoms_are_dropped():
+    # The nonlinear atom is dropped rather than the formula refused, so the
+    # linear one next to it is still there to be solved.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x*y, 0) & Q.gt(x, 1))
+    assert kept_atoms(enc) == {enc.encoding[Q.gt(x, 1)]}
+
+    # An atom can be nonlinear on its own, without any help from the rest of
+    # the formula.
+    for bad in [Q.gt(x**2 + x, 2), Q.gt(cos(x) + x, 2)]:
+        enc = boolean_formula_to_encoded_cnf(bad & Q.gt(y, 1))
+        assert kept_atoms(enc) == {enc.encoding[Q.gt(y, 1)]}
+
+    # Atoms are considered simplest first, so which one is dropped does not
+    # depend on the order they were encoded in.
+    for bf in [Q.gt(x*y, 0) & Q.gt(x + y, 1), Q.gt(x + y, 1) & Q.gt(x*y, 0)]:
+        enc = boolean_formula_to_encoded_cnf(bf)
+        assert kept_atoms(enc) == {enc.encoding[Q.gt(x + y, 1)]}
+
+    # Between two atoms that are equally nonlinear the encoding decides, and
+    # it decides the same way every time.
+    enc = boolean_formula_to_encoded_cnf(Q.gt(x*y, 0) & Q.gt(y*z, 0))
+    kept = {frozenset(kept_atoms(enc)) for _ in range(3)}
+    assert len(kept) == 1
+    assert len(next(iter(kept))) == 1
+
+
+def test_assume_real():
+    # Translating an encoding leaves everything but the relations alone, the
+    # atom ids included.
+    cnf = CNF.from_prop(Q.gt(x, 1) & Q.prime(x) & (y < 2))
+    enc = EncodedCNF()
+    enc.from_cnf(cnf)
+    real = assume_real(enc)
+    assert real.data == enc.data
+    assert real.encoding[Q.prime(x)] == enc.encoding[Q.prime(x)]
+    assert set(real.encoding) - {Q.prime(x)} == {
+        LRA_PRED[Q.gt](x, 1), LRA_PRED[Q.lt](y, 2)}
+    assert [real.encoding[LRA_PRED[Q.gt](x, 1)], real.encoding[LRA_PRED[Q.lt](y, 2)]] \
+        == [enc.encoding[Q.gt(x, 1)], enc.encoding[Q.lt(y, 2)]]
+
+    # It is what the solver reads, so translating is what makes an encoding
+    # readable at all.
+    assert kept_atoms(enc) == {enc.encoding[Q.gt(x, 1)], enc.encoding[Q.lt(y, 2)]}
+    assert set(assume_real(real).encoding) == set(real.encoding)
 
 
 @XFAIL
@@ -447,7 +516,7 @@ def test_infinite_strict_inequalities():
     # See https://math.stackexchange.com/questions/4757069/can-this-method-of-converting-strict-inequalities-to-equisatisfiable-nonstrict-i
     bf = (-x - y >= -float("inf")) & (x > 0) & (y >= float("inf"))
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     for lit in sorted(enc.encoding.values()):
         if lra.assert_lit(lit) is not None:
             break
@@ -475,7 +544,7 @@ def test_reset():
     # Test solver behavior after reset
     bf = Q.ge(x, 1) & Q.lt(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     conflict_found = False
     for clause in enc.data:
@@ -500,7 +569,7 @@ def test_reset():
     # Test individual state variable resets
     bf = Q.ge(x, 0) & Q.le(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     state_variables = [
         ('lower', LRARational(10, 0), LRARational(-float("inf"), 0)),
@@ -526,7 +595,7 @@ def test_empty_cnf():
     cnf = CNF()
     enc = EncodedCNF()
     enc.from_cnf(cnf)
-    lra, conflict = LRASolver.from_encoded_cnf(enc)
+    lra, conflict = LRASolver.from_encoded_cnf(assume_real(enc))
     assert len(conflict) == 0
     assert lra.check() == (True, {})
 
@@ -544,7 +613,7 @@ def test_example_from_paper():
     for con in cons:
         enc.add_prop(con)
 
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     # Extracts the variables stored in the solver
     var_x = next(v for v in lra.all_var if str(v.var) == 'x')
@@ -625,7 +694,7 @@ def test_backtracking_single_variable():
     enc = EncodedCNF()
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     # Assert x in [-8, -4]
     lra.assert_lit(1)
@@ -652,7 +721,7 @@ def test_backtracking_multiple_variables():
     for con in cons:
         enc.add_prop(con)
 
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
     lra.assert_lit(1)
     lra.assert_lit(2)
     is_sat, _ = lra.check()
@@ -678,7 +747,7 @@ def test_backtracking_single_variable_multiple_backtracks():
     cons = [x <= 10, x >= 0, x >= 5, x <= 2]
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     # Setting 5 <= x <= 10
     lra.assert_lit(1)
@@ -722,7 +791,7 @@ def test_backtracking_multiple_variables_multiple_backtracks():
 
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     # Establish the base valid state (x in [0, 10], y>=0)
     lra.assert_lit(1)
@@ -761,6 +830,6 @@ def test_backtracking_multiple_variables_multiple_backtracks():
 
 def test_backtracking_empty_history():
     enc = EncodedCNF()
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = LRASolver.from_encoded_cnf(assume_real(enc), testing_mode=True)
 
     raises(ValueError, lambda: lra.backtrack())

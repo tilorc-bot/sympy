@@ -28,9 +28,17 @@ def lra_satask(proposition, assumptions=True):
 
     return check_satisfiability(props, _props, assumptions)
 
-# Some predicates such as Q.prime can't be handled by lra_satask.
-# For example, (x > 0) & (x < 1) & Q.prime(x) is unsat but lra_satask would think it was sat.
 # WHITE_LIST is a list of predicates that can always be handled.
+#
+# The theory solver itself no longer needs one: it skips an atom it has no
+# reading for, which leaves the atom unconstrained and so can only cost it
+# conflicts. The check stays here because lra_satask has no fact extraction
+# -- nothing in it knows that Q.prime(x) implies Q.integer(x) -- so an
+# ignored predicate is a fact lost rather than a fact left to another
+# solver. (x > 0) & (x < 1) & Q.prime(x) is unsat, and ignoring Q.prime
+# turns the inconsistent assumptions lra_satask would report into an
+# ordinary answer. Refusing loudly is the more useful behaviour, so this is
+# a completeness guard rather than a soundness one.
 WHITE_LIST = ALLOWED_PRED.keys() | {Q.positive, Q.negative, Q.zero, Q.nonzero, Q.nonpositive, Q.nonnegative,
                                     Q.extended_positive, Q.extended_negative, Q.extended_nonpositive,
                                     Q.extended_negative, Q.extended_nonzero, Q.negative_infinite,
