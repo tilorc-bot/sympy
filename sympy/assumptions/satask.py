@@ -77,54 +77,190 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
     return check_satisfiability(props, _props, sat, early_return)
 
 
-def check_satisfiability(prop, _prop, factbase, early_return=False):
-    if {0} in factbase.data:
-        raise ValueError("Inconsistent assumptions")
+class ReasoningEngine:
+    """A SAT solver asked about a proposition and the facts deciding it.
 
-    true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
+    The engine encodes the proposition, its negation and *factbase* into one
+    solver, guarding the two sides of the question with a selector variable
+    so that both can be asked of that solver. Building it propagates
+    everything the facts imply on their own, which is what :meth:`lookup`
+    reads and what :meth:`entailed` answers from; :meth:`decide` then runs
+    the search.
 
-    # Run `propogate()` on the assumptions
-    solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
-                       true_false_guarded.symbols + [selector])
-    if solver.propagate() == IpasirStatus.UNSATISFIABLE:
-        raise ValueError("Inconsistent assumptions")
+    Parameters
+    ==========
 
-    # Check whether proposition is entailed by any of the assigned literals.
-    if early_return:
-        entailed = solver._is_entailed(prop.clauses, true_false_guarded.encoding)
+    factbase : sympy.assumptions.cnf.EncodedCNF
+        The assumptions, together with every fact relevant to them.
+
+    prop : sympy.assumptions.cnf.CNF
+        The proposition to decide.
+
+    _prop : sympy.assumptions.cnf.CNF
+        The negation of *prop*. Negating a CNF is not free, so the caller
+        passes the one it has already built.
+
+    Raises
+    ======
+
+    ValueError
+        If *factbase* is contradictory, as far as propagation can tell.
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.satask import (ReasoningEngine,
+    ...     get_all_relevant_facts)
+    >>> prop, _prop = CNF.from_prop(Q.nonzero(x)), CNF.from_prop(~Q.nonzero(x))
+    >>> assumptions = CNF.from_prop(Q.positive(x))
+    >>> factbase = get_all_relevant_facts(prop, assumptions)
+    >>> factbase.add_from_cnf(assumptions)
+    >>> engine = ReasoningEngine(factbase, prop, _prop)
+    >>> engine.lookup(Q.real(x))
+    True
+    >>> engine.decide()
+    True
+
+    """
+    def __init__(self, factbase, prop, _prop):
+        if {0} in factbase.data:
+            raise ValueError("Inconsistent assumptions")
+
+        self._prop = prop
+        self._negation = _prop
+
+        guarded, self._selector = _encode_with_selector(prop, _prop, factbase)
+        self._encoding = guarded.encoding
+        self._solver = SATSolver(guarded.data, range(1, self._selector + 1),
+                                 set(), guarded.symbols + [self._selector])
+
+        # Run `propogate()` on the assumptions. It leaves the selector
+        # unassigned, so neither side of the question takes part in it.
+        if self._solver.propagate() == IpasirStatus.UNSATISFIABLE:
+            raise ValueError("Inconsistent assumptions")
+
+    def lookup(self, pred):
+        """Return what propagating the facts fixed *pred* to.
+
+        The answer is ``True`` if the facts imply *pred*, ``False`` if they
+        imply its negation, and ``None`` if they leave it open, which is also
+        the answer for a *pred* the engine never encoded. Nothing is searched
+        for, so this is an O(1) operation.
+
+        What it reports is what the facts imply on their own, never what the
+        proposition does, and only until :meth:`decide` has run: past that the
+        solver holds the assignments of a model rather than those of the root
+        level, and asking raises a ``ValueError``.
+
+        Parameters
+        ==========
+
+        pred : sympy.assumptions.assume.AppliedPredicate
+            A predicate applied to an expression, such as ``Q.real(x)``.
+
+        Examples
+        ========
+
+        >>> from sympy import Q
+        >>> from sympy.abc import x
+        >>> from sympy.assumptions.cnf import CNF
+        >>> from sympy.assumptions.satask import (ReasoningEngine,
+        ...     get_all_relevant_facts)
+        >>> prop, _prop = CNF.from_prop(Q.zero(x)), CNF.from_prop(~Q.zero(x))
+        >>> assumptions = CNF.from_prop(Q.positive(x))
+        >>> factbase = get_all_relevant_facts(prop, assumptions)
+        >>> factbase.add_from_cnf(assumptions)
+        >>> engine = ReasoningEngine(factbase, prop, _prop)
+
+        Being positive fixes being real and rules out being negative, while
+        saying nothing either way about being an integer.
+
+        >>> engine.lookup(Q.real(x))
+        True
+        >>> engine.lookup(Q.negative(x))
+        False
+        >>> engine.lookup(Q.integer(x)) is None
+        True
+
+        """
+        lit = self._encoding.get(pred)
+        if lit is None:
+            return None
+
+        return {1: True, -1: False, 0: None}[self._solver.fixed(lit)]
+
+    def entailed(self):
+        """Return what the literals fixed so far make of the proposition.
+
+        The answer is ``True`` or ``False`` if they already decide it, and
+        ``None`` if deciding it needs the search that :meth:`decide` runs.
+
+        This trusts the facts to be consistent. Propagation does not show up
+        every contradiction, and contradictory facts entail the proposition
+        whichever way it is asked.
+
+        """
+        entailed = self._solver._is_entailed(self._prop.clauses, self._encoding)
         if entailed is not None:
             return entailed
 
-        entailed = solver._is_entailed(_prop.clauses, true_false_guarded.encoding)
+        entailed = self._solver._is_entailed(self._negation.clauses,
+                                             self._encoding)
         if entailed is not None:
             return not entailed
 
-    # Continue on the propogated solver, just call solve() on it.
-    if solver.solve() == IpasirStatus.UNSATISFIABLE:
-        raise ValueError("Inconsistent assumptions")
-
-    # The model settles the side it activated, so ask about the other one.
-    witnessed = solver.val(selector)
-    solver.assume(-witnessed)
-    other = solver.solve() == IpasirStatus.SATISFIABLE
-
-    can_be_true = witnessed > 0 or other
-    can_be_false = witnessed < 0 or other
-
-    if can_be_true and can_be_false:
         return None
 
-    if can_be_true and not can_be_false:
-        return True
+    def decide(self):
+        """Search for a model of each side of the question and answer from
+        the sides that have one.
 
-    if not can_be_true and can_be_false:
-        return False
+        The answer is ``True`` or ``False`` if only the proposition or only
+        its negation has a model, and ``None`` if both do. The search
+        continues from the work that building the engine already did.
 
-    if not can_be_true and not can_be_false:
-        # TODO: Run additional checks to see which combination of the
-        # assumptions, global_assumptions, and relevant_facts are
-        # inconsistent.
-        raise ValueError("Inconsistent assumptions")
+        """
+        # Continue on the propogated solver, just call solve() on it.
+        if self._solver.solve() == IpasirStatus.UNSATISFIABLE:
+            raise ValueError("Inconsistent assumptions")
+
+        # The model settles the side it activated, so ask about the other one.
+        witnessed = self._solver.val(self._selector)
+        self._solver.assume(-witnessed)
+        other = self._solver.solve() == IpasirStatus.SATISFIABLE
+
+        can_be_true = witnessed > 0 or other
+        can_be_false = witnessed < 0 or other
+
+        if can_be_true and can_be_false:
+            return None
+
+        if can_be_true and not can_be_false:
+            return True
+
+        if not can_be_true and can_be_false:
+            return False
+
+        if not can_be_true and not can_be_false:
+            # TODO: Run additional checks to see which combination of the
+            # assumptions, global_assumptions, and relevant_facts are
+            # inconsistent.
+            raise ValueError("Inconsistent assumptions")
+
+
+def check_satisfiability(prop, _prop, factbase, early_return=False):
+    engine = ReasoningEngine(factbase, prop, _prop)
+
+    # Check whether proposition is entailed by any of the assigned literals.
+    if early_return:
+        entailed = engine.entailed()
+        if entailed is not None:
+            return entailed
+
+    return engine.decide()
 
 
 def _encode_with_selector(prop, _prop, factbase):

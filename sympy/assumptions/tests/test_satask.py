@@ -8,8 +8,8 @@ from sympy.functions.elementary.complexes import Abs
 from sympy.logic.boolalg import Equivalent, Implies, Xor
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.assumptions.cnf import CNF, Literal
-from sympy.assumptions.satask import (satask, extract_predargs,
-    get_relevant_clsfacts)
+from sympy.assumptions.satask import (ReasoningEngine, satask,
+    extract_predargs, get_all_relevant_facts, get_relevant_clsfacts)
 from sympy.assumptions.sathandlers import class_fact_registry
 
 from sympy.testing.pytest import raises, XFAIL
@@ -434,3 +434,65 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def _engine(proposition, assumptions=True):
+    """Build a ``ReasoningEngine`` the way ``satask`` does."""
+    prop = CNF.from_prop(proposition)
+    _prop = CNF.from_prop(~proposition)
+    assumptions = CNF.from_prop(assumptions)
+
+    factbase = get_all_relevant_facts(prop, assumptions)
+    factbase.add_from_cnf(assumptions)
+
+    return ReasoningEngine(factbase, prop, _prop)
+
+
+def test_reasoning_engine_lookup():
+    engine = _engine(Q.zero(x), Q.positive(x) & Q.integer(x))
+
+    # What the assumptions imply, on their own and through the known facts.
+    assert engine.lookup(Q.positive(x)) is True
+    assert engine.lookup(Q.real(x)) is True
+    assert engine.lookup(Q.rational(x)) is True
+
+    # What they rule out.
+    assert engine.lookup(Q.negative(x)) is False
+    assert engine.lookup(Q.zero(x)) is False
+
+    # A positive integer may or may not be prime.
+    assert engine.lookup(Q.prime(x)) is None
+
+    # Nothing was encoded about an expression the question never mentioned.
+    assert engine.lookup(Q.real(y)) is None
+
+    # The proposition is guarded by the selector, so propagation does not
+    # fix it however the assumptions are left.
+    assert _engine(Q.positive(x)).lookup(Q.positive(x)) is None
+    assert _engine(Q.positive(x), Q.real(x)).lookup(Q.positive(x)) is None
+
+
+def test_reasoning_engine_lookup_after_decide():
+    engine = _engine(Q.positive(x), Q.real(x))
+    assert engine.decide() is None
+
+    # Only the root level fixes literals, and the search has left it.
+    raises(ValueError, lambda: engine.lookup(Q.real(x)))
+
+
+def test_reasoning_engine_entailed():
+    assert _engine(Q.real(x), Q.positive(x)).entailed() is True
+    assert _engine(Q.zero(x), Q.positive(x)).entailed() is False
+    assert _engine(Q.positive(x), Q.real(x)).entailed() is None
+
+
+def test_reasoning_engine_decide():
+    assert _engine(Q.real(x), Q.positive(x)).decide() is True
+    assert _engine(Q.positive(x), ~Q.real(x)).decide() is False
+    assert _engine(Q.positive(x), Q.real(x)).decide() is None
+
+
+def test_reasoning_engine_inconsistent():
+    raises(ValueError, lambda: _engine(Q.positive(x), S.false))
+    raises(ValueError, lambda: _engine(Q.positive(x),
+                                       Q.positive(x) & Q.negative(x)))
