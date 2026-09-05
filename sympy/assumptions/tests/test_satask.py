@@ -434,3 +434,12 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_satask_inconsistent_needing_search():
+    # Four clauses with no unit among them, so propagation gets nothing out
+    # of the assumptions and it is the search that finds them contradictory,
+    # before either side of the question has been asked about.
+    a, b = Q.prime(x), Q.even(x)
+    contradiction = (a | b) & (~a | b) & (a | ~b) & (~a | ~b)
+    raises(ValueError, lambda: satask(Q.zero(x), contradiction))
