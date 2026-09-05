@@ -487,9 +487,9 @@ def test_reasoning_engine_lookup_ignores_the_proposition():
         assert [engine.lookup(pred) for pred in preds] == expected
 
 
-def test_reasoning_engine_lookup_after_decide():
+def test_reasoning_engine_lookup_after_ask_question():
     engine = _engine(Q.positive(x), Q.real(x))
-    assert engine.decide(engine.selector) is None
+    assert engine.ask_question(engine.selector) is None
 
     # Only the root level fixes literals, and the search has left it.
     raises(ValueError, lambda: engine.lookup(Q.real(x)))
@@ -503,12 +503,12 @@ def test_reasoning_engine_entailed():
         assert engine.entailed(engine.selector) is answer
 
 
-def test_reasoning_engine_decide():
+def test_reasoning_engine_ask_question():
     for proposition, assumptions, answer in [(Q.real(x), Q.positive(x), True),
                                              (Q.positive(x), ~Q.real(x), False),
                                              (Q.positive(x), Q.real(x), None)]:
         engine = _engine(proposition, assumptions)
-        assert engine.decide(engine.selector) is answer
+        assert engine.ask_question(engine.selector) is answer
 
 
 def test_reasoning_engine_inconsistent():

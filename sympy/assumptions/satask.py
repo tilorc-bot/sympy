@@ -84,8 +84,8 @@ class ReasoningEngine:
     solver, guarding the two sides of the question with a selector variable
     so that both can be asked of that solver. Building it propagates
     everything the facts imply on their own, which is what :meth:`lookup`
-    reads and what :meth:`entailed` answers from; :meth:`decide` then runs
-    the search.
+    reads and what :meth:`entailed` answers from; :meth:`ask_question` then
+    runs the search.
 
     Parameters
     ==========
@@ -110,10 +110,10 @@ class ReasoningEngine:
     cannot be given new variables once it exists, and the proposition brings
     new ones: the selector always, and any predicate of its own that the
     facts do not already carry. Once the solver can take them, building it
-    moves into ``__init__``, ``_add_question`` becomes public, and one engine
-    answers several questions against facts it has propagated once. Only
-    those two change: a question is named by the selector literal that
-    ``_add_question`` hands back, which is what the rest already takes.
+    moves into ``__init__``, ``_create_question`` becomes public, and one
+    engine answers several questions against facts it has propagated once.
+    Only those two change: a question is named by the selector literal that
+    ``_create_question`` hands back, which is what the rest already takes.
 
     Examples
     ========
@@ -130,7 +130,7 @@ class ReasoningEngine:
     >>> engine = ReasoningEngine(factbase, prop, _prop)
     >>> engine.lookup(Q.real(x))
     True
-    >>> engine.decide(engine.selector)
+    >>> engine.ask_question(engine.selector)
     True
 
     """
@@ -141,17 +141,17 @@ class ReasoningEngine:
         # The facts are what an engine that could be asked again would keep.
         self._factbase = factbase
         self._questions = {}
-        self.selector = self._add_question(prop, _prop)
+        self.selector = self._create_question(prop, _prop)
 
-    def _add_question(self, prop, _prop):
-        """Add both sides of a question to the solver and propagate the facts,
-        returning the selector literal that switches between the sides.
+    def _create_question(self, prop, _prop):
+        """Create the question of whether *prop* or its negation *_prop*
+        holds, returning the selector literal that names it.
 
         Asserting the selector activates *prop* and asserting its negation
         activates *_prop*, while leaving it unassigned keeps both sides from
         saying anything, which is the state the facts are propagated in.
 
-        This is the ``add_question`` of the TODO above, written for the
+        This is the ``create_question`` of the TODO above, written for the
         engine that will call it more than once: a question is named by the
         selector handed back, and ``_questions`` keeps what that selector
         stands for. Until the solver can be given new variables this also
@@ -188,9 +188,9 @@ class ReasoningEngine:
         proposition is in the same solver, but it cannot fix a predicate that
         the facts leave open, for the reason given in ``__init__``.
 
-        It answers only until :meth:`decide` has run: past that the solver
-        holds the assignments of a model rather than those of the root level,
-        and asking raises a ``ValueError``.
+        It answers only until :meth:`ask_question` has run: past that the
+        solver holds the assignments of a model rather than those of the root
+        level, and asking raises a ``ValueError``.
 
         Parameters
         ==========
@@ -234,7 +234,8 @@ class ReasoningEngine:
         *selector* names.
 
         The answer is ``True`` or ``False`` if they already decide it, and
-        ``None`` if deciding it needs the search that :meth:`decide` runs.
+        ``None`` if deciding it needs the search that :meth:`ask_question`
+        runs.
 
         This trusts the facts to be consistent. Propagation does not show up
         every contradiction, and contradictory facts entail a proposition
@@ -274,7 +275,7 @@ class ReasoningEngine:
 
         return entailed or None
 
-    def decide(self, selector):
+    def ask_question(self, selector):
         """Search for a model of each side of the question that *selector*
         names, and answer from the sides that have one.
 
@@ -320,7 +321,7 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
         if entailed is not None:
             return entailed
 
-    return engine.decide(engine.selector)
+    return engine.ask_question(engine.selector)
 
 
 def _add_guarded(encoded, cnf, active):
