@@ -109,9 +109,10 @@ class ReasoningEngine:
     TODO: the proposition is fixed at construction because ``SATSolver``
     cannot be given new variables once it exists, and the proposition brings
     new ones: the selector always, and any predicate of its own that the
-    facts do not already carry. Once the solver can take them, ``_ask``
-    becomes a public ``ask`` that ``__init__`` no longer calls, and one
-    engine answers several propositions against facts it has propagated once.
+    facts do not already carry. Once the solver can take them, building it
+    moves into ``__init__``, ``_add_question`` becomes public, and one engine
+    answers several questions against facts it has propagated once, each
+    question named by the selector literal it hands back.
 
     Examples
     ========
@@ -138,22 +139,27 @@ class ReasoningEngine:
 
         # The facts are what an engine that could be asked again would keep.
         self._factbase = factbase
-        self._ask(prop, _prop)
+        self._selector = self._add_question(prop, _prop)
 
-    def _ask(self, prop, _prop):
-        """Put a question to the facts, propagating what they imply.
+    def _add_question(self, prop, _prop):
+        """Add both sides of a question to the solver and propagate the facts,
+        returning the selector literal that switches between the sides.
 
-        This is the ``ask`` of the TODO above, called from ``__init__`` for
-        as long as a question can only be put to a solver of its own.
+        Asserting the selector activates *prop* and asserting its negation
+        activates *_prop*, while leaving it unassigned keeps both sides from
+        saying anything, which is the state the facts are propagated in.
+
+        This is the ``add_question`` of the TODO above. Of what it sets, only
+        the solver and its encoding belong to the engine rather than to the
+        question, and only those move into ``__init__`` when it goes public.
         """
         self._prop = prop
         self._negation = _prop
 
-        guarded, self._selector = _encode_with_selector(prop, _prop,
-                                                        self._factbase)
+        guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
         self._encoding = guarded.encoding
-        self._solver = SATSolver(guarded.data, range(1, self._selector + 1),
-                                 set(), guarded.symbols + [self._selector])
+        self._solver = SATSolver(guarded.data, range(1, selector + 1),
+                                 set(), guarded.symbols + [selector])
 
         # Run `propogate()` on the assumptions. The guarded clauses say no
         # more than `selector <-> prop`, which ties the selector to the
@@ -163,6 +169,8 @@ class ReasoningEngine:
         # whenever the facts already decide the proposition.
         if self._solver.propagate() == IpasirStatus.UNSATISFIABLE:
             raise ValueError("Inconsistent assumptions")
+
+        return selector
 
     def lookup(self, pred):
         """Return what propagating the facts fixed *pred* to.
