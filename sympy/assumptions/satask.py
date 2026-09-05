@@ -151,13 +151,13 @@ class ReasoningEngine:
         activates *_prop*, while leaving it unassigned keeps both sides from
         saying anything, which is the state the facts are propagated in.
 
-        This is the ``add_question`` of the TODO above. Of what it sets, only
-        the solver and its encoding belong to the engine rather than to the
-        question, and building them is also what stops this from being called
-        more than once: a second call would raise a solver that knows nothing
-        of the first question, leaving its selector in ``_questions`` naming
-        a question no longer there. Moving those two lines into ``__init__``
-        is what lifts that, and nothing else here has to change.
+        This is the ``add_question`` of the TODO above, written for the
+        engine that will call it more than once: a question is named by the
+        selector handed back, and ``_questions`` keeps what that selector
+        stands for. Until the solver can be given new variables this also
+        has to build the solver, which is the one thing a second call would
+        get wrong; moving those two lines into ``__init__`` lifts it, and
+        nothing else here changes.
         """
         guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
         self._encoding = guarded.encoding
