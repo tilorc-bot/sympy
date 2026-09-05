@@ -111,8 +111,9 @@ class ReasoningEngine:
     new ones: the selector always, and any predicate of its own that the
     facts do not already carry. Once the solver can take them, building it
     moves into ``__init__``, ``_add_question`` becomes public, and one engine
-    answers several questions against facts it has propagated once, each
-    question named by the selector literal it hands back.
+    answers several questions against facts it has propagated once. Only
+    those two change: a question is named by the selector literal that
+    ``_add_question`` hands back, which is what the rest already takes.
 
     Examples
     ========
@@ -129,7 +130,7 @@ class ReasoningEngine:
     >>> engine = ReasoningEngine(factbase, prop, _prop)
     >>> engine.lookup(Q.real(x))
     True
-    >>> engine.decide()
+    >>> engine.decide(engine.selector)
     True
 
     """
@@ -139,7 +140,8 @@ class ReasoningEngine:
 
         # The facts are what an engine that could be asked again would keep.
         self._factbase = factbase
-        self._selector = self._add_question(prop, _prop)
+        self._questions = {}
+        self.selector = self._add_question(prop, _prop)
 
     def _add_question(self, prop, _prop):
         """Add both sides of a question to the solver and propagate the facts,
@@ -151,15 +153,17 @@ class ReasoningEngine:
 
         This is the ``add_question`` of the TODO above. Of what it sets, only
         the solver and its encoding belong to the engine rather than to the
-        question, and only those move into ``__init__`` when it goes public.
+        question, and building them is also what stops this from being called
+        more than once: a second call would raise a solver that knows nothing
+        of the first question, leaving its selector in ``_questions`` naming
+        a question no longer there. Moving those two lines into ``__init__``
+        is what lifts that, and nothing else here has to change.
         """
-        self._prop = prop
-        self._negation = _prop
-
         guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
         self._encoding = guarded.encoding
         self._solver = SATSolver(guarded.data, range(1, selector + 1),
                                  set(), guarded.symbols + [selector])
+        self._questions[selector] = (prop, _prop)
 
         # Run `propogate()` on the assumptions. The guarded clauses say no
         # more than `selector <-> prop`, which ties the selector to the
@@ -225,31 +229,33 @@ class ReasoningEngine:
 
         return {1: True, -1: False, 0: None}[self._solver.fixed(lit)]
 
-    def entailed(self):
-        """Return what the literals fixed so far make of the proposition.
+    def entailed(self, selector):
+        """Return what the literals fixed so far make of the question that
+        *selector* names.
 
         The answer is ``True`` or ``False`` if they already decide it, and
         ``None`` if deciding it needs the search that :meth:`decide` runs.
 
         This trusts the facts to be consistent. Propagation does not show up
-        every contradiction, and contradictory facts entail the proposition
+        every contradiction, and contradictory facts entail a proposition
         whichever way it is asked.
 
         """
-        entailed = self._solver._is_entailed(self._prop.clauses, self._encoding)
+        prop, _prop = self._questions[selector]
+
+        entailed = self._solver._is_entailed(prop.clauses, self._encoding)
         if entailed is not None:
             return entailed
 
-        entailed = self._solver._is_entailed(self._negation.clauses,
-                                             self._encoding)
+        entailed = self._solver._is_entailed(_prop.clauses, self._encoding)
         if entailed is not None:
             return not entailed
 
         return None
 
-    def decide(self):
-        """Search for a model of each side of the question and answer from
-        the sides that have one.
+    def decide(self, selector):
+        """Search for a model of each side of the question that *selector*
+        names, and answer from the sides that have one.
 
         The answer is ``True`` or ``False`` if only the proposition or only
         its negation has a model, and ``None`` if both do. The search
@@ -261,7 +267,7 @@ class ReasoningEngine:
             raise ValueError("Inconsistent assumptions")
 
         # The model settles the side it activated, so ask about the other one.
-        witnessed = self._solver.val(self._selector)
+        witnessed = self._solver.val(selector)
         self._solver.assume(-witnessed)
         other = self._solver.solve() == IpasirStatus.SATISFIABLE
 
@@ -289,11 +295,11 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
 
     # Check whether proposition is entailed by any of the assigned literals.
     if early_return:
-        entailed = engine.entailed()
+        entailed = engine.entailed(engine.selector)
         if entailed is not None:
             return entailed
 
-    return engine.decide()
+    return engine.decide(engine.selector)
 
 
 def _add_guarded(encoded, cnf, active):
