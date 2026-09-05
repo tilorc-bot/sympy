@@ -466,10 +466,25 @@ def test_reasoning_engine_lookup():
     # Nothing was encoded about an expression the question never mentioned.
     assert engine.lookup(Q.real(y)) is None
 
-    # The proposition is guarded by the selector, so propagation does not
-    # fix it however the assumptions are left.
+    # Asking about a predicate does not fix it: the guarded clauses only
+    # tie the selector to it.
     assert _engine(Q.positive(x)).lookup(Q.positive(x)) is None
     assert _engine(Q.positive(x), Q.real(x)).lookup(Q.positive(x)) is None
+
+
+def test_reasoning_engine_lookup_ignores_the_proposition():
+    # Whatever is asked, `lookup` answers from the facts alone, so the same
+    # assumptions give the same answers across unrelated propositions.
+    assumptions = Q.positive(x) & Q.integer(x)
+    preds = [Q.real(x), Q.negative(x), Q.rational(x), Q.prime(x), Q.zero(x)]
+
+    expected = [_engine(Q.real(x), assumptions).lookup(pred) for pred in preds]
+    assert expected == [True, False, True, None, False]
+
+    for proposition in (Q.zero(x), Q.prime(x), Q.negative(x) | Q.zero(x),
+                        Q.real(x) & Q.rational(x), ~Q.even(x)):
+        engine = _engine(proposition, assumptions)
+        assert [engine.lookup(pred) for pred in preds] == expected
 
 
 def test_reasoning_engine_lookup_after_decide():

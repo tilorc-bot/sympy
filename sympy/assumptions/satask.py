@@ -137,8 +137,12 @@ class ReasoningEngine:
         self._solver = SATSolver(guarded.data, range(1, self._selector + 1),
                                  set(), guarded.symbols + [self._selector])
 
-        # Run `propogate()` on the assumptions. It leaves the selector
-        # unassigned, so neither side of the question takes part in it.
+        # Run `propogate()` on the assumptions. The guarded clauses say no
+        # more than `selector <-> prop`, which ties the selector to the
+        # predicates without constraining them, so what propagation fixes
+        # among the predicates is what the facts imply and nothing else.
+        # Fixing the selector itself is not ruled out, and is what happens
+        # whenever the facts already decide the proposition.
         if self._solver.propagate() == IpasirStatus.UNSATISFIABLE:
             raise ValueError("Inconsistent assumptions")
 
@@ -150,10 +154,13 @@ class ReasoningEngine:
         the answer for a *pred* the engine never encoded. Nothing is searched
         for, so this is an O(1) operation.
 
-        What it reports is what the facts imply on their own, never what the
-        proposition does, and only until :meth:`decide` has run: past that the
-        solver holds the assignments of a model rather than those of the root
-        level, and asking raises a ``ValueError``.
+        What it reports is what the facts imply on their own. The
+        proposition is in the same solver, but it cannot fix a predicate that
+        the facts leave open, for the reason given in ``__init__``.
+
+        It answers only until :meth:`decide` has run: past that the solver
+        holds the assignments of a model rather than those of the root level,
+        and asking raises a ``ValueError``.
 
         Parameters
         ==========
