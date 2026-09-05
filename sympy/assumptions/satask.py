@@ -263,22 +263,34 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     return engine.decide()
 
 
+def _add_guarded(encoded, cnf, active):
+    """Add the clauses of *cnf* to *encoded*, each of them guarded by the
+    literal *active*, so that *cnf* holds when *active* is true and says
+    nothing at all when it is false.
+    """
+    # Dropping the 0 that encodes False leaves a clause nothing can satisfy as
+    # the unit {-active}, which is what stops *active* from being true.
+    encoded.data += [(encoded.encode(clause) - {0}) | {-active}
+                     for clause in cnf.clauses]
+
+
 def _encode_with_selector(prop, _prop, factbase):
     """Return *factbase* with the clauses of prop and _prop added to it, and
     the selector variable that activates prop when true and _prop when false.
     """
     true_false_guarded = factbase.copy()
-    sides = [[true_false_guarded.encode(clause) for clause in side.clauses]
-             for side in (prop, _prop)]
+
+    # Number the predicates of both sides before choosing the selector. Doing
+    # it after would give the selector a number that encoding the second side
+    # still hands out to a predicate.
+    for clause in (*prop.clauses, *_prop.clauses):
+        true_false_guarded.encode(clause)
 
     # One past the last predicate, so the selector is a variable of its own.
     selector = len(true_false_guarded.encoding) + 1
 
-    for clauses, guard in zip(sides, (-selector, selector)):
-        # Dropping the 0 that encodes False leaves a side nothing can satisfy
-        # as the unit {guard}.
-        true_false_guarded.data += [(clause - {0}) | {guard}
-                                    for clause in clauses]
+    _add_guarded(true_false_guarded, prop, selector)
+    _add_guarded(true_false_guarded, _prop, -selector)
 
     return true_false_guarded, selector
 
