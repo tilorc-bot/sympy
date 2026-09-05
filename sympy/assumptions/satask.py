@@ -89,15 +89,15 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     if solver.propagate() == IpasirStatus.UNSATISFIABLE:
         raise ValueError("Inconsistent assumptions")
 
-    # Check whether proposition is entailed by any of the assigned literals.
+    # Check whether the facts alone already decide the proposition. Each of
+    # the clauses guarding a side carries its guard with it, so falsifying a
+    # clause of one side leaves that guard behind as the unit ruling the side
+    # out: propagation fixes the selector exactly when the facts decide the
+    # question, and there is nothing to evaluate.
     if early_return:
-        entailed = solver._is_entailed(prop.clauses, true_false_guarded.encoding)
+        entailed = {1: True, -1: False, 0: None}[solver.fixed(selector)]
         if entailed is not None:
             return entailed
-
-        entailed = solver._is_entailed(_prop.clauses, true_false_guarded.encoding)
-        if entailed is not None:
-            return not entailed
 
     # Continue on the propogated solver, just call solve() on it.
     if solver.solve() == IpasirStatus.UNSATISFIABLE:
