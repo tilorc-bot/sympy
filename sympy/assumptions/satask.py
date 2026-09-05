@@ -243,15 +243,36 @@ class ReasoningEngine:
         """
         prop, _prop = self._questions[selector]
 
-        entailed = self._solver._is_entailed(prop.clauses, self._encoding)
+        entailed = self._evaluate(prop.clauses)
         if entailed is not None:
             return entailed
 
-        entailed = self._solver._is_entailed(_prop.clauses, self._encoding)
+        entailed = self._evaluate(_prop.clauses)
         if entailed is not None:
             return not entailed
 
         return None
+
+    def _evaluate(self, clauses):
+        """Return True if the literals the solver has fixed make the CNF
+        *clauses* true, False if they make it false, and None if they leave
+        it undecided.
+        """
+        entailed = True
+        for clause in clauses:
+            # `fixed` takes an int in the solver's numbering, not a Literal,
+            # and a predicate that was never encoded cannot have been fixed.
+            values = [self._solver.fixed(-var if lit.is_Not else var)
+                      if (var := self._encoding.get(lit.lit)) else 0
+                      for lit in clause]
+
+            # One false clause makes the whole CNF false. An undecided one
+            # only rules out entailment, so keep looking for a false clause.
+            if all(value == -1 for value in values):
+                return False
+            entailed = entailed and 1 in values
+
+        return entailed or None
 
     def decide(self, selector):
         """Search for a model of each side of the question that *selector*
