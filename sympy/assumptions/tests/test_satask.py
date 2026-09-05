@@ -522,3 +522,10 @@ def test_reasoning_engine_inconsistent():
     raises(ValueError, lambda: _engine(Q.positive(x), S.false))
     raises(ValueError, lambda: _engine(Q.positive(x),
                                        Q.positive(x) & Q.negative(x)))
+
+    # Four clauses with no unit among them, so propagation gets nothing out
+    # of the assumptions and it is the first search that finds them
+    # contradictory, before either side of the question is asked about.
+    a, b = Q.prime(x), Q.even(x)
+    engine = _engine(Q.zero(x), (a | b) & (~a | b) & (a | ~b) & (~a | ~b))
+    raises(ValueError, lambda: engine.ask_question(engine.selector))

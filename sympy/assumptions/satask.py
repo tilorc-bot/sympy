@@ -222,8 +222,16 @@ class ReasoningEngine:
         its negation has a model, and ``None`` if both do. The search
         continues from the work that building the engine already did.
 
+        Raises a ``ValueError`` if the facts have no model at all, which
+        means they are contradictory in a way propagation did not show up.
+
         """
-        # Continue on the propogated solver, just call solve() on it.
+        # Continue on the propogated solver, just call solve() on it. Both
+        # sides rest on the facts, so a search that finds no model at all
+        # rules the question out without either side being asked about.
+        # TODO: Run additional checks to see which combination of the
+        # assumptions, global_assumptions, and relevant_facts are
+        # inconsistent.
         if self._solver.solve() == IpasirStatus.UNSATISFIABLE:
             raise ValueError("Inconsistent assumptions")
 
@@ -232,23 +240,12 @@ class ReasoningEngine:
         self._solver.assume(-witnessed)
         other = self._solver.solve() == IpasirStatus.SATISFIABLE
 
-        can_be_true = witnessed > 0 or other
-        can_be_false = witnessed < 0 or other
-
-        if can_be_true and can_be_false:
+        # One side is settled already, so the other having a model is the
+        # whole of what makes the question undecided.
+        if other:
             return None
 
-        if can_be_true and not can_be_false:
-            return True
-
-        if not can_be_true and can_be_false:
-            return False
-
-        if not can_be_true and not can_be_false:
-            # TODO: Run additional checks to see which combination of the
-            # assumptions, global_assumptions, and relevant_facts are
-            # inconsistent.
-            raise ValueError("Inconsistent assumptions")
+        return witnessed > 0
 
 
 def check_satisfiability(prop: CNF, _prop: CNF, factbase: EncodedCNF,
