@@ -8,8 +8,8 @@ from sympy.functions.elementary.complexes import Abs
 from sympy.logic.boolalg import Equivalent, Implies, Xor
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.assumptions.cnf import CNF, Literal
-from sympy.assumptions.satask import (satask, extract_predargs,
-    get_relevant_clsfacts)
+from sympy.assumptions.satask import (ReasoningEngine, satask,
+    extract_predargs, get_all_relevant_facts, get_relevant_clsfacts)
 from sympy.assumptions.sathandlers import class_fact_registry
 
 from sympy.testing.pytest import raises, XFAIL
@@ -434,3 +434,102 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_satask_inconsistent_needing_search():
+    # Four clauses with no unit among them, so propagation gets nothing out
+    # of the assumptions and it is the search that finds them contradictory,
+    # before either side of the question has been asked about.
+    a, b = Q.prime(x), Q.even(x)
+    contradiction = (a | b) & (~a | b) & (a | ~b) & (~a | ~b)
+    raises(ValueError, lambda: satask(Q.zero(x), contradiction))
+
+
+def _engine(proposition, assumptions=True):
+    # Build a `ReasoningEngine` the way `satask` does.
+    prop = CNF.from_prop(proposition)
+    _prop = CNF.from_prop(~proposition)
+    assumptions = CNF.from_prop(assumptions)
+
+    factbase = get_all_relevant_facts(prop, assumptions)
+    factbase.add_from_cnf(assumptions)
+
+    return ReasoningEngine(factbase, prop, _prop)
+
+
+def test_reasoning_engine_lookup():
+    engine = _engine(Q.zero(x), Q.positive(x) & Q.integer(x))
+
+    # What the assumptions imply, on their own and through the known facts.
+    assert engine.lookup(Q.positive(x)) is True
+    assert engine.lookup(Q.real(x)) is True
+    assert engine.lookup(Q.rational(x)) is True
+
+    # What they rule out.
+    assert engine.lookup(Q.negative(x)) is False
+    assert engine.lookup(Q.zero(x)) is False
+
+    # A positive integer may or may not be prime.
+    assert engine.lookup(Q.prime(x)) is None
+
+    # Nothing was encoded about an expression the question never mentioned.
+    assert engine.lookup(Q.real(y)) is None
+
+    # Asking about a predicate does not fix it: the guarded clauses only
+    # tie the selector to it.
+    assert _engine(Q.positive(x)).lookup(Q.positive(x)) is None
+    assert _engine(Q.positive(x), Q.real(x)).lookup(Q.positive(x)) is None
+
+
+def test_reasoning_engine_lookup_ignores_the_proposition():
+    # Whatever is asked, `lookup` answers from the facts alone, so the same
+    # assumptions give the same answers across unrelated propositions.
+    assumptions = Q.positive(x) & Q.integer(x)
+    preds = [Q.real(x), Q.negative(x), Q.rational(x), Q.prime(x), Q.zero(x)]
+
+    expected = [_engine(Q.real(x), assumptions).lookup(pred) for pred in preds]
+    assert expected == [True, False, True, None, False]
+
+    for proposition in (Q.zero(x), Q.prime(x), Q.negative(x) | Q.zero(x),
+                        Q.real(x) & Q.rational(x), ~Q.even(x)):
+        engine = _engine(proposition, assumptions)
+        assert [engine.lookup(pred) for pred in preds] == expected
+
+
+def test_reasoning_engine_lookup_after_ask_question():
+    engine = _engine(Q.positive(x), Q.real(x))
+    assert engine.ask_question(engine.selector) is None
+
+    # Only the root level fixes literals, and the search has left it.
+    raises(ValueError, lambda: engine.lookup(Q.real(x)))
+    raises(ValueError, lambda: engine.fixed(engine.selector))
+
+
+def test_reasoning_engine_fixed():
+    cases = [(Q.real(x), Q.positive(x), True),
+             (Q.zero(x), Q.positive(x), False),
+             (Q.positive(x), Q.real(x), None),
+             # A question with no predicates in it is settled by the guard of
+             # the clause its side is encoded to on its own.
+             (S.true, S.true, True),
+             (S.false, S.true, False)]
+
+    for proposition, assumptions, answer in cases:
+        engine = _engine(proposition, assumptions)
+        assert engine.fixed(engine.selector) is answer
+
+
+def test_reasoning_engine_ask_question():
+    cases = [(Q.real(x), Q.positive(x), True),
+             (Q.positive(x), ~Q.real(x), False),
+             (Q.positive(x), Q.real(x), None)]
+
+    for proposition, assumptions, answer in cases:
+        engine = _engine(proposition, assumptions)
+        assert engine.ask_question(engine.selector) is answer
+
+
+def test_reasoning_engine_inconsistent():
+    raises(ValueError, lambda: _engine(Q.positive(x), S.false))
+    raises(ValueError, lambda: _engine(Q.positive(x),
+                                       Q.positive(x) & Q.negative(x)))
