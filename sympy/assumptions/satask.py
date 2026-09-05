@@ -86,33 +86,15 @@ class ReasoningEngine:
     everything the facts imply on their own, which is what :meth:`fixed`
     and :meth:`lookup` read; :meth:`ask_question` then runs the search.
 
-    Parameters
-    ==========
-
-    factbase : sympy.assumptions.cnf.EncodedCNF
-        The assumptions, together with every fact relevant to them.
-
-    prop : sympy.assumptions.cnf.CNF
-        The proposition to decide.
-
-    _prop : sympy.assumptions.cnf.CNF
-        The negation of *prop*. Negating a CNF is not free, so the caller
-        passes the one it has already built.
+    *factbase* is the assumptions together with every fact relevant to them,
+    and *_prop* is the negation of *prop*: negating a CNF is not free, so the
+    caller passes the one it has already built.
 
     Raises
     ======
 
     ValueError
         If *factbase* is contradictory, as far as propagation can tell.
-
-    TODO: the proposition is fixed at construction because ``SATSolver``
-    cannot be given new variables once it exists, and the proposition brings
-    new ones: the selector always, and any predicate of its own that the
-    facts do not already carry. Once the solver can take them, building it
-    moves into ``__init__``, ``_create_question`` becomes public, and one
-    engine answers several questions against facts it has propagated once.
-    Only those two change: a question is named by the selector literal that
-    ``_create_question`` hands back, which is what the rest already takes.
 
     Examples
     ========
@@ -129,35 +111,36 @@ class ReasoningEngine:
     >>> engine = ReasoningEngine(factbase, prop, _prop)
     >>> engine.lookup(Q.real(x))
     True
+    >>> engine.fixed(engine.selector)
+    True
     >>> engine.ask_question(engine.selector)
     True
 
+    TODO: the proposition is fixed at construction because ``SATSolver``
+    cannot be given new variables once it exists, and a question brings new
+    ones. Once it can, building the solver moves into ``__init__``,
+    ``_create_question`` becomes public, and one engine answers several
+    questions against facts propagated once; nothing else here changes.
+
     """
-    def __init__(self, factbase, prop, _prop):
+    def __init__(self, factbase: EncodedCNF, prop: CNF, _prop: CNF) -> None:
         if {0} in factbase.data:
             raise ValueError("Inconsistent assumptions")
 
         # The facts are what an engine that could be asked again would keep.
         self._factbase = factbase
-        self.selector = self._create_question(prop, _prop)
+        self.selector: int = self._create_question(prop, _prop)
 
-    def _create_question(self, prop, _prop):
+    def _create_question(self, prop: CNF, _prop: CNF) -> int:
         """Create the question of whether *prop* or its negation *_prop*
         holds, returning the selector literal that names it.
 
         Asserting the selector activates *prop* and asserting its negation
-        activates *_prop*, while leaving it unassigned keeps both sides from
-        saying anything, which is the state the facts are propagated in.
+        activates *_prop*; leaving it unassigned, which is how the facts are
+        propagated, keeps both sides from saying anything.
 
         The selector is the whole of the question: the clauses it guards stay
-        in the solver, so nothing about the question has to be kept here for
-        :meth:`fixed` and :meth:`ask_question` to take one.
-
-        This is the ``create_question`` of the TODO above, written for the
-        engine that will call it more than once. Until the solver can be
-        given new variables it also has to build the solver, which is the one
-        thing a second call would get wrong; moving those two lines into
-        ``__init__`` lifts it, and nothing else here changes.
+        in the solver, so nothing about the question is kept here.
         """
         guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
         self._encoding = guarded.encoding
@@ -175,28 +158,12 @@ class ReasoningEngine:
 
         return selector
 
-    def lookup(self, pred):
-        """Return what propagating the facts fixed *pred* to.
+    def lookup(self, pred: AppliedPredicate) -> bool | None:
+        """Return what propagating the facts fixed *pred* to, as
+        :meth:`fixed` does for a literal.
 
-        The answer is ``True`` if the facts imply *pred*, ``False`` if they
-        imply its negation, and ``None`` if they leave it open, which is also
-        the answer for a *pred* the engine never encoded. Nothing is searched
-        for, so this is an O(1) operation.
-
-        What it reports is what the facts imply on their own. The
-        proposition is in the same solver, but it cannot fix a predicate that
-        the facts leave open, for the reason given in
-        :meth:`_create_question`.
-
-        It answers only until :meth:`ask_question` has run: past that the
-        solver holds the assignments of a model rather than those of the root
-        level, and asking raises a ``ValueError``.
-
-        Parameters
-        ==========
-
-        pred : sympy.assumptions.assume.AppliedPredicate
-            A predicate applied to an expression, such as ``Q.real(x)``.
+        A *pred* the engine never encoded is one the facts leave open, so the
+        answer for it is ``None``.
 
         Examples
         ========
@@ -229,61 +196,25 @@ class ReasoningEngine:
 
         return self.fixed(lit)
 
-    def fixed(self, lit):
-        """Return what propagating the facts fixed the literal *lit* to.
+    def fixed(self, lit: int) -> bool | None:
+        """Return what propagating the facts fixed *lit* to: ``True`` if they
+        imply it, ``False`` if they imply its negation, and ``None`` if they
+        leave it open.
 
-        The answer is ``True`` if the facts imply it, ``False`` if they imply
-        its negation, and ``None`` if they leave it open. Nothing is searched
-        for, so this is an O(1) operation, and like :meth:`lookup` it answers
-        only until :meth:`ask_question` has run.
+        Nothing is searched for, so this is an O(1) operation. It answers
+        only until :meth:`ask_question` has run, which leaves the root level
+        the facts were propagated at, and asking past that raises a
+        ``ValueError``.
 
-        The selector of a question is a literal like any other, so this is
-        also how to ask what the facts make of a whole question. Each of the
-        clauses guarding the two sides carries its guard with it, so
-        falsifying a clause of one side leaves that guard behind as the unit
-        ruling the side out: the selector is fixed exactly when the facts
-        decide the question, and there is nothing to evaluate.
-
-        Reading it that way trusts the facts to be consistent. Propagation
-        does not show up every contradiction, and contradictory facts entail
-        a proposition whichever way it is asked.
-
-        Examples
-        ========
-
-        >>> from sympy import Q
-        >>> from sympy.abc import x
-        >>> from sympy.assumptions.cnf import CNF
-        >>> from sympy.assumptions.satask import (ReasoningEngine,
-        ...     get_all_relevant_facts)
-
-        Being positive settles being nonzero, so the facts fix the selector
-        of that question on their own.
-
-        >>> prop = CNF.from_prop(Q.nonzero(x))
-        >>> _prop = CNF.from_prop(~Q.nonzero(x))
-        >>> assumptions = CNF.from_prop(Q.positive(x))
-        >>> factbase = get_all_relevant_facts(prop, assumptions)
-        >>> factbase.add_from_cnf(assumptions)
-        >>> engine = ReasoningEngine(factbase, prop, _prop)
-        >>> engine.fixed(engine.selector)
-        True
-
-        Being an integer it does not settle, so that question is left to the
-        search.
-
-        >>> prop = CNF.from_prop(Q.integer(x))
-        >>> _prop = CNF.from_prop(~Q.integer(x))
-        >>> factbase = get_all_relevant_facts(prop, assumptions)
-        >>> factbase.add_from_cnf(assumptions)
-        >>> engine = ReasoningEngine(factbase, prop, _prop)
-        >>> engine.fixed(engine.selector) is None
-        True
+        The guarded clauses say no more than ``selector <-> prop``, so a
+        selector is fixed only when the facts decide its question. Passing
+        one here is how to ask what they made of that question, as the
+        example on :class:`ReasoningEngine` does.
 
         """
         return {1: True, -1: False, 0: None}[self._solver.fixed(lit)]
 
-    def ask_question(self, selector):
+    def ask_question(self, selector: int) -> bool | None:
         """Search for a model of each side of the question that *selector*
         names, and answer from the sides that have one.
 
@@ -320,7 +251,8 @@ class ReasoningEngine:
             raise ValueError("Inconsistent assumptions")
 
 
-def check_satisfiability(prop, _prop, factbase, early_return=False):
+def check_satisfiability(prop: CNF, _prop: CNF, factbase: EncodedCNF,
+                         early_return: bool = False) -> bool | None:
     engine = ReasoningEngine(factbase, prop, _prop)
 
     # Check whether the facts alone already decide the proposition.
@@ -332,7 +264,7 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     return engine.ask_question(engine.selector)
 
 
-def _add_guarded(encoded, cnf, active):
+def _add_guarded(encoded: EncodedCNF, cnf: CNF, active: int) -> None:
     """Add the clauses of *cnf* to *encoded*, each of them guarded by the
     literal *active*, so that *cnf* holds when *active* is true and says
     nothing at all when it is false.
@@ -343,7 +275,8 @@ def _add_guarded(encoded, cnf, active):
                      for clause in cnf.clauses]
 
 
-def _encode_with_selector(prop, _prop, factbase):
+def _encode_with_selector(prop: CNF, _prop: CNF,
+                          factbase: EncodedCNF) -> tuple[EncodedCNF, int]:
     """Return *factbase* with the clauses of prop and _prop added to it, and
     the selector variable that activates prop when true and _prop when false.
     """
