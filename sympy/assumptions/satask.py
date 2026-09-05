@@ -83,9 +83,8 @@ class ReasoningEngine:
     The engine encodes the proposition, its negation and *factbase* into one
     solver, guarding the two sides of the question with a selector variable
     so that both can be asked of that solver. Building it propagates
-    everything the facts imply on their own, which is what :meth:`lookup`
-    reads and what :meth:`entailed` answers from; :meth:`ask_question` then
-    runs the search.
+    everything the facts imply on their own, which is what :meth:`fixed`
+    and :meth:`lookup` read; :meth:`ask_question` then runs the search.
 
     Parameters
     ==========
@@ -140,7 +139,6 @@ class ReasoningEngine:
 
         # The facts are what an engine that could be asked again would keep.
         self._factbase = factbase
-        self._questions = {}
         self.selector = self._create_question(prop, _prop)
 
     def _create_question(self, prop, _prop):
@@ -151,19 +149,20 @@ class ReasoningEngine:
         activates *_prop*, while leaving it unassigned keeps both sides from
         saying anything, which is the state the facts are propagated in.
 
+        The selector is the whole of the question: the clauses it guards stay
+        in the solver, so nothing about the question has to be kept here for
+        :meth:`fixed` and :meth:`ask_question` to take one.
+
         This is the ``create_question`` of the TODO above, written for the
-        engine that will call it more than once: a question is named by the
-        selector handed back, and ``_questions`` keeps what that selector
-        stands for. Until the solver can be given new variables this also
-        has to build the solver, which is the one thing a second call would
-        get wrong; moving those two lines into ``__init__`` lifts it, and
-        nothing else here changes.
+        engine that will call it more than once. Until the solver can be
+        given new variables it also has to build the solver, which is the one
+        thing a second call would get wrong; moving those two lines into
+        ``__init__`` lifts it, and nothing else here changes.
         """
         guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
         self._encoding = guarded.encoding
         self._solver = SATSolver(guarded.data, range(1, selector + 1),
                                  set(), guarded.symbols + [selector])
-        self._questions[selector] = (prop, _prop)
 
         # Run `propogate()` on the assumptions. The guarded clauses say no
         # more than `selector <-> prop`, which ties the selector to the
@@ -186,7 +185,8 @@ class ReasoningEngine:
 
         What it reports is what the facts imply on their own. The
         proposition is in the same solver, but it cannot fix a predicate that
-        the facts leave open, for the reason given in ``__init__``.
+        the facts leave open, for the reason given in
+        :meth:`_create_question`.
 
         It answers only until :meth:`ask_question` has run: past that the
         solver holds the assignments of a model rather than those of the root
@@ -227,53 +227,61 @@ class ReasoningEngine:
         if lit is None:
             return None
 
+        return self.fixed(lit)
+
+    def fixed(self, lit):
+        """Return what propagating the facts fixed the literal *lit* to.
+
+        The answer is ``True`` if the facts imply it, ``False`` if they imply
+        its negation, and ``None`` if they leave it open. Nothing is searched
+        for, so this is an O(1) operation, and like :meth:`lookup` it answers
+        only until :meth:`ask_question` has run.
+
+        The selector of a question is a literal like any other, so this is
+        also how to ask what the facts make of a whole question. Each of the
+        clauses guarding the two sides carries its guard with it, so
+        falsifying a clause of one side leaves that guard behind as the unit
+        ruling the side out: the selector is fixed exactly when the facts
+        decide the question, and there is nothing to evaluate.
+
+        Reading it that way trusts the facts to be consistent. Propagation
+        does not show up every contradiction, and contradictory facts entail
+        a proposition whichever way it is asked.
+
+        Examples
+        ========
+
+        >>> from sympy import Q
+        >>> from sympy.abc import x
+        >>> from sympy.assumptions.cnf import CNF
+        >>> from sympy.assumptions.satask import (ReasoningEngine,
+        ...     get_all_relevant_facts)
+
+        Being positive settles being nonzero, so the facts fix the selector
+        of that question on their own.
+
+        >>> prop = CNF.from_prop(Q.nonzero(x))
+        >>> _prop = CNF.from_prop(~Q.nonzero(x))
+        >>> assumptions = CNF.from_prop(Q.positive(x))
+        >>> factbase = get_all_relevant_facts(prop, assumptions)
+        >>> factbase.add_from_cnf(assumptions)
+        >>> engine = ReasoningEngine(factbase, prop, _prop)
+        >>> engine.fixed(engine.selector)
+        True
+
+        Being an integer it does not settle, so that question is left to the
+        search.
+
+        >>> prop = CNF.from_prop(Q.integer(x))
+        >>> _prop = CNF.from_prop(~Q.integer(x))
+        >>> factbase = get_all_relevant_facts(prop, assumptions)
+        >>> factbase.add_from_cnf(assumptions)
+        >>> engine = ReasoningEngine(factbase, prop, _prop)
+        >>> engine.fixed(engine.selector) is None
+        True
+
+        """
         return {1: True, -1: False, 0: None}[self._solver.fixed(lit)]
-
-    def entailed(self, selector):
-        """Return what the literals fixed so far make of the question that
-        *selector* names.
-
-        The answer is ``True`` or ``False`` if they already decide it, and
-        ``None`` if deciding it needs the search that :meth:`ask_question`
-        runs.
-
-        This trusts the facts to be consistent. Propagation does not show up
-        every contradiction, and contradictory facts entail a proposition
-        whichever way it is asked.
-
-        """
-        prop, _prop = self._questions[selector]
-
-        entailed = self._evaluate(prop.clauses)
-        if entailed is not None:
-            return entailed
-
-        entailed = self._evaluate(_prop.clauses)
-        if entailed is not None:
-            return not entailed
-
-        return None
-
-    def _evaluate(self, clauses):
-        """Return True if the literals the solver has fixed make the CNF
-        *clauses* true, False if they make it false, and None if they leave
-        it undecided.
-        """
-        entailed = True
-        for clause in clauses:
-            # `fixed` takes an int in the solver's numbering, not a Literal,
-            # and a predicate that was never encoded cannot have been fixed.
-            values = [self._solver.fixed(-var if lit.is_Not else var)
-                      if (var := self._encoding.get(lit.lit)) else 0
-                      for lit in clause]
-
-            # One false clause makes the whole CNF false. An undecided one
-            # only rules out entailment, so keep looking for a false clause.
-            if all(value == -1 for value in values):
-                return False
-            entailed = entailed and 1 in values
-
-        return entailed or None
 
     def ask_question(self, selector):
         """Search for a model of each side of the question that *selector*
@@ -315,9 +323,9 @@ class ReasoningEngine:
 def check_satisfiability(prop, _prop, factbase, early_return=False):
     engine = ReasoningEngine(factbase, prop, _prop)
 
-    # Check whether proposition is entailed by any of the assigned literals.
+    # Check whether the facts alone already decide the proposition.
     if early_return:
-        entailed = engine.entailed(engine.selector)
+        entailed = engine.fixed(engine.selector)
         if entailed is not None:
             return entailed
 

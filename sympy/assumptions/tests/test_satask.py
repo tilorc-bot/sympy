@@ -493,14 +493,21 @@ def test_reasoning_engine_lookup_after_ask_question():
 
     # Only the root level fixes literals, and the search has left it.
     raises(ValueError, lambda: engine.lookup(Q.real(x)))
+    raises(ValueError, lambda: engine.fixed(engine.selector))
 
 
-def test_reasoning_engine_entailed():
+def test_reasoning_engine_fixed():
     for proposition, assumptions, answer in [(Q.real(x), Q.positive(x), True),
                                              (Q.zero(x), Q.positive(x), False),
-                                             (Q.positive(x), Q.real(x), None)]:
+                                             (Q.positive(x), Q.real(x), None),
+                                             # A question with no predicates
+                                             # in it is settled by the guard
+                                             # of the clause its side is
+                                             # encoded to on its own.
+                                             (S.true, S.true, True),
+                                             (S.false, S.true, False)]:
         engine = _engine(proposition, assumptions)
-        assert engine.entailed(engine.selector) is answer
+        assert engine.fixed(engine.selector) is answer
 
 
 def test_reasoning_engine_ask_question():
