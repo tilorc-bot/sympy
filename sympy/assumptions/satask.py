@@ -106,6 +106,13 @@ class ReasoningEngine:
     ValueError
         If *factbase* is contradictory, as far as propagation can tell.
 
+    TODO: the proposition is fixed at construction because ``SATSolver``
+    cannot be given new variables once it exists, and the proposition brings
+    new ones: the selector always, and any predicate of its own that the
+    facts do not already carry. Once the solver can take them, ``_ask``
+    becomes a public ``ask`` that ``__init__`` no longer calls, and one
+    engine answers several propositions against facts it has propagated once.
+
     Examples
     ========
 
@@ -129,10 +136,21 @@ class ReasoningEngine:
         if {0} in factbase.data:
             raise ValueError("Inconsistent assumptions")
 
+        # The facts are what an engine that could be asked again would keep.
+        self._factbase = factbase
+        self._ask(prop, _prop)
+
+    def _ask(self, prop, _prop):
+        """Put a question to the facts, propagating what they imply.
+
+        This is the ``ask`` of the TODO above, called from ``__init__`` for
+        as long as a question can only be put to a solver of its own.
+        """
         self._prop = prop
         self._negation = _prop
 
-        guarded, self._selector = _encode_with_selector(prop, _prop, factbase)
+        guarded, self._selector = _encode_with_selector(prop, _prop,
+                                                        self._factbase)
         self._encoding = guarded.encoding
         self._solver = SATSolver(guarded.data, range(1, self._selector + 1),
                                  set(), guarded.symbols + [self._selector])
