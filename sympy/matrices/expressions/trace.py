@@ -1,6 +1,7 @@
 from __future__ import annotations
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
+from sympy.core.singleton import S
 from sympy.core.sorting import default_sort_key
 from sympy.core.symbol import uniquely_named_symbol
 from sympy.core.sympify import sympify
@@ -123,3 +124,27 @@ def trace(expr):
     3
     """
     return Trace(expr).doit()
+
+
+from sympy.assumptions.ask import ask, Q
+from sympy.assumptions.refine import handlers_dict
+
+
+def refine_Trace(expr, assumptions):
+    """
+    >>> from sympy import MatrixSymbol, Q, assuming, refine
+    >>> X = MatrixSymbol('X', 2, 2)
+    >>> from sympy.matrices.expressions import Trace
+    >>> Trace(X)
+    Trace(X)
+    >>> with assuming(Q.zero(X)):
+    ...     print(refine(Trace(X)))
+    0
+    """
+    if ask(Q.zero(expr.arg), assumptions):
+        return S.Zero
+
+    return expr
+
+
+handlers_dict['Trace'] = refine_Trace
