@@ -1,4 +1,6 @@
 from __future__ import annotations
+from sympy.assumptions.ask import Q
+from sympy.assumptions.refine import refine
 from sympy.core import symbols, S
 from sympy.functions import adjoint, conjugate, transpose
 from sympy.matrices.expressions import MatrixSymbol, Adjoint, trace, Transpose
@@ -33,3 +35,12 @@ def test_adjoint():
     assert Adjoint(Sq)[0, 1] == conjugate(Sq[1, 0])
 
     assert Adjoint(A*B).doit() == Adjoint(B) * Adjoint(A)
+
+
+def test_refine():
+    assert refine(C.adjoint(), Q.hermitian(C)) == C
+    assert refine(Adjoint(C), Q.hermitian(C)) == C
+    assert refine(C.adjoint(), Q.antihermitian(C)) == -C
+    assert refine(Adjoint(C), Q.antihermitian(C)) == -C
+    assert refine(C.adjoint()) == Adjoint(C)
+    assert refine(C.adjoint(), Q.symmetric(C)) == Adjoint(C)
