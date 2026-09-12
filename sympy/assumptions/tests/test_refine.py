@@ -6,7 +6,7 @@ from sympy.core.expr import Expr
 from sympy.core.numbers import (I, Rational, nan, pi)
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
-from sympy.functions.elementary.complexes import (Abs, arg, im, re, sign)
+from sympy.functions.elementary.complexes import (Abs, arg, conjugate, im, re, sign)
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import (atan, atan2, cos, sin, tan)
@@ -194,6 +194,16 @@ def test_arg():
     x = Symbol('x', complex = True)
     assert refine(arg(x), Q.positive(x)) == 0
     assert refine(arg(x), Q.negative(x)) == pi
+
+def test_conjugate():
+    assert refine(conjugate(x), Q.real(x)) == x
+    assert refine(conjugate(x), Q.imaginary(x)) == -x
+    assert refine(conjugate(x)) == conjugate(x)
+    assert refine(conjugate(x), Q.complex(x)) == conjugate(x)
+    assert refine(1 + conjugate(x), Q.real(x)) == 1 + x
+    assert refine(conjugate(x + y), Q.real(x) & Q.real(y)) == x + y
+    assert refine(conjugate(x + y), Q.real(x) & Q.imaginary(y)) == x - y
+    assert refine(conjugate(x*y), Q.real(x) & Q.imaginary(y)) == -x*y
 
 def test_func_args():
     class MyClass(Expr):
