@@ -77,72 +77,125 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
     return check_satisfiability(props, _props, sat, early_return)
 
 
-def check_satisfiability(prop, _prop, factbase, early_return=False):
-    if {0} in factbase.data:
-        raise ValueError("Inconsistent assumptions")
+class ReasoningEngine:
+    # TODO: the proposition is fixed at construction because `SATSolver`
+    # cannot be given new variables once it exists, and a question brings new
+    # ones: the selector always, and any predicate of its own that the facts
+    # do not already carry. Once the solver can take them, building it moves
+    # into `__init__`, `_create_question` becomes public, and one engine
+    # answers several questions against facts propagated once. Only those two
+    # change: a question is named by the selector `_create_question` hands
+    # back, which is what `fixed` and `ask_question` already take.
 
-    true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
+    def __init__(self, factbase: EncodedCNF, prop: CNF, _prop: CNF) -> None:
+        # `_prop` is the negation of `prop`. Negating a CNF is not free, so
+        # the caller passes the one it has already built.
+        if {0} in factbase.data:
+            raise ValueError("Inconsistent assumptions")
 
-    # Run `propogate()` on the assumptions
-    solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
-                       true_false_guarded.symbols + [selector])
-    if solver.propagate() == IpasirStatus.UNSATISFIABLE:
-        raise ValueError("Inconsistent assumptions")
+        # The facts are what an engine that could be asked again would keep.
+        self._factbase = factbase
+        self.selector: int = self._create_question(prop, _prop)
 
-    # Check whether proposition is entailed by any of the assigned literals.
+    def _create_question(self, prop: CNF, _prop: CNF) -> int:
+        # Asserting the selector returned activates `prop` and asserting its
+        # negation activates `_prop`; leaving it unassigned, which is how the
+        # facts are propagated, keeps both sides from saying anything. It is
+        # the whole of the question: the clauses it guards stay in the solver,
+        # so nothing about the question is kept here.
+        guarded, selector = _encode_with_selector(prop, _prop, self._factbase)
+        self._encoding = guarded.encoding
+        self._solver = SATSolver(guarded.data, range(1, selector + 1),
+                                 set(), guarded.symbols + [selector])
+
+        # Run `propogate()` on the assumptions. The guarded clauses say no
+        # more than `selector <-> prop`, which ties the selector to the
+        # predicates without constraining them, so what propagation fixes
+        # among the predicates is what the facts imply and nothing else.
+        if self._solver.propagate() == IpasirStatus.UNSATISFIABLE:
+            raise ValueError("Inconsistent assumptions")
+
+        return selector
+
+    def lookup(self, pred: AppliedPredicate) -> bool | None:
+        lit = self._encoding.get(pred)
+        if lit is None:
+            return None
+
+        return self.fixed(lit)
+
+    def fixed(self, lit: int) -> bool | None:
+        # A selector is a literal like any other: each of the clauses guarding
+        # a side carries its guard with it, so falsifying a clause of one side
+        # leaves that guard behind as the unit ruling the side out, and
+        # propagation fixes the selector exactly when the facts decide the
+        # question. `SATSolver.fixed` answers at the root level only, so this
+        # raises once `ask_question` has searched.
+        return {1: True, -1: False, 0: None}[self._solver.fixed(lit)]
+
+    def ask_question(self, selector: int) -> bool | None:
+        # Continue on the propogated solver, just call solve() on it. Both
+        # sides rest on the facts, so a search that finds no model at all
+        # rules the question out without either side being asked about.
+        # TODO: Run additional checks to see which combination of the
+        # assumptions, global_assumptions, and relevant_facts are inconsistent.
+        if self._solver.solve() == IpasirStatus.UNSATISFIABLE:
+            raise ValueError("Inconsistent assumptions")
+
+        # The model settles the side it activated, so ask about the other one.
+        witnessed = self._solver.val(selector)
+        self._solver.assume(-witnessed)
+        other = self._solver.solve() == IpasirStatus.SATISFIABLE
+
+        # One side is settled already, so the other having a model is the
+        # whole of what makes the question undecided.
+        if other:
+            return None
+
+        return witnessed > 0
+
+
+def check_satisfiability(prop: CNF, _prop: CNF, factbase: EncodedCNF,
+                         early_return: bool = False) -> bool | None:
+    engine = ReasoningEngine(factbase, prop, _prop)
+
+    # Check whether the facts alone already decide the proposition.
     if early_return:
-        entailed = solver._is_entailed(prop.clauses, true_false_guarded.encoding)
+        entailed = engine.fixed(engine.selector)
         if entailed is not None:
             return entailed
 
-        entailed = solver._is_entailed(_prop.clauses, true_false_guarded.encoding)
-        if entailed is not None:
-            return not entailed
-
-    # Continue on the propogated solver, just call solve() on it.
-    if solver.solve() == IpasirStatus.UNSATISFIABLE:
-        raise ValueError("Inconsistent assumptions")
-
-    # The model settles the side it activated, so ask about the other one.
-    witnessed = solver.val(selector)
-    solver.assume(-witnessed)
-    other = solver.solve() == IpasirStatus.SATISFIABLE
-
-    can_be_true = witnessed > 0 or other
-    can_be_false = witnessed < 0 or other
-
-    if can_be_true and can_be_false:
-        return None
-
-    if can_be_true and not can_be_false:
-        return True
-
-    if not can_be_true and can_be_false:
-        return False
-
-    if not can_be_true and not can_be_false:
-        # TODO: Run additional checks to see which combination of the
-        # assumptions, global_assumptions, and relevant_facts are
-        # inconsistent.
-        raise ValueError("Inconsistent assumptions")
+    return engine.ask_question(engine.selector)
 
 
-def _encode_with_selector(prop, _prop, factbase):
+def _add_guarded(encoded: EncodedCNF, cnf: CNF, active: int) -> None:
+    # Add the clauses of `cnf` to `encoded`, each guarded by the literal
+    # `active`, so that `cnf` holds when `active` is true and says nothing at
+    # all when it is false. Dropping the 0 that encodes False leaves a clause
+    # nothing can satisfy as the unit {-active}, which is what stops `active`
+    # from being true.
+    encoded.data += [(encoded.encode(clause) - {0}) | {-active}
+                     for clause in cnf.clauses]
+
+
+def _encode_with_selector(prop: CNF, _prop: CNF,
+                          factbase: EncodedCNF) -> tuple[EncodedCNF, int]:
     """Return *factbase* with the clauses of prop and _prop added to it, and
     the selector variable that activates prop when true and _prop when false.
     """
     true_false_guarded = factbase.copy()
-    sides = [[true_false_guarded.encode(clause) for clause in side.clauses]
-             for side in (prop, _prop)]
+
+    # Number the predicates of both sides before choosing the selector. Doing
+    # it after would give the selector a number that encoding the second side
+    # still hands out to a predicate.
+    for clause in (*prop.clauses, *_prop.clauses):
+        true_false_guarded.encode(clause)
 
     # One past the last predicate, so the selector is a variable of its own.
     selector = len(true_false_guarded.encoding) + 1
 
-    for clauses, guard in zip(sides, (-selector, selector)):
-        # Dropping the 0 that encodes False leaves a side nothing can satisfy
-        # as the unit {guard}.
-        true_false_guarded.data += [(clause - {0}) | {guard}
-                                    for clause in clauses]
+    _add_guarded(true_false_guarded, prop, selector)
+    _add_guarded(true_false_guarded, _prop, -selector)
 
     return true_false_guarded, selector
 
