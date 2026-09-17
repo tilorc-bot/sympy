@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sympy.assumptions.ask import Q
+from sympy.assumptions.ask import Q, ask
 from sympy.core.numbers import (I, pi, E)
 from sympy.core.relational import (Eq, Gt)
 from sympy.core.singleton import S
@@ -434,3 +434,24 @@ def test_satask_early_return():
     assert satask(Q.positive(x) | Q.negative(x), Q.real(x) & Q.nonzero(x),
                   early_return=True) is True
     assert satask(S.false, Q.real(x), early_return=True) is False
+
+
+def test_satask_lra_fallback():
+    # realness established by new-style assumptions
+    assert satask(x > z, (x > y) & (y > z) & Q.real(x) & Q.real(y)
+                  & Q.real(z)) is True
+    assert satask(Q.positive(x), ((x > 1) | (x > 3)) & Q.real(x)) is True
+    assert satask(Q.positive(x), ((x < -1) | (x < -3)) & Q.real(x)) is False
+    assert satask(x > y, Q.real(x) & Q.real(y) & (x < y)) is False
+
+    # realness split between old and new assumptions
+    w = symbols("w", real=True)
+    assert satask(w > x, (w > 1) & (x < 0) & Q.real(x)) is True
+
+    # composite expressions that are real because their parts are real
+    assert satask(2*x > 4, Q.real(x) & (x > 2)) is True
+    assert satask(2*w > 4, w > 2) is True
+
+    assert ask(x > z, (x > y) & (y > z) & Q.real(x) & Q.real(y)
+               & Q.real(z)) is True
+    assert ask(x > y, Q.real(x) & Q.real(y) & (x < y)) is False
