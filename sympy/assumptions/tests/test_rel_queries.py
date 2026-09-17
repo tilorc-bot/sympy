@@ -90,6 +90,14 @@ def test_unhandled_queries():
     assert ask(Q.lt(X, 2) & Q.gt(X, 3)) is None
 
 
+def test_sign_predicates_imply_real():
+    a, b = symbols("a b")
+
+    assert ask(a - b > 0, Q.nonnegative(a) & Q.negative(b)) is True
+    assert ask(a < 1, Q.nonpositive(a)) is True
+    assert ask(Q.positive(a), Q.nonzero(a) & (a > 1)) is True
+
+
 def test_all_pred():
     # test usable pred
     assert lra_satask(Q.extended_positive(x), (x > 2)) is True
