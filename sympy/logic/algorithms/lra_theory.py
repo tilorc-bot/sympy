@@ -113,31 +113,13 @@ References
        https://link.springer.com/chapter/10.1007/11817963_11
 """
 from __future__ import annotations
+from sympy.assumptions.lra_preprocess import translate_lra_atoms
 from sympy.solvers.solveset import linear_eq_to_matrix
 from sympy.matrices.dense import eye
-from sympy.assumptions import Predicate
-from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.ask import Q
 from sympy.core import Dummy
-from sympy.core.mul import Mul
 from sympy.core.add import Add
-from sympy.core.relational import Eq, Ge, Gt, Le, Lt
-from sympy.core.sympify import sympify
-from sympy.core.singleton import S
-from sympy.core.numbers import Rational, oo
 from sympy.matrices.dense import Matrix
-from sympy.utilities.iterables import sift
 import math
-
-
-class UnhandledInput(Exception):
-    """
-    Raised while creating an LRASolver if non-linearity
-    or non-rational numbers are present.
-    """
-
-# predicates that LRASolver understands and makes use of
-ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
 
 # if true ~Q.gt(x, y) implies Q.le(x, y)
 HANDLE_NEGATION = True
@@ -163,11 +145,6 @@ class LRASolver():
         self.run_checks = testing_mode
         self.s_subs = s_subs  # used only for test_lra_theory.test_random_problems
 
-        if any(not isinstance(a, Rational) for a in A):
-            raise UnhandledInput("Non-rational numbers are not handled")
-        if not all(isinstance(b.bound, Rational)
-               for bs in atom_id_to_boundaries.values() for b in bs):
-            raise UnhandledInput("Non-rational numbers are not handled")
         m, n = len(slack_variables), len(slack_variables)+len(nonslack_variables)
         if m != 0:
             assert A.shape == (m, n)
@@ -197,6 +174,8 @@ class LRASolver():
         ==========
 
         encoded_cnf : EncodedCNF
+            Its atoms are interpreted and validated by
+            ``translate_lra_atoms``.
 
         testing_mode : bool
             Setting testing_mode to True enables some slow assert statements
@@ -233,119 +212,45 @@ class LRASolver():
         >>> conflicts #doctest: +SKIP
         [[4]]
         """
-        # This function has three main jobs:
-        # - raise errors if the input formula is not handled
-        # - preprocesses the formula into a matrix and single variable constraints
-        # - create one-literal conflict clauses from predicates that are always True
-        #   or always False such as Q.gt(3, 2)
-        #
-        # See the preprocessing section of "A Fast Linear-Arithmetic Solver for DPLL(T)"
-        # for an explanation of how the formula is converted into a matrix
-        # and a set of single variable constraints.
-
+        constraints, conflicts = translate_lra_atoms(encoded_cnf, testing_mode)
         atom_id_to_boundaries = {}
         A = []
 
         basic = []
-        s_count = 0
         s_subs = {}
         nonbasic = []
         atom_vars = set()
-
-        if testing_mode:
-            # sort to reduce nondeterminism
-            encoded_cnf_items = sorted(encoded_cnf.encoding.items(),
-                                       key=lambda x: str(x))
-        else:
-            encoded_cnf_items = encoded_cnf.encoding.items()
-
-        empty_var = Dummy()
         var_to_lra_var = {}
-        conflicts = []
 
-        for prop, atom_id in encoded_cnf_items:
-            if isinstance(prop, Predicate):
-                prop = prop(empty_var)
-            if not isinstance(prop, AppliedPredicate):
-                if prop == True:
-                    conflicts.append([atom_id])
-                    continue
-                if prop == False:
-                    conflicts.append([-atom_id])
-                    continue
-
-                raise ValueError(f"Unhandled Predicate: {prop}")
-
-            assert prop.function in ALLOWED_PRED
-            if prop.lhs == S.NaN or prop.rhs == S.NaN:
-                raise ValueError(f"{prop} contains nan")
-            if prop.lhs.is_imaginary or prop.rhs.is_imaginary:
-                raise UnhandledInput(f"{prop} contains an imaginary component")
-            if prop.lhs == oo or prop.rhs == oo:
-                raise UnhandledInput(f"{prop} contains infinity")
-
-            expr = prop.lhs - prop.rhs
-            pred = ALLOWED_PRED[prop.function](expr, S.Zero)
-            if pred == True:
-                conflicts.append([atom_id])
-                continue
-            if pred == False:
-                conflicts.append([-atom_id])
-                continue
-            if not expr.free_symbols:
-                raise UnhandledInput(f"{prop} could not be simplified")
-
-            if prop.function in [Q.ge, Q.gt]:
-                expr = -expr
-
-            # Example: 2x + 3y, 2 <- _sep_const_terms(2x + 3y + 2)
-            vars, const = _sep_const_terms(expr)
-            # Examples:
-            # x, 2 <- _sep_const_coeff(2x)
-            # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
-            vars, var_coeff = _sep_const_coeff(vars)
-            const = const / var_coeff
-            # Example: [2x, 3y] <- Add.make_args(2x + 3y)
-            terms = Add.make_args(vars)
-            for term in terms:
-                term, _ = _sep_const_coeff(term)
-                assert len(term.free_symbols) > 0
+        for atom_id, constraint in constraints.items():
+            for term, _ in constraint.terms:
                 if term not in var_to_lra_var:
                     var_to_lra_var[term] = LRAVariable(term)
                     nonbasic.append(term)
 
-            if len(terms) > 1:
+            if len(constraint.terms) > 1:
+                vars = Add(*[term*coeff for term, coeff in constraint.terms])
                 if vars not in s_subs:
-                    s_count += 1
-                    d = Dummy(f"s{s_count}")
+                    d = Dummy(f"s{len(s_subs) + 1}")
                     var_to_lra_var[d] = LRAVariable(d)
                     basic.append(d)
                     s_subs[vars] = d
                     A.append(vars - d)
                 var = s_subs[vars]
             else:
-                var = terms[0]
+                var = constraint.terms[0][0]
 
             atom_vars.add(var)
 
-            assert var_coeff != 0
-
-            equality = prop.function == Q.eq
-            strict = prop.function in [Q.gt, Q.lt]
-            if equality:
-                b1 = Boundary(var_to_lra_var[var], -const, True, False)  # x <= c
-                b2 = Boundary(var_to_lra_var[var], -const, False, False) # x >= c
+            if constraint.equality:
+                b1 = Boundary(var_to_lra_var[var], -constraint.const, True, False)  # x <= c
+                b2 = Boundary(var_to_lra_var[var], -constraint.const, False, False) # x >= c
                 atom_id_to_boundaries[atom_id] = [b1, b2]
             else:
-                upper = var_coeff > 0
-                b = Boundary(var_to_lra_var[var], -const, upper, strict)
+                upper = constraint.var_coeff > 0
+                b = Boundary(var_to_lra_var[var], -constraint.const, upper,
+                             constraint.strict)
                 atom_id_to_boundaries[atom_id] = [b]
-
-        fs = [v.free_symbols for v in nonbasic + basic]
-        assert all(len(syms) > 0 for syms in fs)
-        fs_count = sum(len(syms) for syms in fs)
-        if len(fs) > 0 and  len(set.union(*fs)) < fs_count:
-            raise UnhandledInput("Nonlinearity is not handled")
 
         A, _ = linear_eq_to_matrix(A, nonbasic + basic)
         # matrix A is guaranteed to able to be simplified
@@ -670,42 +575,6 @@ class LRASolver():
         while self.bound_history[-1].updates:
             self.backtrack()
         self.bound_history.pop()
-
-def _sep_const_coeff(expr):
-    """
-    Example
-    =======
-
-    >>> from sympy.logic.algorithms.lra_theory import _sep_const_coeff
-    >>> from sympy.abc import x, y
-    >>> _sep_const_coeff(2*x)
-    (x, 2)
-    >>> _sep_const_coeff(2*x + 3*y)
-    (2*x + 3*y, 1)
-    """
-    if isinstance(expr, Add):
-        return expr, sympify(1)
-    const, var = sift(Mul.make_args(expr),
-                      lambda c: len(sympify(c).free_symbols) == 0,
-                      binary=True)
-    return Mul(*var), Mul(*const)
-
-
-def _sep_const_terms(expr):
-    """
-    Example
-    =======
-
-    >>> from sympy.logic.algorithms.lra_theory import _sep_const_terms
-    >>> from sympy.abc import x, y
-    >>> _sep_const_terms(2*x + 3*y + 2)
-    (2*x + 3*y, 2)
-    """
-    const, var = sift(Add.make_args(expr),
-                      lambda t: len(t.free_symbols) == 0,
-                      binary=True)
-    return Add(*var), Add(*const)
-
 
 def _reduce_matrix(A, basic, nonbasic, nonatom_vars, testing_mode):
     """
