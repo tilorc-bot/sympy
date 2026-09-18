@@ -20,7 +20,6 @@ from typing import Any, Protocol
 
 from sympy.core.sorting import ordered
 from sympy.assumptions.cnf import EncodedCNF
-from sympy.logic.algorithms.lra_theory import LRASolver
 
 
 class TheorySolver(Protocol):
@@ -66,13 +65,11 @@ def dpll_satisfiable(expr, all_models=False, use_lra_theory=False):
             return (f for f in [False])
         return False
 
-    if use_lra_theory:
-        lra, immediate_conflicts = LRASolver.from_encoded_cnf(expr)
-    else:
-        lra = None
-        immediate_conflicts = []
     solver = SATSolver(expr.data, expr.variables, set(), expr.symbols)
-    if lra is not None:
+    if use_lra_theory:
+        # Import here to avoid a cycle through assumptions and inference.
+        from sympy.assumptions.lra_satask import create_lra_solver
+        lra, immediate_conflicts = create_lra_solver(expr)
         for clause in immediate_conflicts:
             for literal in clause:
                 solver.add(literal)

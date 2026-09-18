@@ -48,15 +48,12 @@ References
 """
 from __future__ import annotations
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, Sequence
+from typing import Sequence
 from sympy.matrices.dense import eye
 from sympy.core.numbers import Rational
 from sympy.core.singleton import S
 from sympy.matrices.dense import Matrix
 import math
-
-if TYPE_CHECKING:
-    from sympy.assumptions.cnf import EncodedCNF
 
 LRAConstraintTuple = tuple[tuple[tuple[Hashable, Rational], ...], Rational, bool, bool]
 
@@ -189,20 +186,6 @@ class LRASolver():
             variable.col_idx = index
         self.bound_history = [BoundLevel()]
         self._initialized = True
-
-    @staticmethod
-    def from_encoded_cnf(
-        encoded_cnf: EncodedCNF,
-        testing_mode: bool = False,
-    ) -> tuple[LRASolver, list[list[int]]]:
-        """Create an LRASolver from an EncodedCNF object.
-
-        Preprocessing and validation are provided by
-        ``sympy.assumptions.lra_satask.create_lra_solver``.
-        """
-        # Import here to avoid a cycle with assumptions preprocessing.
-        from sympy.assumptions.lra_satask import create_lra_solver
-        return create_lra_solver(encoded_cnf, testing_mode=testing_mode)
 
     def reset(self):
         """
