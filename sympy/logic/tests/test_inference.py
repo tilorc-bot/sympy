@@ -18,6 +18,7 @@ from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
 
 from sympy.logic.algorithms.z3_wrapper import z3_satisfiable
 from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.lra_satask import create_lra_solver
 from sympy.logic.algorithms.lra_theory import LRASolver
 from sympy.logic.tests.test_lra_theory import make_random_problem
 from sympy.core.random import randint, choice
@@ -172,9 +173,9 @@ def test_satsolver_propagate():
     x = symbols('x')
     enc = EncodedCNF()
     enc.from_cnf(CNF.from_prop((x > 1) & (x < 0)))
-    lra, conflicts = LRASolver.from_encoded_cnf(enc)
-    s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
-                  lra_theory=lra)
+    lra, conflicts = create_lra_solver(enc)
+    s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols)
+    s.register_theory_solver(lra)
     assert s.propagate() == IpasirStatus.UNSATISFIABLE
     assert s.solve() == IpasirStatus.UNSATISFIABLE
 
@@ -182,9 +183,9 @@ def test_satsolver_propagate():
     # theory as well, so propagating on its own cannot report satisfiable.
     enc = EncodedCNF()
     enc.from_cnf(CNF.from_prop((x > 1) & (x < 5)))
-    lra, conflicts = LRASolver.from_encoded_cnf(enc)
-    s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
-                  lra_theory=lra)
+    lra, conflicts = create_lra_solver(enc)
+    s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols)
+    s.register_theory_solver(lra)
     assert s.propagate() == IpasirStatus.UNKNOWN
     assert s.solve() == IpasirStatus.SATISFIABLE
 
@@ -761,3 +762,92 @@ def test_satisfiable_all_models_lra():
     assert len(models) == 2
     assert {Q.gt(x, 0): True, Q.lt(x, 0): False} in models
     assert {Q.lt(x, 0): True, Q.gt(x, 0): False} in models
+
+
+def test_multiple_theory_solvers():
+    solver = SATSolver([{1, -1}, {2, -2}, {3, -3}], {1, 2, 3}, set())
+    theories = []
+    for literal in (1, 2, 3):
+        theory = LRASolver()
+        theory.register_constraint(literal, (('x', 1),), 0)
+        theories.append(theory)
+        solver.register_theory_solver(theory)
+    models = list(solver._find_model())
+    assert len(models) == 8
+    assert {tuple(m[i] for i in (1, 2, 3)) for m in models} == set(product((False, True), repeat=3))
+    assert all(len(t.bound_history) == 2 for t in theories)
+
+
+def test_theory_conflict_from_later_solver():
+    solver = SATSolver([{1}, {2}, {3}], {1, 2, 3}, set())
+    solver.register_theory_solver(LRASolver())
+    theory = LRASolver()
+    theory.register_constraint(1, (('x', 1),), 0)
+    theory.register_constraint(2, (('y', 1),), 0)
+    theory.register_constraint(3, (('x', -1), ('y', -1)), 1)
+    solver.register_theory_solver(theory)
+    solver.register_theory_solver(LRASolver())
+    assert solver.propagate() == IpasirStatus.UNKNOWN
+    assert solver.solve() == IpasirStatus.UNSATISFIABLE
+
+
+def test_theory_registration_lifecycle():
+    solver = SATSolver([{1, 2}], {1, 2}, set())
+    theory = LRASolver()
+    theory.register_constraint(1, (('x', 1),), 0)
+    theory.register_constraint(2, (('x', -1),), 1)
+    solver.register_theory_solver(theory)
+    raises(ValueError, lambda: solver.register_theory_solver(theory))
+    solver.register_theory_solver(LRASolver())
+    solver.assume(1)
+    assert solver.solve() == IpasirStatus.SATISFIABLE
+    assert solver.val(2) == -2
+    raises(ValueError, lambda: solver.register_theory_solver(LRASolver()))
+    solver.assume(2)
+    assert solver.solve() == IpasirStatus.SATISFIABLE
+    assert solver.val(1) == -1
+    solver.add(1)
+    solver.add(0)
+    solver.add(2)
+    solver.add(0)
+    assert solver.solve() == IpasirStatus.UNSATISFIABLE
+
+
+def test_register_other_theories():
+    class ExcludeLiteral:
+        def __init__(self, excluded):
+            self.excluded = excluded
+            self.levels = []
+
+        def push_level(self):
+            self.levels.append(set())
+
+        def pop_level(self):
+            self.levels.pop()
+
+        def assert_lit(self, literal):
+            self.levels[-1].add(literal)
+
+        def check(self):
+            if any(self.excluded in level for level in self.levels):
+                return False, [-self.excluded]
+            return True, {}
+
+    solver = SATSolver([{1, -1}, {2, -2}, {3, -3}], {1, 2, 3}, set())
+    theories = [ExcludeLiteral(i) for i in (1, 2, 3)]
+    for theory in theories:
+        solver.register_theory_solver(theory)
+    assert list(solver._find_model()) == [{1: False, 2: False, 3: False}]
+    assert all(len(theory.levels) == 1 for theory in theories)
+
+
+def test_theory_conflicting_assumptions():
+    solver = SATSolver([{1}, {2, -2}], {1, 2}, set())
+    theory = LRASolver()
+    theory.register_constraint(1, (('x', 1),), 0)
+    theory.register_constraint(2, (('x', -1),), 1)
+    solver.register_theory_solver(theory)
+    solver.assume(2)
+    assert solver.solve() == IpasirStatus.UNSATISFIABLE
+    solver.assume(-2)
+    assert solver.solve() == IpasirStatus.SATISFIABLE

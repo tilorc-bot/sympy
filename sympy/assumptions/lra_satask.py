@@ -2,12 +2,27 @@ from __future__ import annotations
 from sympy.assumptions.cnf import CNF, EncodedCNF
 from sympy.assumptions.ask import Q
 from sympy.logic.inference import satisfiable
-from sympy.logic.algorithms.lra_theory import UnhandledInput, ALLOWED_PRED
+from sympy.logic.algorithms.lra_theory import UnhandledInput, LRASolver
+
 from sympy.matrices.kind import MatrixKind
 from sympy.core.kind import NumberKind
 from sympy.assumptions.assume import AppliedPredicate
+from sympy.assumptions.relation.binrel import AppliedBinaryRelation
 from sympy.core.mul import Mul
 from sympy.core.singleton import S
+from sympy.assumptions import Predicate
+from sympy.core import Dummy
+from sympy.core.add import Add
+from sympy.core.expr import Expr
+from sympy.core.relational import Eq, Ge, Gt, Le, Lt
+from sympy.core.numbers import Rational, oo
+from sympy.core.sympify import sympify
+from sympy.utilities.iterables import sift
+
+LRAConstraintTuple = tuple[tuple[tuple[Expr, Rational], ...], Rational, bool, bool]
+
+
+ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
 
 
 def lra_satask(proposition, assumptions=True):
@@ -278,3 +293,118 @@ def extract_pred_from_old_assum(all_exprs):
             ret.append(Q.nonnegative(expr))
 
     return ret
+
+
+def preprocess_lra_constraints(
+    encoded_cnf: EncodedCNF,
+    testing_mode: bool = False,
+) -> tuple[dict[int, LRAConstraintTuple], list[list[int]]]:
+    """Return literal/constraint associations and constant unit clauses.
+
+    Accept the binary predicates supported by LRA, checking rationality and
+    independence of their variable expressions. Disequalities and negated
+    equalities must already have been split by ``_preprocess``.
+    """
+    items = encoded_cnf.encoding.items()
+    if testing_mode:
+        items = sorted(items, key=lambda item: str(item))
+    constraints: dict[int, LRAConstraintTuple] = {}
+    conflicts: list[list[int]] = []
+    variables: set[Expr] = set()
+    empty_var = Dummy()
+    for prop, literal in items:
+        if isinstance(prop, Predicate):
+            prop = prop(empty_var)
+        if not isinstance(prop, AppliedBinaryRelation):
+            if prop == True:
+                conflicts.append([literal])
+                continue
+            if prop == False:
+                conflicts.append([-literal])
+                continue
+            raise ValueError(f"Unhandled Predicate: {prop}")
+        assert prop.function in ALLOWED_PRED
+        if prop.lhs == S.NaN or prop.rhs == S.NaN:
+            raise ValueError(f"{prop} contains nan")
+        if prop.lhs.is_imaginary or prop.rhs.is_imaginary:
+            raise UnhandledInput(f"{prop} contains an imaginary component")
+        if prop.lhs == oo or prop.rhs == oo:
+            raise UnhandledInput(f"{prop} contains infinity")
+        expr = prop.lhs - prop.rhs
+        pred = ALLOWED_PRED[prop.function](expr, S.Zero)
+        if pred == True:
+            conflicts.append([literal])
+            continue
+        if pred == False:
+            conflicts.append([-literal])
+            continue
+        if not expr.free_symbols:
+            raise UnhandledInput(f"{prop} could not be simplified")
+        if prop.function in (Q.ge, Q.gt):
+            expr = -expr
+        variable_part, constant = _sep_const_terms(expr)
+        variable_part, common_coefficient = _sep_const_coeff(variable_part)
+        direction = S.One if common_coefficient > 0 else S.NegativeOne
+        constant = direction * constant / common_coefficient
+        terms = tuple((variable, direction * coefficient)
+                      for variable, coefficient in map(
+                          _sep_const_coeff, Add.make_args(variable_part)))
+        if not isinstance(constant, Rational) or any(
+                not isinstance(coefficient, Rational) for _, coefficient in terms):
+            raise UnhandledInput("Non-rational numbers are not handled")
+        variables.update(variable for variable, _ in terms)
+        constraints[literal] = (
+            terms, constant, prop.function in (Q.gt, Q.lt), prop.function == Q.eq)
+    free_symbols = [variable.free_symbols for variable in variables]
+    if free_symbols and len(set.union(*free_symbols)) < sum(map(len, free_symbols)):
+        raise UnhandledInput("Nonlinearity is not handled")
+    return constraints, conflicts
+
+
+def create_lra_solver(
+    encoded_cnf: EncodedCNF,
+    testing_mode: bool = False,
+) -> tuple[LRASolver, list[list[int]]]:
+    """Preprocess an encoded formula and register its constraints with LRA."""
+    constraints, conflicts = preprocess_lra_constraints(encoded_cnf, testing_mode)
+    solver = LRASolver(testing_mode=testing_mode)
+    for literal, (terms, constant, strict, equality) in constraints.items():
+        solver.register_constraint(literal, terms, constant, strict=strict, equality=equality)
+    solver._initialize()
+    return solver, conflicts
+
+
+def _sep_const_coeff(expr: Expr) -> tuple[Expr, Expr]:
+    """
+    Example
+    =======
+
+    >>> from sympy.assumptions.lra_satask import _sep_const_coeff
+    >>> from sympy.abc import x, y
+    >>> _sep_const_coeff(2*x)
+    (x, 2)
+    >>> _sep_const_coeff(2*x + 3*y)
+    (2*x + 3*y, 1)
+    """
+    if isinstance(expr, Add):
+        return expr, sympify(1)
+    const, var = sift(Mul.make_args(expr),
+                      lambda c: len(sympify(c).free_symbols) == 0,
+                      binary=True)
+    return Mul(*var), Mul(*const)
+
+
+def _sep_const_terms(expr: Expr) -> tuple[Expr, Expr]:
+    """
+    Example
+    =======
+
+    >>> from sympy.assumptions.lra_satask import _sep_const_terms
+    >>> from sympy.abc import x, y
+    >>> _sep_const_terms(2*x + 3*y + 2)
+    (2*x + 3*y, 2)
+    """
+    const, var = sift(Add.make_args(expr),
+                      lambda t: len(t.free_symbols) == 0,
+                      binary=True)
+    return Add(*var), Add(*const)
