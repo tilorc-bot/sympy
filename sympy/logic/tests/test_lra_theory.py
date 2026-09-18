@@ -203,7 +203,8 @@ def test_random_problems():
         assert all(0 not in clause for clause in enc.data)
 
         lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
-        s_subs = {sum(v*c for v, c in terms): slack
+        slack_symbols = {v: symbols(str(v)) for v in lra.slack.values()}
+        s_subs = {sum(v*c for v, c in terms): slack_symbols[slack]
                   for terms, slack in lra.slack.items()}
 
         lra.run_checks = True
@@ -226,7 +227,8 @@ def test_random_problems():
             assert check_if_satisfiable_with_z3(constraints) is True
             cons_funcs = [cons.func for cons in constraints]
             assignment = feasible[1]
-            assignment = {key.var : value for key, value in assignment.items()}
+            assignment = {slack_symbols.get(key.var, key.var): value
+                          for key, value in assignment.items()}
             constraints = [substitute_slack(cons, s_subs) for cons in constraints]
 
             if not (StrictLessThan in cons_funcs or StrictGreaterThan in cons_funcs):
@@ -244,8 +246,12 @@ def test_random_problems():
             assert len(conflict) >= 2
             def get_expr(bs):
                 if len(bs) == 2:
-                    return Eq(bs[0].var.var, bs[0].bound)
-                return bs[0].get_inequality()
+                    return Eq(slack_symbols.get(bs[0].var.var, bs[0].var.var), bs[0].bound)
+                b = bs[0]
+                var = slack_symbols.get(b.var.var, b.var.var)
+                if b.upper:
+                    return var < b.bound if b.strict else var <= b.bound
+                return var > b.bound if b.strict else var >= b.bound
 
             conflict = {get_expr(lra.atom_id_to_boundaries[abs(l)]) for l in conflict}
             conflict = {clause.subs(s_subs_rev) for clause in conflict}

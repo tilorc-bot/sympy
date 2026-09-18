@@ -150,6 +150,16 @@ ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
 HANDLE_NEGATION = True
 
 
+class _SlackVariable:
+    index: int
+
+    def __init__(self, index: int) -> None:
+        self.index = index
+
+    def __repr__(self) -> str:
+        return f"_s{self.index}"
+
+
 class LRASolver():
     """
     Linear Arithmetic Solver for DPLL(T) implemented with an algorithm based on
@@ -211,7 +221,7 @@ class LRASolver():
         variables = {}
         nonbasic = []
         basic = []
-        slack: dict[frozenset[tuple[Hashable, Rational]], Dummy] = {}
+        slack: dict[frozenset[tuple[Hashable, Rational]], _SlackVariable] = {}
         atom_vars = set()
         boundaries = {}
         for literal, (terms, constant, strict, equality) in self.constraints.items():
@@ -224,7 +234,7 @@ class LRASolver():
             else:
                 key = frozenset(terms)
                 if key not in slack:
-                    variable = Dummy(f"s{len(slack) + 1}")
+                    variable = _SlackVariable(len(slack) + 1)
                     slack[key] = variable
                     variables[variable] = LRAVariable(variable)
                     basic.append(variable)
@@ -967,7 +977,7 @@ class Boundary:
             return self.var.var >= self.bound
 
     def __repr__(self):
-        return repr("Boundary(" + repr(self.get_inequality()) + ")")
+        return f"Boundary({self.var!r}, {self.bound}, upper={self.upper}, strict={self.strict})"
 
     def __eq__(self, other):
         if not isinstance(other, Boundary):
