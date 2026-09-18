@@ -1,11 +1,13 @@
 from __future__ import annotations
-from sympy.assumptions.lra_satask import lra_satask
+from sympy.assumptions.lra_satask import lra_satask, preprocess_lra_constraints
+from sympy.assumptions.cnf import EncodedCNF
 from sympy.logic.algorithms.lra_theory import UnhandledInput
 from sympy.assumptions.ask import Q, ask
 
 from sympy.core import symbols, Symbol
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.core.numbers import I
+from sympy.functions.elementary.miscellaneous import sqrt
 
 from sympy.testing.pytest import raises, XFAIL
 x, y, z = symbols("x y z", real=True)
@@ -171,3 +173,19 @@ def test_equality_failing():
     assert ask(Q.prime(x), Q.eq(x, y) & Q.prime(y)) is True
     assert ask(Q.real(x), Q.eq(x, y) & Q.real(y)) is True
     assert ask(Q.imaginary(x), Q.eq(x, y) & Q.imaginary(y)) is True
+
+
+def test_preprocess_lra_constraints():
+    encoded = EncodedCNF()
+    encoded.add_prop(Q.le(sqrt(2)*x, sqrt(2)))
+    encoded.add_prop(Q.ge(-2*x, -4))
+    encoded.add_prop(Q.le(2*(x + y), 0))
+    encoded.add_prop(Q.gt(2, 1))
+    encoded.add_prop(Q.lt(2, 1))
+    constraints, conflicts = preprocess_lra_constraints(encoded)
+    assert constraints[1][0] == ((x, 1),)
+    assert constraints[1][1] == -1
+    assert constraints[2][0] == ((x, 1),)
+    assert constraints[2][1] == -2
+    assert set(constraints[3][0]) == {(x, 2), (y, 2)}
+    assert conflicts == [[4], [-5]]
