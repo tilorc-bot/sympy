@@ -17,11 +17,11 @@ Register preprocessed inequalities with LRA before attaching it to SAT:
     []
 
 Preprocessing and validation of SymPy expressions are provided by
-``LRASolver.from_encoded_cnf``, which registers the constraints and returns
-the constant unit clauses to add to SAT. Disequalities must be split into
-strict inequalities before registration. An equality can be registered
-directly, but its negation is ignored by LRA and may only occur in learned
-conflict clauses.
+``sympy.assumptions.lra_satask.preprocess_lra_constraints``. That function
+returns associations to register and constant unit clauses to add to SAT.
+Disequalities must be split into strict inequalities before registration.
+An equality can be registered directly, but its negation is ignored by LRA
+and may only occur in learned conflict clauses.
 
 LRA builds its tableau automatically on first use. Each SAT assignment is
 asserted into every registered theory, and each theory checks candidate
@@ -50,23 +50,13 @@ from __future__ import annotations
 from collections.abc import Hashable
 from typing import TYPE_CHECKING, Sequence
 from sympy.matrices.dense import eye
-from sympy.assumptions import Predicate
-from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.ask import Q
-from sympy.core import Dummy
-from sympy.core.mul import Mul
-from sympy.core.add import Add
-from sympy.core.relational import Eq, Ge, Gt, Le, Lt
-from sympy.core.sympify import sympify
+from sympy.core.numbers import Rational
 from sympy.core.singleton import S
-from sympy.core.numbers import Rational, oo
 from sympy.matrices.dense import Matrix
-from sympy.utilities.iterables import sift
 import math
 
 if TYPE_CHECKING:
     from sympy.assumptions.cnf import EncodedCNF
-    from sympy.core.expr import Expr
 
 LRAConstraintTuple = tuple[tuple[tuple[Hashable, Rational], ...], Rational, bool, bool]
 
@@ -76,9 +66,6 @@ class UnhandledInput(Exception):
     Raised while creating an LRASolver if non-linearity
     or non-rational numbers are present.
     """
-
-# predicates that LRASolver understands and makes use of
-ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
 
 # if true ~Q.gt(x, y) implies Q.le(x, y)
 HANDLE_NEGATION = True
@@ -208,142 +195,14 @@ class LRASolver():
         encoded_cnf: EncodedCNF,
         testing_mode: bool = False,
     ) -> tuple[LRASolver, list[list[int]]]:
+        """Create an LRASolver from an EncodedCNF object.
+
+        Preprocessing and validation are provided by
+        ``sympy.assumptions.lra_satask.create_lra_solver``.
         """
-        Creates an LRASolver from an EncodedCNF object
-        and a list of conflict clauses for propositions
-        that can be simplified to True or False.
-
-        Parameters
-        ==========
-
-        encoded_cnf : EncodedCNF
-
-        testing_mode : bool
-            Setting testing_mode to True enables some slow assert statements
-            and sorting to reduce nonterministic behavior.
-
-        Returns
-        =======
-
-        (lra, conflicts)
-
-        lra : LRASolver
-
-        conflicts : list
-            Contains a one-literal conflict clause for each proposition
-            that can be simplified to True or False.
-
-        Example
-        =======
-
-        >>> from sympy.core.relational import Eq
-        >>> from sympy.assumptions.cnf import CNF, EncodedCNF
-        >>> from sympy.assumptions.ask import Q
-        >>> from sympy.logic.algorithms.lra_theory import LRASolver
-        >>> from sympy.abc import x, y, z
-        >>> phi = (x >= 0) & ((x + y <= 2) | (x + 2 * y - z >= 6))
-        >>> phi = phi & (Eq(x + y, 2) | (x + 2 * y - z > 4))
-        >>> phi = phi & Q.gt(2, 1)
-        >>> cnf = CNF.from_prop(phi)
-        >>> enc = EncodedCNF()
-        >>> enc.from_cnf(cnf)
-        >>> lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
-        >>> lra #doctest: +SKIP
-        <sympy.logic.algorithms.lra_theory.LRASolver object at 0x7fdcb0e15b70>
-        >>> conflicts #doctest: +SKIP
-        [[4]]
-        """
-        # This function has three main jobs:
-        # - raise errors if the input formula is not handled
-        # - preprocesses the formula into constraints that are registered
-        #   with the solver
-        # - create one-literal conflict clauses from predicates that are always True
-        #   or always False such as Q.gt(3, 2)
-        #
-        # See the preprocessing section of "A Fast Linear-Arithmetic Solver for DPLL(T)"
-        # for an explanation of how the formula is converted into constraints.
-
-        if testing_mode:
-            # sort to reduce nondeterminism
-            encoded_cnf_items = sorted(encoded_cnf.encoding.items(),
-                                       key=lambda x: str(x))
-        else:
-            encoded_cnf_items = encoded_cnf.encoding.items()
-
-        constraints: dict[int, LRAConstraintTuple] = {}
-        conflicts: list[list[int]] = []
-        variables: set[Expr] = set()
-        empty_var = Dummy()
-
-        for prop, atom_id in encoded_cnf_items:
-            if isinstance(prop, Predicate):
-                prop = prop(empty_var)
-            if not isinstance(prop, AppliedPredicate):
-                if prop == True:
-                    conflicts.append([atom_id])
-                    continue
-                if prop == False:
-                    conflicts.append([-atom_id])
-                    continue
-
-                raise ValueError(f"Unhandled Predicate: {prop}")
-
-            assert prop.function in ALLOWED_PRED
-            if prop.lhs == S.NaN or prop.rhs == S.NaN:
-                raise ValueError(f"{prop} contains nan")
-            if prop.lhs.is_imaginary or prop.rhs.is_imaginary:
-                raise UnhandledInput(f"{prop} contains an imaginary component")
-            if prop.lhs == oo or prop.rhs == oo:
-                raise UnhandledInput(f"{prop} contains infinity")
-
-            expr = prop.lhs - prop.rhs
-            pred = ALLOWED_PRED[prop.function](expr, S.Zero)
-            if pred == True:
-                conflicts.append([atom_id])
-                continue
-            if pred == False:
-                conflicts.append([-atom_id])
-                continue
-            if not expr.free_symbols:
-                raise UnhandledInput(f"{prop} could not be simplified")
-
-            if prop.function in [Q.ge, Q.gt]:
-                expr = -expr
-
-            # Example: 2x + 3y, 2 <- _sep_const_terms(2x + 3y + 2)
-            variable_part, constant = _sep_const_terms(expr)
-            # Examples:
-            # x, 2 <- _sep_const_coeff(2x)
-            # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
-            variable_part, common_coefficient = _sep_const_coeff(variable_part)
-            direction = S.One if common_coefficient > 0 else S.NegativeOne
-            constant = direction * constant / common_coefficient
-            # Example: [2x, 3y] <- Add.make_args(2x + 3y)
-            terms = []
-            for term in Add.make_args(variable_part):
-                term, coefficient = _sep_const_coeff(term)
-                assert len(term.free_symbols) > 0
-                terms.append((term, direction * coefficient))
-            terms = tuple(terms)
-
-            if not isinstance(constant, Rational) or any(
-                    not isinstance(coefficient, Rational) for _, coefficient in terms):
-                raise UnhandledInput("Non-rational numbers are not handled")
-            variables.update(variable for variable, _ in terms)
-            constraints[atom_id] = (
-                terms, constant, prop.function in [Q.gt, Q.lt], prop.function == Q.eq)
-
-        fs = [variable.free_symbols for variable in variables]
-        assert all(len(syms) > 0 for syms in fs)
-        fs_count = sum(len(syms) for syms in fs)
-        if len(fs) > 0 and len(set.union(*fs)) < fs_count:
-            raise UnhandledInput("Nonlinearity is not handled")
-
-        solver = LRASolver(testing_mode=testing_mode)
-        for atom_id, (terms, constant, strict, equality) in constraints.items():
-            solver.register_constraint(atom_id, terms, constant, strict=strict, equality=equality)
-        solver._initialize()
-        return solver, conflicts
+        # Import here to avoid a cycle with assumptions preprocessing.
+        from sympy.assumptions.lra_satask import create_lra_solver
+        return create_lra_solver(encoded_cnf, testing_mode=testing_mode)
 
     def reset(self):
         """
@@ -657,42 +516,6 @@ class LRASolver():
         while self.bound_history[-1].updates:
             self.backtrack()
         self.bound_history.pop()
-
-def _sep_const_coeff(expr):
-    """
-    Example
-    =======
-
-    >>> from sympy.logic.algorithms.lra_theory import _sep_const_coeff
-    >>> from sympy.abc import x, y
-    >>> _sep_const_coeff(2*x)
-    (x, 2)
-    >>> _sep_const_coeff(2*x + 3*y)
-    (2*x + 3*y, 1)
-    """
-    if isinstance(expr, Add):
-        return expr, sympify(1)
-    const, var = sift(Mul.make_args(expr),
-                      lambda c: len(sympify(c).free_symbols) == 0,
-                      binary=True)
-    return Mul(*var), Mul(*const)
-
-
-def _sep_const_terms(expr):
-    """
-    Example
-    =======
-
-    >>> from sympy.logic.algorithms.lra_theory import _sep_const_terms
-    >>> from sympy.abc import x, y
-    >>> _sep_const_terms(2*x + 3*y + 2)
-    (2*x + 3*y, 2)
-    """
-    const, var = sift(Add.make_args(expr),
-                      lambda t: len(t.free_symbols) == 0,
-                      binary=True)
-    return Add(*var), Add(*const)
-
 
 def _reduce_matrix(A, basic, nonbasic, nonatom_vars, testing_mode):
     """
