@@ -4,106 +4,40 @@ The LRASolver class defined in this file can be used
 in conjunction with a SAT solver to check the
 satisfiability of formulas involving inequalities.
 
-Here's an example of how that would work:
+Register preprocessed inequalities with LRA before attaching it to SAT:
 
-    Suppose you want to check the satisfiability of
-    the following formula:
-
-    >>> from sympy.core.relational import Eq
-    >>> from sympy.abc import x, y
-    >>> f = ((x > 0) | (x < 0)) & (Eq(x, 0) | Eq(y, 1)) & (~Eq(y, 1) | Eq(1, 2))
-
-    First a preprocessing step should be done on f. During preprocessing,
-    f should be checked for any predicates such as `Q.prime` that can't be
-    handled. Also unequality like `~Eq(y, 1)` should be split.
-
-    I should mention that the paper says to split both equalities and
-    unequality, but this implementation only requires that unequality
-    be split.
-
-    >>> f = ((x > 0) | (x < 0)) & (Eq(x, 0) | Eq(y, 1)) & ((y < 1) | (y > 1) | Eq(1, 2))
-
-    Then an LRASolver instance needs to be initialized with this formula.
-
-    >>> from sympy.assumptions.cnf import CNF, EncodedCNF
-    >>> from sympy.assumptions.ask import Q
+    >>> from sympy.logic.algorithms.dpll2 import SATSolver
     >>> from sympy.logic.algorithms.lra_theory import LRASolver
-    >>> cnf = CNF.from_prop(f)
-    >>> enc = EncodedCNF()
-    >>> enc.add_from_cnf(cnf)
-    >>> lra, conflicts = LRASolver.from_encoded_cnf(enc)
+    >>> sat = SATSolver([{1}, {2}], {1, 2}, set())
+    >>> lra = LRASolver()
+    >>> lra.register_constraint(1, (("x", 1),), 0)  # x <= 0
+    >>> lra.register_constraint(2, (("x", -1),), 1)  # x >= 1
+    >>> sat.register_theory_solver(lra)
+    >>> list(sat._find_model())
+    []
 
-    Any immediate one-lital conflicts clauses will be detected here.
-    In this example, `~Eq(1, 2)` is one such conflict clause. We'll
-    want to add it to `f` so that the SAT solver is forced to
-    assign Eq(1, 2) to False.
+Preprocessing and validation of SymPy expressions are provided by
+``LRASolver.from_encoded_cnf``, which registers the constraints and returns
+the constant unit clauses to add to SAT. Disequalities must be split into
+strict inequalities before registration. An equality can be registered
+directly, but its negation is ignored by LRA and may only occur in learned
+conflict clauses.
 
-    >>> f = f & ~Eq(1, 2)
-
-    Now that the one-literal conflict clauses have been added
-    and an lra object has been initialized, we can pass `f`
-    to a SAT solver. The SAT solver will give us a satisfying
-    assignment such as:
-
-    (1 = 2): False
-    (y = 1): True
-    (y < 1): True
-    (y > 1): True
-    (x = 0): True
-    (x < 0): True
-    (x > 0): True
-
-    Next you would pass this assignment to the LRASolver
-    which will be able to determine that this particular
-    assignment is satisfiable or not.
-
-    Note that since EncodedCNF is inherently non-deterministic,
-    the int each predicate is encoded as is not consistent. As a
-    result, the code below likely does not reflect the assignment
-    given above.
-
-    >>> lra.assert_lit(-1) #doctest: +SKIP
-    >>> lra.assert_lit(2) #doctest: +SKIP
-    >>> lra.assert_lit(3) #doctest: +SKIP
-    >>> lra.assert_lit(4) #doctest: +SKIP
-    >>> lra.assert_lit(5) #doctest: +SKIP
-    >>> lra.assert_lit(6) #doctest: +SKIP
-    >>> lra.assert_lit(7) #doctest: +SKIP
-    >>> is_sat, conflict_or_assignment = lra.check()
-
-    As the particular assignment suggested is not satisfiable,
-    the LRASolver will return unsat and a conflict clause when
-    given that assignment. The conflict clause will always be
-    minimal, but there can be multiple minimal conflict clauses.
-    One possible conflict clause could be `~(x < 0) | ~(x > 0)`.
-
-    We would then add whatever conflict clause is given to
-    `f` to prevent the SAT solver from coming up with an
-    assignment with the same conflicting literals. In this case,
-    the conflict clause `~(x < 0) | ~(x > 0)` would prevent
-    any assignment where both (x < 0) and (x > 0) were both
-    true.
-
-    The SAT solver would then find another assignment
-    and we would check that assignment with the LRASolver
-    and so on. Eventually either a satisfying assignment
-    that the SAT solver and LRASolver agreed on would be found
-    or enough conflict clauses would be added so that the
-    boolean formula was unsatisfiable.
-
+LRA builds its tableau automatically on first use. Each SAT assignment is
+asserted into every registered theory, and each theory checks candidate
+models. A theory conflict supplies a clause that excludes the inconsistent
+assignment. Decision levels are pushed and popped in all registered solvers.
 
 This implementation is based on [1]_, which includes a
 detailed explanation of the algorithm and pseudocode
 for the most important functions.
 
-[1]_ also explains how backtracking and theory propagation
-could be implemented to speed up the current implementation,
-but these are not currently implemented.
+[1]_ also explains theory propagation, which is not currently implemented.
 
 TODO:
  - Handle non-rational real numbers
  - Handle positive and negative infinity
- - Implement backtracking and theory propagation
+ - Implement theory propagation
 
 References
 ==========
@@ -113,7 +47,8 @@ References
        https://link.springer.com/chapter/10.1007/11817963_11
 """
 from __future__ import annotations
-from sympy.solvers.solveset import linear_eq_to_matrix
+from collections.abc import Hashable
+from typing import TYPE_CHECKING, Sequence
 from sympy.matrices.dense import eye
 from sympy.assumptions import Predicate
 from sympy.assumptions.assume import AppliedPredicate
@@ -129,6 +64,12 @@ from sympy.matrices.dense import Matrix
 from sympy.utilities.iterables import sift
 import math
 
+if TYPE_CHECKING:
+    from sympy.assumptions.cnf import EncodedCNF
+    from sympy.core.expr import Expr
+
+LRAConstraintTuple = tuple[tuple[tuple[Hashable, Rational], ...], Rational, bool, bool]
+
 
 class UnhandledInput(Exception):
     """
@@ -141,6 +82,17 @@ ALLOWED_PRED = {Q.eq: Eq, Q.gt: Gt, Q.lt: Lt, Q.le: Le, Q.ge: Ge}
 
 # if true ~Q.gt(x, y) implies Q.le(x, y)
 HANDLE_NEGATION = True
+
+
+class _SlackVariable:
+    index: int
+
+    def __init__(self, index: int) -> None:
+        self.index = index
+
+    def __repr__(self) -> str:
+        return f"_s{self.index}"
+
 
 class LRASolver():
     """
@@ -155,39 +107,107 @@ class LRASolver():
            https://link.springer.com/chapter/10.1007/11817963_11
     """
 
-    def __init__(self, A, slack_variables, nonslack_variables,
-                 atom_id_to_boundaries, s_subs, testing_mode):
-        """
-        Use the "from_encoded_cnf" method to create a new LRASolver.
-        """
+    run_checks: bool
+    constraints: dict[int, LRAConstraintTuple]
+    _initialized: bool
+
+    def __init__(self, testing_mode: bool = False) -> None:
         self.run_checks = testing_mode
-        self.s_subs = s_subs  # used only for test_lra_theory.test_random_problems
+        self.constraints = {}
+        self._initialized = False
 
-        if any(not isinstance(a, Rational) for a in A):
-            raise UnhandledInput("Non-rational numbers are not handled")
-        if not all(isinstance(b.bound, Rational)
-               for bs in atom_id_to_boundaries.values() for b in bs):
-            raise UnhandledInput("Non-rational numbers are not handled")
-        m, n = len(slack_variables), len(slack_variables)+len(nonslack_variables)
-        if m != 0:
-            assert A.shape == (m, n)
-        if self.run_checks:
-            assert A[:, n-m:] == -eye(m)
+    def register_constraint(
+        self,
+        literal: int,
+        terms: Sequence[tuple[Hashable, Rational]],
+        constant: Rational,
+        strict: bool = False,
+        equality: bool = False,
+    ) -> None:
+        """Associate a positive SAT literal with a linear constraint.
 
-        self.atom_id_to_boundaries = atom_id_to_boundaries
+        ``terms`` is a sequence of (opaque variable, rational coefficient) pairs.
+        ``constant`` is rational.
+        ``strict`` changes <= to <; ``equality`` changes it to == and requires
+        ``strict=False``.
+
+        Register all constraints before initializing or using the solver.
+        Variable identifiers are opaque hashable objects. Equalities must not
+        occur negated in the input formula; split disequalities beforehand.
+        """
+        if self._initialized:
+            raise ValueError("Cannot register constraints after initialization")
+        if not isinstance(literal, int) or literal <= 0:
+            raise ValueError("Expected a positive integer literal")
+        if literal in self.constraints:
+            raise ValueError("Literal already registered")
+        if equality and strict:
+            raise ValueError("A constraint cannot be both an equality and strict")
+        self.constraints[literal] = (tuple(terms), constant, strict, equality)
+
+    def _initialize(self) -> None:
+        """Build and reduce the tableau after all constraints are registered.
+
+        Called automatically on first use, including registration with SAT.
+        """
+        if self._initialized:
+            return
+        variables = {}
+        nonbasic = []
+        basic = []
+        slack: dict[frozenset[tuple[Hashable, Rational]], _SlackVariable] = {}
+        atom_vars = set()
+        boundaries = {}
+        for literal, (terms, constant, strict, equality) in self.constraints.items():
+            for variable, coefficient in terms:
+                if variable not in variables:
+                    variables[variable] = LRAVariable(variable)
+                    nonbasic.append(variable)
+            if len(terms) == 1:
+                variable, coefficient = terms[0]
+            else:
+                key = frozenset(terms)
+                if key not in slack:
+                    variable = _SlackVariable(len(slack) + 1)
+                    slack[key] = variable
+                    variables[variable] = LRAVariable(variable)
+                    basic.append(variable)
+                variable = slack[key]
+                coefficient = S.One
+            atom_vars.add(variable)
+            bound = -S.One * constant / coefficient
+            var = variables[variable]
+            if equality:
+                boundaries[literal] = [Boundary(var, bound, True, False),
+                                       Boundary(var, bound, False, False)]
+            else:
+                boundaries[literal] = [Boundary(var, bound, coefficient > 0,
+                                                strict)]
+        columns = {v: i for i, v in enumerate(nonbasic + basic)}
+        A = Matrix.zeros(len(basic), len(columns))
+        for row, (slack_terms, variable) in enumerate(slack.items()):
+            for term, coefficient in slack_terms:
+                A[row, columns[term]] = coefficient
+            A[row, columns[variable]] = -1
+        A, basic, nonbasic = _reduce_matrix(
+            A, basic, nonbasic, set(nonbasic) - atom_vars, self.run_checks)
+        self.slack = slack
+        self.atom_id_to_boundaries = boundaries
         self.A = A
         self._A0 = A.copy() if self.run_checks else None
-        # initially slack/basic and nonslack/nonbasic mean the same thing.
-        # however, basic/nonbasic can be modified in process meanwhile slack/nonslack stays constant.
-        self.basic = slack_variables
-        self.nonbasic = set(nonslack_variables)
-
-        self.all_var = nonslack_variables + slack_variables
-
+        self.basic = [variables[v] for v in basic]
+        self.nonbasic = {variables[v] for v in nonbasic}
+        self.all_var = [variables[v] for v in nonbasic + basic]
+        for index, variable in enumerate(self.all_var):
+            variable.col_idx = index
         self.bound_history = [BoundLevel()]
+        self._initialized = True
 
     @staticmethod
-    def from_encoded_cnf(encoded_cnf, testing_mode=False):
+    def from_encoded_cnf(
+        encoded_cnf: EncodedCNF,
+        testing_mode: bool = False,
+    ) -> tuple[LRASolver, list[list[int]]]:
         """
         Creates an LRASolver from an EncodedCNF object
         and a list of conflict clauses for propositions
@@ -235,22 +255,13 @@ class LRASolver():
         """
         # This function has three main jobs:
         # - raise errors if the input formula is not handled
-        # - preprocesses the formula into a matrix and single variable constraints
+        # - preprocesses the formula into constraints that are registered
+        #   with the solver
         # - create one-literal conflict clauses from predicates that are always True
         #   or always False such as Q.gt(3, 2)
         #
         # See the preprocessing section of "A Fast Linear-Arithmetic Solver for DPLL(T)"
-        # for an explanation of how the formula is converted into a matrix
-        # and a set of single variable constraints.
-
-        atom_id_to_boundaries = {}
-        A = []
-
-        basic = []
-        s_count = 0
-        s_subs = {}
-        nonbasic = []
-        atom_vars = set()
+        # for an explanation of how the formula is converted into constraints.
 
         if testing_mode:
             # sort to reduce nondeterminism
@@ -259,9 +270,10 @@ class LRASolver():
         else:
             encoded_cnf_items = encoded_cnf.encoding.items()
 
+        constraints: dict[int, LRAConstraintTuple] = {}
+        conflicts: list[list[int]] = []
+        variables: set[Expr] = set()
         empty_var = Dummy()
-        var_to_lra_var = {}
-        conflicts = []
 
         for prop, atom_id in encoded_cnf_items:
             if isinstance(prop, Predicate):
@@ -299,67 +311,38 @@ class LRASolver():
                 expr = -expr
 
             # Example: 2x + 3y, 2 <- _sep_const_terms(2x + 3y + 2)
-            vars, const = _sep_const_terms(expr)
+            variable_part, constant = _sep_const_terms(expr)
             # Examples:
             # x, 2 <- _sep_const_coeff(2x)
             # 2x + 3y, 1 <- _sep_const_coeff(2x + 3y + 2)
-            vars, var_coeff = _sep_const_coeff(vars)
-            const = const / var_coeff
+            variable_part, common_coefficient = _sep_const_coeff(variable_part)
+            direction = S.One if common_coefficient > 0 else S.NegativeOne
+            constant = direction * constant / common_coefficient
             # Example: [2x, 3y] <- Add.make_args(2x + 3y)
-            terms = Add.make_args(vars)
-            for term in terms:
-                term, _ = _sep_const_coeff(term)
+            terms = []
+            for term in Add.make_args(variable_part):
+                term, coefficient = _sep_const_coeff(term)
                 assert len(term.free_symbols) > 0
-                if term not in var_to_lra_var:
-                    var_to_lra_var[term] = LRAVariable(term)
-                    nonbasic.append(term)
+                terms.append((term, direction * coefficient))
+            terms = tuple(terms)
 
-            if len(terms) > 1:
-                if vars not in s_subs:
-                    s_count += 1
-                    d = Dummy(f"s{s_count}")
-                    var_to_lra_var[d] = LRAVariable(d)
-                    basic.append(d)
-                    s_subs[vars] = d
-                    A.append(vars - d)
-                var = s_subs[vars]
-            else:
-                var = terms[0]
+            if not isinstance(constant, Rational) or any(
+                    not isinstance(coefficient, Rational) for _, coefficient in terms):
+                raise UnhandledInput("Non-rational numbers are not handled")
+            variables.update(variable for variable, _ in terms)
+            constraints[atom_id] = (
+                terms, constant, prop.function in [Q.gt, Q.lt], prop.function == Q.eq)
 
-            atom_vars.add(var)
-
-            assert var_coeff != 0
-
-            equality = prop.function == Q.eq
-            strict = prop.function in [Q.gt, Q.lt]
-            if equality:
-                b1 = Boundary(var_to_lra_var[var], -const, True, False)  # x <= c
-                b2 = Boundary(var_to_lra_var[var], -const, False, False) # x >= c
-                atom_id_to_boundaries[atom_id] = [b1, b2]
-            else:
-                upper = var_coeff > 0
-                b = Boundary(var_to_lra_var[var], -const, upper, strict)
-                atom_id_to_boundaries[atom_id] = [b]
-
-        fs = [v.free_symbols for v in nonbasic + basic]
+        fs = [variable.free_symbols for variable in variables]
         assert all(len(syms) > 0 for syms in fs)
         fs_count = sum(len(syms) for syms in fs)
-        if len(fs) > 0 and  len(set.union(*fs)) < fs_count:
+        if len(fs) > 0 and len(set.union(*fs)) < fs_count:
             raise UnhandledInput("Nonlinearity is not handled")
 
-        A, _ = linear_eq_to_matrix(A, nonbasic + basic)
-        # matrix A is guaranteed to able to be simplified
-        # by removing the non-basic (e.g original or nonslack) non-atom variables from it
-        # these removed variables will be replaced by linear equation of existing variables.
-        nonatom_vars = {i for i in nonbasic if i not in atom_vars}
-        A, basic, nonbasic = _reduce_matrix(A, basic, nonbasic, nonatom_vars, testing_mode)
-        nonbasic = [var_to_lra_var[nb] for nb in nonbasic]
-        basic = [var_to_lra_var[b] for b in basic]
-        for idx, var in enumerate(nonbasic + basic):
-            var.col_idx = idx
-
-        solver = LRASolver(A, basic, nonbasic, atom_id_to_boundaries,
-                           s_subs, testing_mode)
+        solver = LRASolver(testing_mode=testing_mode)
+        for atom_id, (terms, constant, strict, equality) in constraints.items():
+            solver.register_constraint(atom_id, terms, constant, strict=strict, equality=equality)
+        solver._initialize()
         return solver, conflicts
 
     def reset(self):
@@ -367,6 +350,7 @@ class LRASolver():
         Resets the state of the LRASolver to before
         anything was asserted.
         """
+        self._initialize()
         for var in self.all_var:
             var.initialize()
         self.bound_history = [BoundLevel()]
@@ -396,6 +380,7 @@ class LRASolver():
             A conflict clause that "explains" why
             the literals asserted so far are unsatisfiable.
         """
+        self._initialize()
         if abs(literal) not in self.atom_id_to_boundaries:
             return None
 
@@ -499,6 +484,7 @@ class LRASolver():
 
         explanation : set of ints
         """
+        self._initialize()
         while True:
             if self.run_checks:
                 # nonbasic variables must always be within bounds
@@ -660,6 +646,7 @@ class LRASolver():
         Save the state of the LRA solver so that pop_level() can restore it.
         Called when the SAT solver starts a new decision level.
         """
+        self._initialize()
         self.bound_history.append(BoundLevel())
 
     def pop_level(self):
@@ -924,7 +911,7 @@ class Boundary:
             return self.var.var >= self.bound
 
     def __repr__(self):
-        return repr("Boundary(" + repr(self.get_inequality()) + ")")
+        return f"Boundary({self.var!r}, {self.bound}, upper={self.upper}, strict={self.strict})"
 
     def __eq__(self, other):
         if not isinstance(other, Boundary):
