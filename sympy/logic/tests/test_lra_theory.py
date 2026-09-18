@@ -203,7 +203,8 @@ def test_random_problems():
         assert all(0 not in clause for clause in enc.data)
 
         lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
-        s_subs = lra.s_subs
+        s_subs = {sum(v*c for v, c in terms): slack
+                  for terms, slack in lra.slack.items()}
 
         lra.run_checks = True
         s_subs_rev = {value: key for key, value in s_subs.items()}
@@ -551,8 +552,8 @@ def test_example_from_paper():
     # var_y has been removed from A after the simplification
     # var_s1 is a basic variable which corresponds for -x + y <= 1
     # var_s2 is a basic variable which corresponds for -x - y <= 3
-    _s1 = lra.s_subs[-x + y]
-    _s2 = lra.s_subs[-x - y]
+    _s1 = lra.slack[frozenset(((x, -1), (y, 1)))]
+    _s2 = lra.slack[frozenset(((x, -1), (y, -1)))]
     var_s1 = next(v for v in lra.all_var if v.var == _s1)
     var_s2 = next(v for v in lra.all_var if v.var == _s2)
 
@@ -764,3 +765,50 @@ def test_backtracking_empty_history():
     lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
 
     raises(ValueError, lambda: lra.backtrack())
+
+
+def test_register_constraints():
+    a, b = object(), object()
+    lra = LRASolver(testing_mode=True)
+    lra.register_constraint(1, ((a, 1),), 0)
+    lra.register_constraint(2, ((b, 1),), 0)
+    lra.register_constraint(3, ((a, -1), (b, -1)), 1)
+    lra.register_constraint(4, ((b, -1), (a, -1)), 0)
+    lra._initialize()
+    assert len(lra.slack) == 1
+    assert lra.A.shape == (1, 3)
+    assert lra.assert_lit(99) is None
+    for literal in (1, 2, 3):
+        assert lra.assert_lit(literal) is None
+    sat, conflict = lra.check()
+    assert sat is False
+    assert set(conflict) == {-1, -2, -3}
+    lra.reset()
+    assert lra.check()[0] is True
+    raises(ValueError, lambda: lra.register_constraint(5, ((a, 1),), 0))
+
+
+def test_register_equality_and_strict_constraint():
+    lra = LRASolver()
+    lra.register_constraint(1, (('x', -2),), 1, equality=True)
+    raises(ValueError, lambda: lra.register_constraint(1, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(0, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(-2, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(3, (('x', 1),), 0, strict=True, equality=True))
+    lra.register_constraint(2, (('x', 2),), -1, strict=True)
+    assert lra.assert_lit(1) is None
+    assert lra.assert_lit(2) == (False, [-1, -2])
+    lra.reset()
+    assert lra.assert_lit(1) is None
+    assert lra.assert_lit(-2) is None
+    assert lra.check()[0] is True
+    assert lra.all_var[0].lower.q == Rational(1, 2)
+
+
+def test_empty_lra_solver():
+    lra = LRASolver(testing_mode=True)
+    assert lra.check() == (True, {})
+    lra.push_level()
+    lra.pop_level()
+    lra.reset()
+    assert lra.check() == (True, {})
