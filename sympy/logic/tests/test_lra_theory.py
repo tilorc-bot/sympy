@@ -12,8 +12,9 @@ from sympy.assumptions.cnf import CNF, EncodedCNF
 from sympy.functions.elementary.trigonometric import cos
 from sympy.external import import_module
 
-from sympy.logic.algorithms.lra_theory import LRASolver, UnhandledInput, LRARational, HANDLE_NEGATION, \
-    _sep_const_terms, _sep_const_coeff
+from sympy.logic.algorithms.lra_theory import LRASolver, UnhandledInput, LRARational, HANDLE_NEGATION
+from sympy.assumptions.lra_satask import (create_lra_solver,
+    _sep_const_terms, _sep_const_coeff)
 from sympy.core.random import random, choice, randint
 from sympy.core.sympify import sympify
 from sympy.ntheory.generate import randprime
@@ -104,14 +105,14 @@ def boolean_formula_to_encoded_cnf(bf):
     return enc
 
 
-def test_from_encoded_cnf():
+def test_create_lra_solver():
     s1, s2 = symbols("s1 s2")
 
     # Test preprocessing
     # Example is from section 3 of paper.
     phi = (x >= 0) & ((x + y <= 2) | (x + 2 * y - z >= 6)) & (Eq(x + y, 2) | (x + 2 * y - z > 4))
     enc = boolean_formula_to_encoded_cnf(phi)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     assert lra.A.shape == (0, 3)
     assert str(lra.basic) == '[]'
     assert {str(v) for v in lra.nonbasic} == {'x', '_s1', '_s2'}
@@ -132,7 +133,7 @@ def test_problem():
     cnf = CNF().from_prop(And(*cons))
     enc = EncodedCNF()
     enc.from_cnf(cnf)
-    lra, _ = LRASolver.from_encoded_cnf(enc)
+    lra, _ = create_lra_solver(enc)
     lra.assert_lit(1)
     lra.assert_lit(2)
     lra.assert_lit(3)
@@ -202,8 +203,10 @@ def test_random_problems():
         enc.from_cnf(cnf)
         assert all(0 not in clause for clause in enc.data)
 
-        lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
-        s_subs = lra.s_subs
+        lra, _ = create_lra_solver(enc, testing_mode=True)
+        slack_symbols = {v: symbols(str(v)) for v in lra.slack.values()}
+        s_subs = {sum(v*c for v, c in terms): slack_symbols[slack]
+                  for terms, slack in lra.slack.items()}
 
         lra.run_checks = True
         s_subs_rev = {value: key for key, value in s_subs.items()}
@@ -225,7 +228,8 @@ def test_random_problems():
             assert check_if_satisfiable_with_z3(constraints) is True
             cons_funcs = [cons.func for cons in constraints]
             assignment = feasible[1]
-            assignment = {key.var : value for key, value in assignment.items()}
+            assignment = {slack_symbols.get(key.var, key.var): value
+                          for key, value in assignment.items()}
             constraints = [substitute_slack(cons, s_subs) for cons in constraints]
 
             if not (StrictLessThan in cons_funcs or StrictGreaterThan in cons_funcs):
@@ -243,8 +247,12 @@ def test_random_problems():
             assert len(conflict) >= 2
             def get_expr(bs):
                 if len(bs) == 2:
-                    return Eq(bs[0].var.var, bs[0].bound)
-                return bs[0].get_inequality()
+                    return Eq(slack_symbols.get(bs[0].var.var, bs[0].var.var), bs[0].bound)
+                b = bs[0]
+                var = slack_symbols.get(b.var.var, b.var.var)
+                if b.upper:
+                    return var < b.bound if b.strict else var <= b.bound
+                return var > b.bound if b.strict else var >= b.bound
 
             conflict = {get_expr(lra.atom_id_to_boundaries[abs(l)]) for l in conflict}
             conflict = {clause.subs(s_subs_rev) for clause in conflict}
@@ -259,7 +267,7 @@ def test_random_problems():
 def test_pos_neg_zero():
     bf = Q.positive(x) & Q.negative(x) & Q.zero(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -268,7 +276,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.lt(x, -1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -277,7 +285,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.zero(x)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -286,7 +294,7 @@ def test_pos_neg_zero():
 
     bf = Q.positive(x) & Q.zero(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -298,7 +306,7 @@ def test_pos_neg_zero():
 def test_pos_neg_infinite():
     bf = Q.positive_infinite(x) & Q.lt(x, 10000000) & Q.positive_infinite(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -307,7 +315,7 @@ def test_pos_neg_infinite():
 
     bf = Q.positive_infinite(x) & Q.gt(x, 10000000) & Q.positive_infinite(y)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -316,7 +324,7 @@ def test_pos_neg_infinite():
 
     bf = Q.positive_infinite(x) & Q.negative_infinite(x)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in enc.encoding.values():
         if lra.assert_lit(lit) is not None:
             break
@@ -327,13 +335,13 @@ def test_pos_neg_infinite():
 def test_binrel_evaluation():
     bf = Q.gt(3, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, conflicts = create_lra_solver(enc, testing_mode=True)
     assert len(lra.atom_id_to_boundaries) == 0
     assert conflicts == [[1]]
 
     bf = Q.lt(3, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, conflicts = create_lra_solver(enc, testing_mode=True)
     assert len(lra.atom_id_to_boundaries) == 0
     assert conflicts == [[-1]]
 
@@ -342,7 +350,7 @@ def test_negation():
     assert HANDLE_NEGATION is True
     bf = Q.gt(x, 1) & ~Q.gt(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     conflict = None
     for clause in enc.data:
         for lit in clause:
@@ -355,7 +363,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 1) & ~Q.lt(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -368,7 +376,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 0) & ~Q.lt(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -380,7 +388,7 @@ def test_negation():
 
     bf = ~Q.gt(x, 0) & ~Q.le(x, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -393,7 +401,7 @@ def test_negation():
 
     bf = ~Q.le(x+y, 2) & ~Q.ge(x-y, 2) & ~Q.ge(y, 0)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     conflict_found = False
     for clause in enc.data:
         for lit in clause:
@@ -412,28 +420,28 @@ def test_unhandled_input():
     nan = S.NaN
     bf = Q.gt(3, nan) & Q.gt(x, nan)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(ValueError, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(ValueError, lambda: create_lra_solver(enc, testing_mode=True))
 
     bf = Q.gt(3, I) & Q.gt(x, I)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: create_lra_solver(enc, testing_mode=True))
 
     bf = Q.gt(3, float("inf")) & Q.gt(x, float("inf"))
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: create_lra_solver(enc, testing_mode=True))
 
     bf = Q.gt(3, oo) & Q.gt(x, oo)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: create_lra_solver(enc, testing_mode=True))
 
     # test non-linearity
     bf = Q.gt(x**2 + x, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: create_lra_solver(enc, testing_mode=True))
 
     bf = Q.gt(cos(x) + x, 2)
     enc = boolean_formula_to_encoded_cnf(bf)
-    raises(UnhandledInput, lambda: LRASolver.from_encoded_cnf(enc, testing_mode=True))
+    raises(UnhandledInput, lambda: create_lra_solver(enc, testing_mode=True))
 
 
 @XFAIL
@@ -447,7 +455,7 @@ def test_infinite_strict_inequalities():
     # See https://math.stackexchange.com/questions/4757069/can-this-method-of-converting-strict-inequalities-to-equisatisfiable-nonstrict-i
     bf = (-x - y >= -float("inf")) & (x > 0) & (y >= float("inf"))
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     for lit in sorted(enc.encoding.values()):
         if lra.assert_lit(lit) is not None:
             break
@@ -475,7 +483,7 @@ def test_reset():
     # Test solver behavior after reset
     bf = Q.ge(x, 1) & Q.lt(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     conflict_found = False
     for clause in enc.data:
@@ -500,7 +508,7 @@ def test_reset():
     # Test individual state variable resets
     bf = Q.ge(x, 0) & Q.le(x, 1)
     enc = boolean_formula_to_encoded_cnf(bf)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     state_variables = [
         ('lower', LRARational(10, 0), LRARational(-float("inf"), 0)),
@@ -526,7 +534,7 @@ def test_empty_cnf():
     cnf = CNF()
     enc = EncodedCNF()
     enc.from_cnf(cnf)
-    lra, conflict = LRASolver.from_encoded_cnf(enc)
+    lra, conflict = create_lra_solver(enc)
     assert len(conflict) == 0
     assert lra.check() == (True, {})
 
@@ -544,15 +552,15 @@ def test_example_from_paper():
     for con in cons:
         enc.add_prop(con)
 
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     # Extracts the variables stored in the solver
     var_x = next(v for v in lra.all_var if str(v.var) == 'x')
     # var_y has been removed from A after the simplification
     # var_s1 is a basic variable which corresponds for -x + y <= 1
     # var_s2 is a basic variable which corresponds for -x - y <= 3
-    _s1 = lra.s_subs[-x + y]
-    _s2 = lra.s_subs[-x - y]
+    _s1 = lra.slack[frozenset(((x, -1), (y, 1)))]
+    _s2 = lra.slack[frozenset(((x, -1), (y, -1)))]
     var_s1 = next(v for v in lra.all_var if v.var == _s1)
     var_s2 = next(v for v in lra.all_var if v.var == _s2)
 
@@ -625,7 +633,7 @@ def test_backtracking_single_variable():
     enc = EncodedCNF()
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     # Assert x in [-8, -4]
     lra.assert_lit(1)
@@ -652,7 +660,7 @@ def test_backtracking_multiple_variables():
     for con in cons:
         enc.add_prop(con)
 
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
     lra.assert_lit(1)
     lra.assert_lit(2)
     is_sat, _ = lra.check()
@@ -678,7 +686,7 @@ def test_backtracking_single_variable_multiple_backtracks():
     cons = [x <= 10, x >= 0, x >= 5, x <= 2]
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     # Setting 5 <= x <= 10
     lra.assert_lit(1)
@@ -722,7 +730,7 @@ def test_backtracking_multiple_variables_multiple_backtracks():
 
     for con in cons:
         enc.add_prop(con)
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     # Establish the base valid state (x in [0, 10], y>=0)
     lra.assert_lit(1)
@@ -761,6 +769,53 @@ def test_backtracking_multiple_variables_multiple_backtracks():
 
 def test_backtracking_empty_history():
     enc = EncodedCNF()
-    lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
+    lra, _ = create_lra_solver(enc, testing_mode=True)
 
     raises(ValueError, lambda: lra.backtrack())
+
+
+def test_register_constraints():
+    a, b = object(), object()
+    lra = LRASolver(testing_mode=True)
+    lra.register_constraint(1, ((a, 1),), 0)
+    lra.register_constraint(2, ((b, 1),), 0)
+    lra.register_constraint(3, ((a, -1), (b, -1)), 1)
+    lra.register_constraint(4, ((b, -1), (a, -1)), 0)
+    lra._initialize()
+    assert len(lra.slack) == 1
+    assert lra.A.shape == (1, 3)
+    assert lra.assert_lit(99) is None
+    for literal in (1, 2, 3):
+        assert lra.assert_lit(literal) is None
+    sat, conflict = lra.check()
+    assert sat is False
+    assert set(conflict) == {-1, -2, -3}
+    lra.reset()
+    assert lra.check()[0] is True
+    raises(ValueError, lambda: lra.register_constraint(5, ((a, 1),), 0))
+
+
+def test_register_equality_and_strict_constraint():
+    lra = LRASolver()
+    lra.register_constraint(1, (('x', -2),), 1, equality=True)
+    raises(ValueError, lambda: lra.register_constraint(1, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(0, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(-2, (('x', -2),), 1, equality=True))
+    raises(ValueError, lambda: lra.register_constraint(3, (('x', 1),), 0, strict=True, equality=True))
+    lra.register_constraint(2, (('x', 2),), -1, strict=True)
+    assert lra.assert_lit(1) is None
+    assert lra.assert_lit(2) == (False, [-1, -2])
+    lra.reset()
+    assert lra.assert_lit(1) is None
+    assert lra.assert_lit(-2) is None
+    assert lra.check()[0] is True
+    assert lra.all_var[0].lower.q == Rational(1, 2)
+
+
+def test_empty_lra_solver():
+    lra = LRASolver(testing_mode=True)
+    assert lra.check() == (True, {})
+    lra.push_level()
+    lra.pop_level()
+    lra.reset()
+    assert lra.check() == (True, {})
