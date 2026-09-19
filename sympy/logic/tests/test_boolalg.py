@@ -21,7 +21,7 @@ from sympy.logic.boolalg import (
     anf_coeffs, ANFform, bool_minterm, bool_maxterm, bool_monomial,
     _check_pair, _convert_to_varsSOP, _convert_to_varsPOS, Exclusive,
     gateinputcount)
-from sympy.assumptions.cnf import CNF
+from sympy.assumptions.cnf import clauses_from_prop, cnf_to_expr
 
 from sympy.testing.pytest import raises, XFAIL, slow
 
@@ -571,13 +571,13 @@ def test_issue_9949():
     assert is_cnf(to_cnf((b > -5) | (a > 2) & (a < 4)))
 
 
-def test_to_CNF():
-    assert CNF.CNF_to_cnf(CNF.to_CNF(~(B | C))) == to_cnf(~(B | C))
-    assert CNF.CNF_to_cnf(CNF.to_CNF((A & B) | C)) == to_cnf((A & B) | C)
-    assert CNF.CNF_to_cnf(CNF.to_CNF(A >> B)) == to_cnf(A >> B)
-    assert CNF.CNF_to_cnf(CNF.to_CNF(A >> (B & C))) == to_cnf(A >> (B & C))
-    assert CNF.CNF_to_cnf(CNF.to_CNF(A & (B | C) | ~A & (B | C))) == to_cnf(A & (B | C) | ~A & (B | C))
-    assert CNF.CNF_to_cnf(CNF.to_CNF(A & B)) == to_cnf(A & B)
+def test_clauses_from_prop():
+    assert cnf_to_expr(clauses_from_prop(~(B | C))) == to_cnf(~(B | C))
+    assert cnf_to_expr(clauses_from_prop((A & B) | C)) == to_cnf((A & B) | C)
+    assert cnf_to_expr(clauses_from_prop(A >> B)) == to_cnf(A >> B)
+    assert cnf_to_expr(clauses_from_prop(A >> (B & C))) == to_cnf(A >> (B & C))
+    assert cnf_to_expr(clauses_from_prop(A & (B | C) | ~A & (B | C))) == to_cnf(A & (B | C) | ~A & (B | C))
+    assert cnf_to_expr(clauses_from_prop(A & B)) == to_cnf(A & B)
 
 
 def test_to_dnf():

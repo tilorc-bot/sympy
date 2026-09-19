@@ -51,13 +51,6 @@ class Literal:
     def arg(self):
         return self.lit
 
-    def rcall(self, expr):
-        if callable(self.lit):
-            lit = self.lit(expr)
-        else:
-            lit = self.lit.apply(expr)
-        return type(self)(lit, self.is_Not)
-
     def __invert__(self):
         is_Not = not self.is_Not
         return Literal(self.lit, is_Not)
@@ -85,11 +78,6 @@ class OR:
     @property
     def args(self):
         return sorted(self._args, key=str)
-
-    def rcall(self, expr):
-        return type(self)(*[arg.rcall(expr)
-                            for arg in self._args
-                            ])
 
     def __invert__(self):
         return AND(*[~arg for arg in self._args])
@@ -120,11 +108,6 @@ class AND:
     @property
     def args(self):
         return sorted(self._args, key=str)
-
-    def rcall(self, expr):
-        return type(self)(*[arg.rcall(expr)
-                            for arg in self._args
-                            ])
 
     def __hash__(self):
         return hash((type(self).__name__,) + tuple(self.args))
@@ -251,21 +234,54 @@ def to_NNF(expr, composite_map=None):
 def distribute_AND_over_OR(expr):
     """
     Distributes AND over OR in the NNF expression.
-    Returns the result( Conjunctive Normal Form of expression)
-    as a CNF object.
+    Returns the result (Conjunctive Normal Form of expression)
+    as a set of clauses, each of which is a frozenset of
+    :class:`Literal` objects.
     """
     if not isinstance(expr, (AND, OR)):
-        tmp = set()
-        tmp.add(frozenset((expr,)))
-        return CNF(tmp)
+        return {frozenset((expr,))}
 
     if isinstance(expr, OR):
-        return CNF.all_or(*[distribute_AND_over_OR(arg)
-                            for arg in expr._args])
+        clause_sets = [distribute_AND_over_OR(arg) for arg in expr._args]
+        result = clause_sets[0]
+        for other in clause_sets[1:]:
+            result = {clause1 | clause2
+                      for clause1 in result for clause2 in other}
+        return result
 
     if isinstance(expr, AND):
-        return CNF.all_and(*[distribute_AND_over_OR(arg)
-                             for arg in expr._args])
+        return {clause
+                for clause_set in map(distribute_AND_over_OR, expr._args)
+                for clause in clause_set}
+
+
+def clauses_from_prop(prop):
+    """
+    Converts a Boolean expression to a set of clauses in conjunctive
+    normal form. Each clause is a frozenset of :class:`Literal` objects.
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.assumptions.cnf import clauses_from_prop
+    >>> from sympy.abc import x
+    >>> sorted(map(str, clauses_from_prop(Q.real(x) & ~Q.zero(x))))
+    ['frozenset({Literal(Q.real(x), False)})', \
+'frozenset({Literal(Q.zero(x), True)})']
+    """
+    return distribute_AND_over_OR(to_NNF(prop))
+
+
+def cnf_to_expr(clauses):
+    """
+    Converts a set of clauses of :class:`Literal` objects to SymPy's
+    boolean expression, retaining the form of the expression.
+    """
+    def remove_literal(arg):
+        return Not(arg.lit) if arg.is_Not else arg.lit
+
+    return And(*(Or(*(remove_literal(arg) for arg in clause)) for clause in clauses))
 
 
 class CNF:
@@ -290,7 +306,7 @@ class CNF:
         self.clauses = clauses
 
     def add(self, prop):
-        clauses = CNF.to_CNF(prop).clauses
+        clauses = clauses_from_prop(prop)
         self.add_clauses(clauses)
 
     def __str__(self):
@@ -299,11 +315,6 @@ class CNF:
             for clause in self.clauses]
         )
         return s
-
-    def extend(self, props):
-        for p in props:
-            self.add(p)
-        return self
 
     def copy(self):
         return CNF(set(self.clauses))
@@ -317,67 +328,16 @@ class CNF:
         res.add(prop)
         return res
 
-    def __iand__(self, other):
-        self.add_clauses(other.clauses)
-        return self
-
     def all_predicates(self):
         return {arg.lit for clause in self.clauses for arg in clause}
-
-    def _or(self, cnf):
-        clauses = {a | b for a in self.clauses for b in cnf.clauses}
-        return CNF(clauses)
 
     def _and(self, cnf):
         clauses = self.clauses.union(cnf.clauses)
         return CNF(clauses)
 
-    def _not(self):
-        clss = list(self.clauses)
-        ll = {frozenset((~x,)) for x in clss[-1]}
-        ll = CNF(ll)
-
-        for rest in clss[:-1]:
-            p = {frozenset((~x,)) for x in rest}
-            ll = ll._or(CNF(p))
-        return ll
-
-    def rcall(self, expr):
-        clause_list = []
-        for clause in self.clauses:
-            lits = [arg.rcall(expr) for arg in clause]
-            clause_list.append(OR(*lits))
-        expr = AND(*clause_list)
-        return distribute_AND_over_OR(expr)
-
-    @classmethod
-    def all_or(cls, *cnfs):
-        b = cnfs[0].copy()
-        for rest in cnfs[1:]:
-            b = b._or(rest)
-        return b
-
-    @classmethod
-    def all_and(cls, *cnfs):
-        clauses = {clause for cnf in cnfs for clause in cnf.clauses}
-        return CNF(clauses)
-
     @classmethod
     def to_CNF(cls, expr):
-        expr = to_NNF(expr)
-        expr = distribute_AND_over_OR(expr)
-        return expr
-
-    @classmethod
-    def CNF_to_cnf(cls, cnf):
-        """
-        Converts CNF object to SymPy's boolean expression
-        retaining the form of expression.
-        """
-        def remove_literal(arg):
-            return Not(arg.lit) if arg.is_Not else arg.lit
-
-        return And(*(Or(*(remove_literal(arg) for arg in clause)) for clause in cnf.clauses))
+        return CNF(clauses_from_prop(expr))
 
 
 class EncodedCNF:
@@ -392,11 +352,29 @@ class EncodedCNF:
         self.encoding = encoding
         self._symbols = list(encoding.keys())
 
+    @classmethod
+    def from_clauses(cls, clauses):
+        """
+        Constructs an ``EncodedCNF`` from a set of clauses of
+        :class:`Literal` objects.
+
+        Each distinct literal atom is assigned a fresh positive integer,
+        negated for negated literals. Literals which are ``S.false`` are
+        encoded as ``0``, which marks the whole ``EncodedCNF`` as trivially
+        unsatisfiable.
+        """
+        enc = cls()
+        enc._symbols = list({arg.lit for clause in clauses for arg in clause})
+        n = len(enc._symbols)
+        enc.encoding = dict(zip(enc._symbols, range(1, n + 1)))
+        enc.data = [enc.encode(clause) for clause in clauses]
+        return enc
+
     def from_cnf(self, cnf):
-        self._symbols = list(cnf.all_predicates())
-        n = len(self._symbols)
-        self.encoding = dict(zip(self._symbols, range(1, n + 1)))
-        self.data = [self.encode(clause) for clause in cnf.clauses]
+        enc = EncodedCNF.from_clauses(cnf.clauses)
+        self.data = enc.data
+        self.encoding = enc.encoding
+        self._symbols = enc._symbols
 
     @property
     def symbols(self):
@@ -411,12 +389,13 @@ class EncodedCNF:
         return EncodedCNF(new_data, dict(self.encoding))
 
     def add_prop(self, prop):
-        cnf = CNF.from_prop(prop)
-        self.add_from_cnf(cnf)
+        self.add_clauses(clauses_from_prop(prop))
 
     def add_from_cnf(self, cnf):
-        clauses = [self.encode(clause) for clause in cnf.clauses]
-        self.data += clauses
+        self.add_clauses(cnf.clauses)
+
+    def add_clauses(self, clauses):
+        self.data += [self.encode(clause) for clause in clauses]
 
     def encode_arg(self, arg):
         literal = arg.lit

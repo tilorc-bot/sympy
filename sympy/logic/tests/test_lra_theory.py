@@ -8,7 +8,7 @@ from sympy.matrices.dense import randMatrix
 from sympy.assumptions.ask import Q
 from sympy.logic.boolalg import And
 from sympy.abc import x, y, z
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
 from sympy.functions.elementary.trigonometric import cos
 from sympy.external import import_module
 
@@ -98,10 +98,7 @@ def substitute_slack(cons, s_subs):
     return cons
 
 def boolean_formula_to_encoded_cnf(bf):
-    cnf = CNF.from_prop(bf)
-    enc = EncodedCNF()
-    enc.from_cnf(cnf)
-    return enc
+    return EncodedCNF.from_clauses(clauses_from_prop(bf))
 
 
 def test_from_encoded_cnf():
@@ -129,9 +126,7 @@ def test_from_encoded_cnf():
 
 def test_problem():
     cons = [-2 * x - 2 * y >= 7, -9 * y >= 7, -6 * y >= 5]
-    cnf = CNF().from_prop(And(*cons))
-    enc = EncodedCNF()
-    enc.from_cnf(cnf)
+    enc = EncodedCNF.from_clauses(clauses_from_prop(And(*cons)))
     lra, _ = LRASolver.from_encoded_cnf(enc)
     lra.assert_lit(1)
     lra.assert_lit(2)
@@ -198,8 +193,7 @@ def test_random_problems():
         phi = And(*constraints)
         if phi == False:
             continue
-        cnf = CNF.from_prop(phi); enc = EncodedCNF()
-        enc.from_cnf(cnf)
+        enc = EncodedCNF.from_clauses(clauses_from_prop(phi))
         assert all(0 not in clause for clause in enc.data)
 
         lra, _ = LRASolver.from_encoded_cnf(enc, testing_mode=True)
@@ -523,9 +517,7 @@ def test_reset():
 
 
 def test_empty_cnf():
-    cnf = CNF()
-    enc = EncodedCNF()
-    enc.from_cnf(cnf)
+    enc = EncodedCNF.from_clauses(set())
     lra, conflict = LRASolver.from_encoded_cnf(enc)
     assert len(conflict) == 0
     assert lra.check() == (True, {})
