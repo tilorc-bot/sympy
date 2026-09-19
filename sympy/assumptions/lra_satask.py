@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
 from sympy.assumptions.ask import Q
 from sympy.logic.inference import satisfiable
 from sympy.logic.algorithms.lra_theory import UnhandledInput, ALLOWED_PRED
@@ -19,12 +19,10 @@ def lra_satask(proposition, assumptions=True):
     into satask, but infinity handling and other things need to be implemented
     before that can happen.
     """
-    props = CNF.from_prop(proposition)
-    _props = CNF.from_prop(~proposition)
+    props = clauses_from_prop(proposition)
+    _props = clauses_from_prop(~proposition)
 
-    cnf = CNF.from_prop(assumptions)
-    assumptions = EncodedCNF()
-    assumptions.from_cnf(cnf)
+    assumptions = EncodedCNF.from_clauses(clauses_from_prop(assumptions))
 
     return check_satisfiability(props, _props, assumptions)
 
@@ -40,8 +38,8 @@ WHITE_LIST = ALLOWED_PRED.keys() | {Q.positive, Q.negative, Q.zero, Q.nonzero, Q
 def check_satisfiability(prop, _prop, factbase):
     sat_true = factbase.copy()
     sat_false = factbase.copy()
-    sat_true.add_from_cnf(prop)
-    sat_false.add_from_cnf(_prop)
+    sat_true.add_clauses(prop)
+    sat_false.add_clauses(_prop)
 
     all_pred, all_exprs = get_all_pred_and_expr_from_enc_cnf(sat_true)
 

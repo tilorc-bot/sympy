@@ -27,7 +27,7 @@ if os.path.isdir(sympy_dir):
     sys.path.insert(0, sympy_top)
 
 from sympy.core.assumptions import _generate_assumption_rules
-from sympy.assumptions.cnf import CNF, Literal
+from sympy.assumptions.cnf import Literal, clauses_from_prop
 from sympy.assumptions.facts import (get_known_facts,
     generate_known_facts_dict, get_known_facts_keys, get_matrix_facts, get_number_facts)
 from sympy.core import Symbol
@@ -95,28 +95,28 @@ def generate_code():
     number_fact = get_number_facts(x)
 
     # Generate CNF of facts between known unary predicates
-    cnf = CNF.to_CNF(fact)
+    clauses = clauses_from_prop(fact)
     all_clauses = LINE.join(sorted([
         'frozenset(('
          + ', '.join(str(Literal(lit.arg.function, lit.is_Not))
                      for lit in sorted(clause, key=str))
-        + '))' for clause in cnf.clauses]))
+        + '))' for clause in clauses]))
 
     # Generate CNF of matrix facts
-    cnf = CNF.to_CNF(matrix_fact)
+    clauses = clauses_from_prop(matrix_fact)
     matrix_clauses = LINE.join(sorted([
         'frozenset(('
          + ', '.join(str(Literal(lit.arg.function, lit.is_Not))
                      for lit in sorted(clause, key=str))
-        + '))' for clause in cnf.clauses]))
+        + '))' for clause in clauses]))
 
     # Generate CNF of number facts
-    cnf = CNF.to_CNF(number_fact)
+    clauses = clauses_from_prop(number_fact)
     number_clauses = LINE.join(sorted([
         'frozenset(('
          + ', '.join(str(Literal(lit.arg.function, lit.is_Not))
                      for lit in sorted(clause, key=str))
-        + '))' for clause in cnf.clauses]))
+        + '))' for clause in clauses]))
 
     # Generate dictionary of facts between known unary predicates
     keys = [pred(x) for pred in get_known_facts_keys()]

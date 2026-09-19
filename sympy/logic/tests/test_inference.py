@@ -17,7 +17,7 @@ from sympy.logic.algorithms.dpll2 import dpll_satisfiable as dpll2_satisfiable
 from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
 
 from sympy.logic.algorithms.z3_wrapper import z3_satisfiable
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
 from sympy.logic.algorithms.lra_theory import LRASolver
 from sympy.logic.tests.test_lra_theory import make_random_problem
 from sympy.core.random import randint, choice
@@ -170,8 +170,7 @@ def test_satsolver_propagate():
     # The bounds are asserted into the LRA theory as the literals are
     # propagated, so a conflict the theory finds is a conflict like any other.
     x = symbols('x')
-    enc = EncodedCNF()
-    enc.from_cnf(CNF.from_prop((x > 1) & (x < 0)))
+    enc = EncodedCNF.from_clauses(clauses_from_prop((x > 1) & (x < 0)))
     lra, conflicts = LRASolver.from_encoded_cnf(enc)
     s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
                   lra_theory=lra)
@@ -180,8 +179,7 @@ def test_satsolver_propagate():
 
     # An assignment of every variable is only a model if it holds in the LRA
     # theory as well, so propagating on its own cannot report satisfiable.
-    enc = EncodedCNF()
-    enc.from_cnf(CNF.from_prop((x > 1) & (x < 5)))
+    enc = EncodedCNF.from_clauses(clauses_from_prop((x > 1) & (x < 5)))
     lra, conflicts = LRASolver.from_encoded_cnf(enc)
     s = SATSolver(enc.data + conflicts, enc.variables, set(), enc.symbols,
                   lra_theory=lra)
@@ -684,10 +682,7 @@ def test_z3_vs_lra_dpll2():
         skip("z3 not installed.")
 
     def boolean_formula_to_encoded_cnf(bf):
-        cnf = CNF.from_prop(bf)
-        enc = EncodedCNF()
-        enc.from_cnf(cnf)
-        return enc
+        return EncodedCNF.from_clauses(clauses_from_prop(bf))
 
     def make_random_cnf(num_clauses=5, num_constraints=10, num_var=2):
         assert num_clauses <= num_constraints

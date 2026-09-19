@@ -3,7 +3,7 @@ from sympy.abc import t, w, x, y, z, n, k, m, p, i
 from sympy.assumptions import (ask, AssumptionsContext, Q)
 from sympy.assumptions.assume import (assuming, global_assumptions, Predicate)
 from sympy.assumptions.ask import _ask_recursive
-from sympy.assumptions.cnf import CNF, Literal
+from sympy.assumptions.cnf import Literal, clauses_from_prop
 from sympy.assumptions.facts import (single_fact_lookup,
     get_known_facts, generate_known_facts_dict, get_known_facts_keys)
 from sympy.assumptions.ask_generated import (get_all_known_facts,
@@ -2344,9 +2344,8 @@ def test_known_facts_consistent():
     x = Symbol('x')
     fact = get_known_facts(x)
     # test cnf clauses of fact between unary predicates
-    cnf = CNF.to_CNF(fact)
     clauses = set()
-    clauses.update(frozenset(Literal(lit.arg.function, lit.is_Not) for lit in sorted(cl, key=str)) for cl in cnf.clauses)
+    clauses.update(frozenset(Literal(lit.arg.function, lit.is_Not) for lit in sorted(cl, key=str)) for cl in clauses_from_prop(fact))
     assert get_all_known_facts() == clauses
     # test dictionary of fact between unary predicates
     keys = [pred(x) for pred in get_known_facts_keys()]

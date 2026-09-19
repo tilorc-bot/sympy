@@ -11,7 +11,7 @@ from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
 from sympy.logic.algorithms.dpll2 import SATSolver, IpasirStatus
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
 from sympy.matrices.kind import MatrixKind
 
 
@@ -65,14 +65,14 @@ def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
     True
 
     """
-    props = CNF.from_prop(proposition)
-    _props = CNF.from_prop(~proposition)
+    props = clauses_from_prop(proposition)
+    _props = clauses_from_prop(~proposition)
 
-    assumptions = CNF.from_prop(assumptions)
+    assumptions = clauses_from_prop(assumptions)
 
     sat = get_all_relevant_facts(props, assumptions,
         use_known_facts=use_known_facts, iterations=iterations)
-    sat.add_from_cnf(assumptions)
+    sat.add_clauses(assumptions)
 
     return check_satisfiability(props, _props, sat, early_return)
 
@@ -81,7 +81,8 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
     if {0} in factbase.data:
         raise ValueError("Inconsistent assumptions")
 
-    true_false_guarded, selector = _encode_with_selector(prop, _prop, factbase)
+    true_false_guarded, selector, encoded_sides = \
+        _encode_with_selector(prop, _prop, factbase)
 
     # Run `propogate()` on the assumptions
     solver = SATSolver(true_false_guarded.data, range(1, selector + 1), set(),
@@ -91,11 +92,12 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
 
     # Check whether proposition is entailed by any of the assigned literals.
     if early_return:
-        entailed = solver._is_entailed(prop.clauses, true_false_guarded.encoding)
+        prop_clauses, neg_prop_clauses = encoded_sides
+        entailed = solver._is_entailed(prop_clauses)
         if entailed is not None:
             return entailed
 
-        entailed = solver._is_entailed(_prop.clauses, true_false_guarded.encoding)
+        entailed = solver._is_entailed(neg_prop_clauses)
         if entailed is not None:
             return not entailed
 
@@ -130,21 +132,24 @@ def check_satisfiability(prop, _prop, factbase, early_return=False):
 def _encode_with_selector(prop, _prop, factbase):
     """Return *factbase* with the clauses of prop and _prop added to it, and
     the selector variable that activates prop when true and _prop when false.
+
+    Also returns the clauses of prop and _prop encoded by the same encoding,
+    without the selector guards, as ``(prop_clauses, neg_prop_clauses)``.
     """
     true_false_guarded = factbase.copy()
-    sides = [[true_false_guarded.encode(clause) for clause in side.clauses]
-             for side in (prop, _prop)]
+    encoded_sides = [[true_false_guarded.encode(clause) for clause in side]
+                     for side in (prop, _prop)]
 
     # One past the last predicate, so the selector is a variable of its own.
     selector = len(true_false_guarded.encoding) + 1
 
-    for clauses, guard in zip(sides, (-selector, selector)):
+    for clauses, guard in zip(encoded_sides, (-selector, selector)):
         # Dropping the 0 that encodes False leaves a side nothing can satisfy
         # as the unit {guard}.
         true_false_guarded.data += [(clause - {0}) | {guard}
                                     for clause in clauses]
 
-    return true_false_guarded, selector
+    return true_false_guarded, selector, encoded_sides
 
 
 def extract_predargs(proposition, assumptions=None):
@@ -155,29 +160,29 @@ def extract_predargs(proposition, assumptions=None):
     Parameters
     ==========
 
-    proposition : sympy.assumptions.cnf.CNF
+    proposition : set of clauses
 
-    assumptions : sympy.assumptions.cnf.CNF, optional.
+    assumptions : set of clauses, optional.
 
     Examples
     ========
 
     >>> from sympy import Q, Abs
-    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.cnf import clauses_from_prop
     >>> from sympy.assumptions.satask import extract_predargs
     >>> from sympy.abc import x, y
-    >>> props = CNF.from_prop(Q.zero(Abs(x*y)))
-    >>> assump = CNF.from_prop(Q.zero(x) & Q.zero(y))
+    >>> props = clauses_from_prop(Q.zero(Abs(x*y)))
+    >>> assump = clauses_from_prop(Q.zero(x) & Q.zero(y))
     >>> extract_predargs(props, assump)
     {x, y, Abs(x*y)}
 
     """
     req_keys = find_symbols(proposition)
-    keys = proposition.all_predicates()
+    keys = {arg.lit for clause in proposition for arg in clause}
     # XXX: We need this since True/False are not Basic
     lkeys = set()
     if assumptions:
-        lkeys |= assumptions.all_predicates()
+        lkeys |= {arg.lit for clause in assumptions for arg in clause}
 
     lkeys = lkeys - {S.true, S.false}
     tmp_keys = None
@@ -206,13 +211,15 @@ def find_symbols(pred):
     Parameters
     ==========
 
-    pred : sympy.assumptions.cnf.CNF, or any Expr.
+    pred : set of clauses, or any Expr.
+        A clause is a frozenset of :class:`~.Literal` objects.
 
     """
-    if isinstance(pred, CNF):
+    if isinstance(pred, set):
         symbols = set()
-        for a in pred.all_predicates():
-            symbols |= find_symbols(a)
+        for clause in pred:
+            for arg in clause:
+                symbols |= find_symbols(arg.lit)
         return symbols
     return pred.atoms(Symbol)
 
@@ -230,7 +237,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     exprs : set
         Expressions whose relevant facts are searched.
 
-    relevant_facts : sympy.assumptions.cnf.CNF, optional.
+    relevant_facts : set of clauses, optional.
         Pre-discovered relevant facts.
 
     Returns
@@ -239,7 +246,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     exprs : set
         Candidates for next relevant fact searching.
 
-    relevant_facts : sympy.assumptions.cnf.CNF
+    relevant_facts : set of clauses
         Updated relevant facts.
 
     Examples
@@ -248,7 +255,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     Here, we will see how facts relevant to ``Abs(x*y)`` are recursively
     extracted. On the first run, set containing the expression is passed
     without pre-discovered relevant facts. The result is a set containing
-    candidates for next run, and ``CNF()`` instance containing facts
+    candidates for next run, and set of clauses containing facts
     which are relevant to ``Abs`` and its argument.
 
     >>> from sympy import Abs
@@ -258,19 +265,9 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     >>> exprs, facts = get_relevant_clsfacts(exprs)
     >>> exprs
     {x*y}
-    >>> facts.clauses #doctest: +SKIP
-    {frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), False), Literal(Q.zero(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), True), Literal(Q.zero(x*y), False)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.odd(Abs(x*y)), False),
-                Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.even(x*y), True),
-                Literal(Q.odd(Abs(x*y)), False)}),
-    frozenset({Literal(Q.positive(Abs(x*y)), False),
-                Literal(Q.zero(Abs(x*y)), False)})}
+    >>> sorted(map(str, facts)) #doctest: +SKIP
+    ['frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)})',
+    ...
 
     We pass the first run's results to the second run, and get the expressions
     for next run and updated facts.
@@ -288,14 +285,14 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
 
     """
     if not relevant_facts:
-        relevant_facts = CNF()
+        relevant_facts = set()
 
     newexprs = set()
     for expr in exprs:
         for fact in class_fact_registry(expr):
-            newfact = CNF.to_CNF(fact)
-            relevant_facts = relevant_facts._and(newfact)
-            for key in newfact.all_predicates():
+            newfact = clauses_from_prop(fact)
+            relevant_facts |= newfact
+            for key in {arg.lit for clause in newfact for arg in clause}:
                 if isinstance(key, AppliedPredicate):
                     newexprs |= set(key.arguments)
 
@@ -314,11 +311,11 @@ def get_all_relevant_facts(proposition, assumptions,
     Parameters
     ==========
 
-    proposition : sympy.assumptions.cnf.CNF
-        CNF generated from proposition expression.
+    proposition : set of clauses
+        Clauses generated from proposition expression.
 
-    assumptions : sympy.assumptions.cnf.CNF
-        CNF generated from assumption expression.
+    assumptions : set of clauses
+        Clauses generated from assumption expression.
 
     use_known_facts : bool, optional.
         If ``True``, facts from ``sympy.assumptions.ask_generated``
@@ -337,11 +334,11 @@ def get_all_relevant_facts(proposition, assumptions,
     ========
 
     >>> from sympy import Q
-    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.cnf import clauses_from_prop
     >>> from sympy.assumptions.satask import get_all_relevant_facts
     >>> from sympy.abc import x, y
-    >>> props = CNF.from_prop(Q.nonzero(x*y))
-    >>> assump = CNF.from_prop(Q.nonzero(x))
+    >>> props = clauses_from_prop(Q.nonzero(x*y))
+    >>> assump = clauses_from_prop(Q.nonzero(x))
     >>> get_all_relevant_facts(props, assump) #doctest: +SKIP
     <sympy.assumptions.cnf.EncodedCNF at 0x7f09faa6ccd0>
 
@@ -351,7 +348,7 @@ def get_all_relevant_facts(proposition, assumptions,
     # we stop getting new things. Hopefully this strategy won't lead to an
     # infinite loop in the future.
     i = 0
-    relevant_facts = CNF()
+    relevant_facts = set()
     all_exprs = set()
     while True:
         if i == 0:
@@ -365,16 +362,15 @@ def get_all_relevant_facts(proposition, assumptions,
             break
 
     if use_known_facts:
-        known_facts_CNF = CNF()
+        known_facts = set()
 
         if any(expr.kind == MatrixKind(NumberKind) for expr in all_exprs):
-            known_facts_CNF.add_clauses(get_all_known_matrix_facts())
+            known_facts |= get_all_known_matrix_facts()
         # check for undefinedKind since kind system isn't fully implemented
         if any(((expr.kind == NumberKind) or (expr.kind == UndefinedKind)) for expr in all_exprs):
-            known_facts_CNF.add_clauses(get_all_known_number_facts())
+            known_facts |= get_all_known_number_facts()
 
-        kf_encoded = EncodedCNF()
-        kf_encoded.from_cnf(known_facts_CNF)
+        kf_encoded = EncodedCNF.from_clauses(known_facts)
 
         def translate_literal(lit, delta):
             if lit > 0:
@@ -396,6 +392,6 @@ def get_all_relevant_facts(proposition, assumptions,
     else:
         ctx = EncodedCNF()
 
-    ctx.add_from_cnf(relevant_facts)
+    ctx.add_clauses(relevant_facts)
 
     return ctx

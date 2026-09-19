@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from sympy.assumptions.assume import (global_assumptions, Predicate,
         AppliedPredicate)
-from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
+from sympy.assumptions.cnf import EncodedCNF, Literal, clauses_from_prop
 from sympy.core import sympify
 from sympy.core.kind import BooleanKind
 from sympy.core.relational import Eq, Ne, Gt, Lt, Ge, Le
@@ -318,32 +318,33 @@ def _extract_all_facts(assump, exprs):
     Parameters
     ==========
 
-    assump : sympy.assumptions.cnf.CNF
+    assump : set of clauses
+        Clauses in conjunctive normal form; each clause is a frozenset of
+        :class:`~.Literal` objects.
 
     exprs : tuple of expressions
 
     Returns
     =======
 
-    sympy.assumptions.cnf.CNF
+    set of clauses
 
     Examples
     ========
 
     >>> from sympy import Q
-    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.cnf import clauses_from_prop
     >>> from sympy.assumptions.ask import _extract_all_facts
     >>> from sympy.abc import x, y
-    >>> assump = CNF.from_prop(Q.positive(x) & Q.integer(y))
+    >>> assump = clauses_from_prop(Q.positive(x) & Q.integer(y))
     >>> exprs = (x,)
-    >>> cnf = _extract_all_facts(assump, exprs)
-    >>> cnf.clauses
+    >>> _extract_all_facts(assump, exprs)
     {frozenset({Literal(Q.positive, False)})}
 
     """
     facts = set()
 
-    for clause in assump.clauses:
+    for clause in assump:
         args = []
         for literal in clause:
             if isinstance(literal.lit, AppliedPredicate) and len(literal.lit.arguments) == 1:
@@ -360,7 +361,7 @@ def _extract_all_facts(assump, exprs):
         else:
             if args:
                 facts.add(frozenset(args))
-    return CNF(facts)
+    return facts
 
 def _normalize_applied_predicates(expr):
     # Replace Q.gt(a,b) with Q.lt(b,a)
@@ -517,20 +518,18 @@ def ask(proposition, assumptions=True, context=global_assumptions):
     else:
         key, args = Q.is_true, (proposition,)
 
-    # convert local and global assumptions to CNF
-    assump_cnf = CNF.from_prop(assumptions)
+    # convert local and global assumptions to clauses in CNF
+    assump_clauses = clauses_from_prop(assumptions)
 
     # extract the relevant facts from assumptions with respect to args
-    local_facts = _extract_all_facts(assump_cnf, args)
+    local_facts = _extract_all_facts(assump_clauses, args)
 
     # convert default facts and assumed facts to encoded CNF
-    known_facts_cnf = get_all_known_facts()
-    enc_cnf = EncodedCNF()
-    enc_cnf.from_cnf(CNF(known_facts_cnf))
-    enc_cnf.add_from_cnf(local_facts)
+    enc_cnf = EncodedCNF.from_clauses(get_all_known_facts())
+    enc_cnf.add_clauses(local_facts)
 
     # check the satisfiability of given assumptions
-    if local_facts.clauses and satisfiable(enc_cnf) is False:
+    if local_facts and satisfiable(enc_cnf) is False:
         raise ValueError(f"inconsistent assumptions {assumptions}")
 
     # quick computation for single fact
@@ -566,8 +565,9 @@ def _ask_single_fact(key, local_facts):
     key : sympy.assumptions.assume.Predicate
         Proposition predicate.
 
-    local_facts : sympy.assumptions.cnf.CNF
-        Local assumption in CNF form.
+    local_facts : set of clauses
+        Local assumption as clauses in conjunctive normal form; each clause
+        is a frozenset of :class:`~.Literal` objects.
 
     Returns
     =======
@@ -578,42 +578,38 @@ def _ask_single_fact(key, local_facts):
     ========
 
     >>> from sympy import Q
-    >>> from sympy.assumptions.cnf import CNF
+    >>> from sympy.assumptions.cnf import clauses_from_prop
     >>> from sympy.assumptions.ask import _ask_single_fact
 
     If prerequisite of proposition is rejected by the assumption,
     return ``False``.
 
     >>> key, assump = Q.zero, ~Q.zero
-    >>> local_facts = CNF.from_prop(assump)
-    >>> _ask_single_fact(key, local_facts)
+    >>> _ask_single_fact(key, clauses_from_prop(assump))
     False
     >>> key, assump = Q.zero, ~Q.even
-    >>> local_facts = CNF.from_prop(assump)
-    >>> _ask_single_fact(key, local_facts)
+    >>> _ask_single_fact(key, clauses_from_prop(assump))
     False
 
     If assumption implies the proposition, return ``True``.
 
     >>> key, assump = Q.even, Q.zero
-    >>> local_facts = CNF.from_prop(assump)
-    >>> _ask_single_fact(key, local_facts)
+    >>> _ask_single_fact(key, clauses_from_prop(assump))
     True
 
     If proposition rejects the assumption, return ``False``.
 
     >>> key, assump = Q.even, Q.odd
-    >>> local_facts = CNF.from_prop(assump)
-    >>> _ask_single_fact(key, local_facts)
+    >>> _ask_single_fact(key, clauses_from_prop(assump))
     False
     """
-    if not local_facts.clauses:
+    if not local_facts:
         return None
 
     known_facts_dict = get_known_facts_dict()
     get_facts = lambda k: known_facts_dict.get(k, (set(), set()))
 
-    for clause in local_facts.clauses:
+    for clause in local_facts:
         if len(clause) != 1:
             continue
         (f,) = clause
@@ -649,8 +645,8 @@ def _ask_recursive(proposition, assumptions=True):
     else:
         key, args = Q.is_true, (proposition,)
 
-    assump_cnf = CNF.from_prop(assumptions)
-    local_facts = _extract_all_facts(assump_cnf, args)
+    assump_clauses = clauses_from_prop(assumptions)
+    local_facts = _extract_all_facts(assump_clauses, args)
 
     res = _ask_single_fact(key, local_facts)
     if res is not None:
