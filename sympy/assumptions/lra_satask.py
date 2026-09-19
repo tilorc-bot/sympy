@@ -22,9 +22,7 @@ def lra_satask(proposition, assumptions=True):
     props = CNF.from_prop(proposition)
     _props = CNF.from_prop(~proposition)
 
-    cnf = CNF.from_prop(assumptions)
-    assumptions = EncodedCNF()
-    assumptions.from_cnf(cnf)
+    assumptions = CNF.from_prop(assumptions)
 
     return check_satisfiability(props, _props, assumptions)
 
@@ -38,12 +36,12 @@ WHITE_LIST = ALLOWED_PRED.keys() | {Q.positive, Q.negative, Q.zero, Q.nonzero, Q
 
 
 def check_satisfiability(prop, _prop, factbase):
-    sat_true = factbase.copy()
-    sat_true.add_from_cnf(prop)
+    """Answer a query after validating and rewriting its three CNF inputs."""
+    predicates = prop.all_predicates() | _prop.all_predicates() | factbase.all_predicates()
+    applied = {pred for pred in predicates if isinstance(pred, AppliedPredicate)}
+    all_exprs = {arg for pred in applied for arg in pred.arguments}
 
-    all_pred, all_exprs = get_all_pred_and_expr_from_enc_cnf(sat_true)
-
-    for pred in all_pred:
+    for pred in applied:
         if pred.function not in WHITE_LIST and pred.function != Q.ne:
             raise UnhandledInput(f"LRASolver: {pred} is an unhandled predicate")
     for expr in all_exprs:
@@ -52,143 +50,49 @@ def check_satisfiability(prop, _prop, factbase):
         if expr == S.NaN:
             raise UnhandledInput("LRASolver: nan")
 
-    # convert old assumptions into predicates and add them to the factbase
-    # shared by both polarities of the query
-    # also check for unhandled predicates
     factbase = factbase.copy()
     for assm in extract_pred_from_old_assum(all_exprs):
-        n = len(factbase.encoding)
-        if assm not in factbase.encoding:
-            factbase.encoding[assm] = n+1
-        factbase.data.append([factbase.encoding[assm]])
+        factbase.add(assm)
+        predicates.add(assm)
 
-    engine = ReasoningEngine(_preprocess(factbase), use_lra_theory=True)
-    query = engine.create_query(_preprocess_query(prop, factbase),
-                                _preprocess_query(_prop, factbase))
+    replacements = {pred: _pred_to_binrel(pred) for pred in predicates}
+    encoded = EncodedCNF()
+    encoded.from_cnf(_preprocess(factbase, replacements))
+    engine = ReasoningEngine(encoded, use_lra_theory=True)
+    query = engine.create_query(_preprocess(prop, replacements),
+                                _preprocess(_prop, replacements))
     return engine.ask_query(query)
 
 
-def _preprocess(enc_cnf):
+def _preprocess(cnf, replacements):
+    """Rewrite each literal as a disjunction of LRA literals within its clause.
+
+    False literals are removed from disjunctions. An entirely false clause
+    retains a false literal so EncodedCNF encodes it as the contradiction {0}.
     """
-    Returns an encoded cnf with only Q.eq, Q.gt, Q.lt,
-    Q.ge, and Q.le predicate.
-
-    Converts every unequality into a disjunction of strict
-    inequalities. For example, x != 3 would become
-    x < 3 OR x > 3.
-
-    Also converts all negated Q.ne predicates into
-    equalities.
-    """
-
-    # loops through each literal in each clause
-    # to construct a new, preprocessed encodedCNF
-
-    enc_cnf = enc_cnf.copy()
-    cur_enc = 1
-    rev_encoding = {value: key for key, value in enc_cnf.encoding.items()}
-
-    new_encoding = {}
-    new_data = []
-    for clause in enc_cnf.data:
-        new_clause = []
-        for lit in clause:
-            if lit == 0:
-                new_clause.append(lit)
-                new_encoding[lit] = False
-                continue
-            prop = rev_encoding[abs(lit)]
-            negated = lit < 0
-            sign = (lit > 0) - (lit < 0)
-
-            prop = _pred_to_binrel(prop)
-
-            if not isinstance(prop, AppliedPredicate):
-                if prop not in new_encoding:
-                    new_encoding[prop] = cur_enc
-                    cur_enc += 1
-                lit = new_encoding[prop]
-                new_clause.append(sign*lit)
-                continue
-
-
-            if negated and prop.function == Q.eq:
-                negated = False
-                prop = Q.ne(*prop.arguments)
-
-            if prop.function == Q.ne:
-                arg1, arg2 = prop.arguments
-                if negated:
-                    new_prop = Q.eq(arg1, arg2)
-                    if new_prop not in new_encoding:
-                        new_encoding[new_prop] = cur_enc
-                        cur_enc += 1
-
-                    new_enc = new_encoding[new_prop]
-                    new_clause.append(new_enc)
-                    continue
-                else:
-                    new_props = (Q.gt(arg1, arg2), Q.lt(arg1, arg2))
-                    for new_prop in new_props:
-                        if new_prop not in new_encoding:
-                            new_encoding[new_prop] = cur_enc
-                            cur_enc += 1
-
-                        new_enc = new_encoding[new_prop]
-                        new_clause.append(new_enc)
-                    continue
-
-            if prop.function == Q.eq and negated:
-                assert False
-
-            if prop not in new_encoding:
-                new_encoding[prop] = cur_enc
-                cur_enc += 1
-            new_clause.append(new_encoding[prop]*sign)
-        new_data.append(new_clause)
-
-    assert len(new_encoding) >= cur_enc - 1
-
-    enc_cnf = EncodedCNF(new_data, new_encoding)
-    return enc_cnf
-
-
-def _preprocess_query(prop, factbase):
-    """
-    Return *prop* as a preprocessed CNF of LRA relation literals.
-
-    This gives the clauses that *prop* contributes on top of *factbase*
-    after ``_preprocess``, decoded back into a ``CNF`` so that
-    ``ReasoningEngine.create_query`` can encode them behind a query
-    selector.
-    """
-    enc = factbase.copy()
-    n_base = len(enc.data)
-    enc.add_from_cnf(prop)
-    enc = _preprocess(enc)
-    rev_encoding = {value: key for key, value in enc.encoding.items()}
-
     clauses = set()
-    for clause in enc.data[n_base:]:
-        new_clause = []
-        for lit in clause:
-            # Literal 0 is a False clause literal; dropping it does not
-            # change the clause. A clause made up of only literals 0
-            # becomes the empty clause, i.e. an unsatisfiable branch.
-            if lit == 0:
-                continue
-            key = rev_encoding[abs(lit)]
-            if key is False:
-                # Q.negative_infinite and Q.positive_infinite are
-                # preprocessed into a constantly False atom, which cannot
-                # round-trip as a literal. Q.gt(1, 2) is an equivalent
-                # constantly False relation: the theory solver prunes both
-                # with the same one-literal conflict clause.
-                key = Q.gt(1, 2)
-            new_clause.append(Literal(key, lit < 0))
-        clauses.add(frozenset(new_clause))
-
+    for clause in cnf.clauses:
+        rewritten = frozenset(new_lit for lit in clause
+                              for new_lit in _rewrite_literal(lit, replacements[lit.lit])
+                              if new_lit.lit != S.false)
+        clauses.add(rewritten or frozenset((Literal(S.false),)))
     return CNF(clauses)
+
+
+def _rewrite_literal(literal, pred):
+    """Expand disequalities and negated equalities into strict inequalities.
+
+    Negation of a converted Boolean constant must be evaluated here because
+    EncodedCNF represents false literals by 0, regardless of their polarity.
+    """
+    negated = literal.is_Not
+    if pred in (True, False):
+        return (Literal(S.true if bool(pred) != negated else S.false),)
+    if isinstance(pred, AppliedPredicate) and pred.function in (Q.eq, Q.ne):
+        if (pred.function == Q.ne) != negated:
+            return (Literal(Q.gt(*pred.arguments)), Literal(Q.lt(*pred.arguments)))
+        return (Literal(Q.eq(*pred.arguments)),)
+    return (Literal(pred, negated),)
 
 
 def _pred_to_binrel(pred):
@@ -225,16 +129,6 @@ pred_to_pos_neg_zero = {
     Q.negative_infinite: False,
     Q.positive_infinite: False
 }
-
-def get_all_pred_and_expr_from_enc_cnf(enc_cnf):
-    all_exprs = set()
-    all_pred = set()
-    for pred in enc_cnf.encoding.keys():
-        if isinstance(pred, AppliedPredicate):
-            all_pred.add(pred)
-            all_exprs.update(pred.arguments)
-
-    return all_pred, all_exprs
 
 def extract_pred_from_old_assum(all_exprs):
     """
