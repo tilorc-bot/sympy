@@ -493,8 +493,8 @@ def ask(proposition, assumptions=True, context=global_assumptions):
         Proposition is not reduced to ``None`` if the truth value cannot
         be determined.
     """
-    from sympy.assumptions.satask import satask
-    from sympy.assumptions.lra_satask import lra_satask
+    from sympy.assumptions.satask import _satask
+    from sympy.assumptions.lra_satask import _lra_satask
     from sympy.logic.algorithms.lra_theory import UnhandledInput
 
     assumptions = And(assumptions, *context)
@@ -543,13 +543,17 @@ def ask(proposition, assumptions=True, context=global_assumptions):
     if res is not None:
         return bool(res)
 
+    # convert the proposition to CNF once for both satask and lra_satask
+    props = CNF.from_prop(proposition)
+    _props = CNF.from_prop(~proposition)
+
     # using satask (still costly)
-    res = satask(proposition, assumptions=assumptions)
+    res = _satask(props, _props, assump_cnf)
     if res is not None:
         return res
 
     try:
-        res = lra_satask(proposition, assumptions=assumptions)
+        res = _lra_satask(props, _props, assump_cnf)
     except UnhandledInput:
         return None
 
