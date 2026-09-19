@@ -7,7 +7,7 @@ from sympy.core.symbol import symbols, Dummy
 from sympy.functions.elementary.complexes import Abs
 from sympy.logic.boolalg import Equivalent, Implies, Xor
 from sympy.matrices.expressions.matexpr import MatrixSymbol
-from sympy.assumptions.cnf import CNF, Literal
+from sympy.assumptions.cnf import Literal, clauses_from_prop
 from sympy.assumptions.satask import (satask, extract_predargs,
     get_relevant_clsfacts)
 from sympy.assumptions.sathandlers import class_fact_registry
@@ -361,16 +361,16 @@ def test_prime_composite():
 
 
 def test_extract_predargs():
-    props = CNF.from_prop(Q.zero(Abs(x*y)) & Q.zero(x*y))
-    assump = CNF.from_prop(Q.zero(x))
-    context = CNF.from_prop(Q.zero(y))
+    props = clauses_from_prop(Q.zero(Abs(x*y)) & Q.zero(x*y))
+    assump = clauses_from_prop(Q.zero(x))
+    context = clauses_from_prop(Q.zero(y))
     assert extract_predargs(props) == {Abs(x*y), x*y}
     assert extract_predargs(props, assump) == {Abs(x*y), x*y, x}
-    assump.add_clauses(context.clauses)
+    assump |= context
     assert extract_predargs(props, assump) == {Abs(x*y), x*y, x, y}
 
-    props = CNF.from_prop(Eq(x, y))
-    assump = CNF.from_prop(Gt(y, z))
+    props = clauses_from_prop(Eq(x, y))
+    assump = clauses_from_prop(Gt(y, z))
     assert extract_predargs(props, assump) == {x, y, z}
 
 
@@ -378,7 +378,7 @@ def test_get_relevant_clsfacts():
     exprs = {Abs(x*y)}
     exprs, facts = get_relevant_clsfacts(exprs)
     assert exprs == {x*y}
-    assert facts.clauses == \
+    assert facts == \
         {frozenset({Literal(Q.nonnegative(Abs(x*y)), False)}),
          frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
          frozenset({Literal(Q.integer(Abs(x*y)), False), Literal(Q.integer(x*y), True)}),
@@ -388,7 +388,7 @@ def test_get_relevant_clsfacts():
 
 def test_issue_27467():
     s = sum(Dummy() for _ in range(10))
-    assert all(len(CNF.to_CNF(f).clauses) < 1000 for f in class_fact_registry(s))
+    assert all(len(clauses_from_prop(f)) < 1000 for f in class_fact_registry(s))
 
 def test_issue_29433():
     assert satask(Q.infinite(x+y*pi), Q.zero(y)) is None

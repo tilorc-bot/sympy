@@ -187,8 +187,8 @@ class AppliedBinaryRelation(AppliedPredicate):
             else:
                 conj_assumps.add(a)
 
-        # After CNF in assumptions module is modified to take polyadic
-        # predicate, this will be removed
+        # After the assumptions module handles polyadic predicates in its
+        # clause conversion, this will be removed
         if any(rel in conj_assumps for rel in (self, self.reversed)):
             return True
         neg_rels = (self.negated, self.reversed.negated, Not(self, evaluate=False),

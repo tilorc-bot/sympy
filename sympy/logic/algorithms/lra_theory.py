@@ -25,12 +25,10 @@ Here's an example of how that would work:
 
     Then an LRASolver instance needs to be initialized with this formula.
 
-    >>> from sympy.assumptions.cnf import CNF, EncodedCNF
+    >>> from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
     >>> from sympy.assumptions.ask import Q
     >>> from sympy.logic.algorithms.lra_theory import LRASolver
-    >>> cnf = CNF.from_prop(f)
-    >>> enc = EncodedCNF()
-    >>> enc.add_from_cnf(cnf)
+    >>> enc = EncodedCNF.from_clauses(clauses_from_prop(f))
     >>> lra, conflicts = LRASolver.from_encoded_cnf(enc)
 
     Any immediate one-lital conflicts clauses will be detected here.
@@ -217,16 +215,14 @@ class LRASolver():
         =======
 
         >>> from sympy.core.relational import Eq
-        >>> from sympy.assumptions.cnf import CNF, EncodedCNF
+        >>> from sympy.assumptions.cnf import EncodedCNF, clauses_from_prop
         >>> from sympy.assumptions.ask import Q
         >>> from sympy.logic.algorithms.lra_theory import LRASolver
         >>> from sympy.abc import x, y, z
         >>> phi = (x >= 0) & ((x + y <= 2) | (x + 2 * y - z >= 6))
         >>> phi = phi & (Eq(x + y, 2) | (x + 2 * y - z > 4))
         >>> phi = phi & Q.gt(2, 1)
-        >>> cnf = CNF.from_prop(phi)
-        >>> enc = EncodedCNF()
-        >>> enc.from_cnf(cnf)
+        >>> enc = EncodedCNF.from_clauses(clauses_from_prop(phi))
         >>> lra, conflicts = LRASolver.from_encoded_cnf(enc, testing_mode=True)
         >>> lra #doctest: +SKIP
         <sympy.logic.algorithms.lra_theory.LRASolver object at 0x7fdcb0e15b70>

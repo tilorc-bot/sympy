@@ -15,7 +15,7 @@ from sympy.logic.boolalg import (Equivalent, ITE, Implies, Nand, Nor, Xor)
 
 class Literal:
     """
-    The smallest element of a CNF object.
+    The smallest element of a clause in conjunctive normal form.
 
     Parameters
     ==========
@@ -284,62 +284,6 @@ def cnf_to_expr(clauses):
     return And(*(Or(*(remove_literal(arg) for arg in clause)) for clause in clauses))
 
 
-class CNF:
-    """
-    Class to represent CNF of a Boolean expression.
-    Consists of set of clauses, which themselves are stored as
-    frozenset of Literal objects.
-
-    Examples
-    ========
-
-    >>> from sympy import Q
-    >>> from sympy.assumptions.cnf import CNF
-    >>> from sympy.abc import x
-    >>> cnf = CNF.from_prop(Q.real(x) & ~Q.zero(x))
-    >>> cnf.clauses
-    {frozenset({Literal(Q.real(x), False)}), frozenset({Literal(Q.zero(x), True)})}
-    """
-    def __init__(self, clauses=None):
-        if not clauses:
-            clauses = set()
-        self.clauses = clauses
-
-    def add(self, prop):
-        clauses = clauses_from_prop(prop)
-        self.add_clauses(clauses)
-
-    def __str__(self):
-        s = ' & '.join(
-            ['(' + ' | '.join([str(lit) for lit in clause]) +')'
-            for clause in self.clauses]
-        )
-        return s
-
-    def copy(self):
-        return CNF(set(self.clauses))
-
-    def add_clauses(self, clauses):
-        self.clauses |= clauses
-
-    @classmethod
-    def from_prop(cls, prop):
-        res = cls()
-        res.add(prop)
-        return res
-
-    def all_predicates(self):
-        return {arg.lit for clause in self.clauses for arg in clause}
-
-    def _and(self, cnf):
-        clauses = self.clauses.union(cnf.clauses)
-        return CNF(clauses)
-
-    @classmethod
-    def to_CNF(cls, expr):
-        return CNF(clauses_from_prop(expr))
-
-
 class EncodedCNF:
     """
     Class for encoding the CNF expression.
@@ -370,12 +314,6 @@ class EncodedCNF:
         enc.data = [enc.encode(clause) for clause in clauses]
         return enc
 
-    def from_cnf(self, cnf):
-        enc = EncodedCNF.from_clauses(cnf.clauses)
-        self.data = enc.data
-        self.encoding = enc.encoding
-        self._symbols = enc._symbols
-
     @property
     def symbols(self):
         return self._symbols
@@ -390,9 +328,6 @@ class EncodedCNF:
 
     def add_prop(self, prop):
         self.add_clauses(clauses_from_prop(prop))
-
-    def add_from_cnf(self, cnf):
-        self.add_clauses(cnf.clauses)
 
     def add_clauses(self, clauses):
         self.data += [self.encode(clause) for clause in clauses]
