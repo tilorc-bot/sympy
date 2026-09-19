@@ -1,4 +1,6 @@
 from __future__ import annotations
+from sympy.assumptions.ask import Q
+from sympy.assumptions.refine import refine
 from sympy.core import Lambda, S, symbols
 from sympy.concrete import Sum
 from sympy.functions import adjoint, conjugate, transpose
@@ -115,3 +117,11 @@ def test_trace_as_explicit():
     X = MatrixSymbol("X", 3, 3)
     assert Trace(X).as_explicit() == X[0, 0] + X[1, 1] + X[2, 2]
     assert Trace(eye(3)).as_explicit() == 3
+
+
+def test_refine():
+    X = MatrixSymbol("X", 3, 3)
+    assert refine(Trace(X), Q.zero(X)) == 0
+    assert refine(trace(X), Q.zero(X)) == 0
+    assert refine(Trace(X)) == Trace(X)
+    assert refine(Trace(X), Q.symmetric(X)) == Trace(X)
