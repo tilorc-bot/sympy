@@ -59,3 +59,27 @@ class Adjoint(MatrixExpr):
     def _eval_trace(self):
         from sympy.matrices.expressions.trace import Trace
         return conjugate(Trace(self.arg))
+
+
+from sympy.assumptions.ask import ask, Q
+from sympy.assumptions.refine import handlers_dict
+
+
+def refine_Adjoint(expr, assumptions):
+    """
+    >>> from sympy import MatrixSymbol, Q, assuming, refine
+    >>> X = MatrixSymbol('X', 2, 2)
+    >>> X.adjoint()
+    Adjoint(X)
+    >>> with assuming(Q.hermitian(X)):
+    ...     print(refine(X.adjoint()))
+    X
+    """
+    if ask(Q.hermitian(expr.arg), assumptions):
+        return expr.arg
+    if ask(Q.antihermitian(expr.arg), assumptions):
+        return -expr.arg
+
+    return expr
+
+handlers_dict['Adjoint'] = refine_Adjoint
