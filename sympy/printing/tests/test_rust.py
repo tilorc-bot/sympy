@@ -1,12 +1,13 @@
 from __future__ import annotations
-from hypothesis import given, settings
+from hypothesis import given, settings, strategies as st
 from sympy.core import (S, pi, oo, symbols, Rational, Integer, Symbol,
                         GoldenRatio, EulerGamma, Catalan, Lambda, Dummy,
-                        Eq, Ne, Le, Lt, Gt, Ge, Mod)
+                        Eq, Ne, Le, Lt, Gt, Ge, Mod, Add, Mul, Pow, Float,
+                        I, nan, zoo)
 from sympy.functions import (Piecewise, sin, cos, Abs, exp, ceiling, sqrt,
-                             sign, floor, log)
+                             sign, floor, log, Max, Min)
 from sympy.logic import ITE
-from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
 from sympy.testing.pytest import raises, skip, XFAIL
 from sympy.utilities.lambdify import implemented_function
 from sympy.tensor import IndexedBase, Idx
@@ -379,11 +380,33 @@ def test_parenthesize_typecast():
     assert(rust_code(exp) == '(1_f64/3.0)*(0.5 + (2.0*(-y + 1.44269504088896*x.ln()).ceil() + 8.0).exp2())*modulus.powi(-2)')
 
 
+def random_expressions():
+    """A Hypothesis strategy for expressions in real x, y and integer i, j,
+    such as Max(i, y) or sin(x)**2 + floor(j/2)."""
+    x, y = symbols('x y', real=True)
+    i, j = symbols('i j', integer=True)
+    leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
+    binary = st.sampled_from([Add, Mul, Pow, Mod, Min, Max])
+    unary = st.sampled_from([sin, exp, log, sqrt, Abs, floor, sign])
+
+    def apply(function, *args):
+        try:
+            return function(*args)
+        except (ValueError, TypeError, ZeroDivisionError):
+            return nan  # e.g. Min of a complex number
+
+    return st.recursive(
+        leaves,
+        lambda e: st.builds(apply, binary, e, e) | st.builds(apply, unary, e),
+        max_leaves=5,
+    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
+
+
 @XFAIL  # rust_code(sin(i)) calls sin on an i32, rust_code(i**x) raises TypeError
 @settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
-@given(expressions())
+@given(random_expressions())
 @check_printed_code
 def test_rust_code_hypothesis(expr):
-    if not compiling():
+    if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
     rust_code(expr)

@@ -19,11 +19,11 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.fortran import FCodePrinter
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (PrintedCodeError, check,
-                                              check_printed_code, compiling,
-                                              fixed_values, program, run_code,
+from sympy.testing.check_printed_code import (PrintedCodeError, check_printed_code,
+                                              compiling_enabled, find_problem,
+                                              find_run_problem, fixed_values,
                                               symbol_type, sympy_value, target_name,
-                                              unsupported)
+                                              unsupported_reason, wrap_in_program)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -38,18 +38,18 @@ def test_symbol_type():
     assert symbol_type(z, False) is None
 
 
-def _check(printer, expr, assign_to=None):
-    return check(printer, expr, assign_to, printer.doprint(expr, assign_to))
+def _find_problem(printer, expr, assign_to=None):
+    return find_problem(printer, expr, assign_to, printer.doprint(expr, assign_to))
 
 
-def test_check():
+def test_find_problem():
     with _environment('0'):
-        assert _check(C99CodePrinter(), sin(x) + n) is None
-        assert _check(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
-        assert _check(C99CodePrinter(), z + x).startswith('The type of z is unknown')
-        assert _check(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
-        assert _check(C99CodePrinter(), z + b).startswith('The types of b and z are unknown')
-        assert 'since it uses arrays' in _check(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
+        assert _find_problem(C99CodePrinter(), sin(x) + n) is None
+        assert _find_problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
+        assert _find_problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
+        assert _find_problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
+        assert _find_problem(C99CodePrinter(), z + b).startswith('The types of b and z are unknown')
+        assert 'since it uses arrays' in _find_problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
 
 
 def test_target_name():
@@ -58,20 +58,21 @@ def test_target_name():
         "FCodePrinter(standard=95, source_format='free')")
 
 
-def test_unsupported():
-    assert unsupported(C99CodePrinter(), x, None) is None
-    assert unsupported(FCodePrinter({'standard': 95, 'source_format': 'free'}), x, None) is None
-    assert unsupported(FCodePrinter({'standard': 66}), x, None) == (
+def test_unsupported_reason():
+    assert unsupported_reason(FCodePrinter({'standard': 95, 'source_format': 'free'}),
+                              x, None) is None
+    assert unsupported_reason(FCodePrinter({'standard': 66}), x, None) == (
         "there is no compiler for FCodePrinter(standard=66, source_format='fixed')")
-    assert 'setting user_functions' in unsupported(
+    assert unsupported_reason(C99CodePrinter(), x, None) is None
+    assert 'setting user_functions' in unsupported_reason(
         C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x), None)
-    assert 'setting type_aliases' in unsupported(
+    assert 'setting type_aliases' in unsupported_reason(
         C99CodePrinter({'type_aliases': {real: float80}}), x, None)
-    assert 'arrays' in unsupported(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+    assert 'arrays' in unsupported_reason(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
 
 
-def test_program():
-    c = program('C99CodePrinter', 'y = n + x;', [('n', 'int'), ('x', 'real')], ('y', 'real'))
+def test_wrap_in_program():
+    c = wrap_in_program('C99CodePrinter', 'y = n + x;', [('n', 'int'), ('x', 'real')], ('y', 'real'))
     assert c.endswith(
         'int main(void)\n{\n    char sympy_line[4096];\n'
         '    while (fgets(sympy_line, sizeof sympy_line, stdin)) {\n'
@@ -81,19 +82,19 @@ def test_program():
         '        double y;\n        y = n + x;\n'
         '        printf("%.17g\\n", (double)y);\n        fflush(stdout);\n'
         '    }\n    return 0;\n}\n')
-    rust = program('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None)
+    rust = wrap_in_program('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None)
     assert ('        let mut b: bool = sympy_values.next().unwrap().parse().unwrap();\n'
             '        let mut x: f64 = sympy_values.next().unwrap().parse().unwrap();\n'
             '        let sympy_value = {\n            b && x > 0.0\n        };\n'
             '        println!("{:?}", sympy_value);\n') in rust
 
 
-def test_fortran_program():
+def test_wrap_in_fortran_program():
     a = symbols('a:12', real=True)
     names = sorted(map(str, a))
     code = FCodePrinter().doprint(pi*sum(a))
-    assert program("FCodePrinter(standard=77, source_format='fixed')", code,
-                   [(name, 'real') for name in names], None) == (
+    assert wrap_in_program("FCodePrinter(standard=77, source_format='fixed')", code,
+                           [(name, 'real') for name in names], None) == (
         '      program sympy_check\n'
         '      implicit none\n'
         '      integer sympy_status\n'
@@ -109,8 +110,8 @@ def test_fortran_program():
         '      end do\n'
         '      end program\n')
     code = FCodePrinter({'source_format': 'free'}).doprint(And(b, Gt(x, 0)), 'y')
-    assert program("FCodePrinter(standard=77, source_format='free')", code,
-                   [('b', 'bool'), ('x', 'real')], ('y', 'bool')) == (
+    assert wrap_in_program("FCodePrinter(standard=77, source_format='free')", code,
+                           [('b', 'bool'), ('x', 'real')], ('y', 'bool')) == (
         'program sympy_check\nimplicit none\ninteger sympy_status\n'
         'logical b\ndouble precision x\nlogical y\n'
         'do\nread (*, *, iostat=sympy_status) b, x\nif (sympy_status /= 0) exit\n'
@@ -165,11 +166,11 @@ def test_check_printed_code():
     assert CodePrinter.doprint is doprint
 
 
-def test_compiling():
+def test_compiling_enabled():
     with _environment('0'):
-        assert not compiling()
+        assert not compiling_enabled()
     with _environment('1'):
-        assert compiling()
+        assert compiling_enabled()
 
 
 @contextmanager
@@ -185,39 +186,38 @@ def _environment(value):
             os.environ['SYMPY_CHECK_PRINTED_CODE'] = old
 
 
-def test_run_code():
+def test_find_run_problem():
     if shutil.which('rustc') is None or shutil.which('gcc') is None:
         skip('rustc and gcc are needed')
     r, s = symbols('r s', real=True)
-    assert run_code('RustCodePrinter', 'n as f64 + x', [('n', 'int'), ('x', 'real')], None,
+    assert find_run_problem('RustCodePrinter', 'n as f64 + x', [('n', 'int'), ('x', 'real')], None,
                     x + n, [n, x]) is None
-    error = run_code('RustCodePrinter', 'x + 42', [('x', 'real')], None, x + 42, [x])
+    error = find_run_problem('RustCodePrinter', 'x + 42', [('x', 'real')], None, x + 42, [x])
     assert error.startswith("This doesn't compile.") and 'cannot add' in error
-    assert run_code('RustCodePrinter', 'x + 1.5', [('x', 'real')], None, x + 1, [x]) == (
+    assert find_run_problem('RustCodePrinter', 'x + 1.5', [('x', 'real')], None, x + 1, [x]) == (
         "This gives 1.5 for x = 0.0, but SymPy's value of x + 1 is 1.0.")
     # fmod has the sign of r, but Mod(r, s) has the sign of s
-    fmod = run_code('C99CodePrinter', 'fmod(r, s)', [('r', 'real'), ('s', 'real')], None,
+    fmod = find_run_problem('C99CodePrinter', 'fmod(r, s)', [('r', 'real'), ('s', 'real')], None,
                     Mod(r, s), [r, s])
     assert fmod.startswith('This gives') and "SymPy's value of Mod(r, s)" in fmod
-    assert run_code('C99CodePrinter', 'INFINITY', [], None, oo, []) is None
+    assert find_run_problem('C99CodePrinter', 'INFINITY', [], None, oo, []) is None
 
 
-def test_run_fortran_code():
+def test_find_fortran_run_problem():
     if shutil.which('gfortran') is None:
         skip('gfortran is needed')
     a, c, e = symbols('a c e')
-    printer = FCodePrinter()
-    assert run_code("FCodePrinter(standard=77, source_format='fixed')",
-                    printer.doprint(pi*x + n), [('n', 'int'), ('x', 'real')], None,
-                    pi*x + n, [n, x]) is None
+    assert find_run_problem("FCodePrinter(standard=77, source_format='fixed')",
+                            FCodePrinter().doprint(pi*x + n), [('n', 'int'), ('x', 'real')],
+                            None, pi*x + n, [n, x]) is None
     # a .eqv. b .eqv. c is (a .eqv. b) .eqv. c
-    free = FCodePrinter({'standard': 2003, 'source_format': 'free'})
     expr = Equivalent(a, b, c)
-    equivalent = run_code("FCodePrinter(standard=2003, source_format='free')",
-                          free.doprint(expr, e), [('a', 'bool'), ('b', 'bool'), ('c', 'bool')],
-                          ('e', 'bool'), expr, [a, b, c])
+    code = FCodePrinter({'standard': 2003, 'source_format': 'free'}).doprint(expr, e)
+    equivalent = find_run_problem("FCodePrinter(standard=2003, source_format='free')", code,
+                                  [('a', 'bool'), ('b', 'bool'), ('c', 'bool')], ('e', 'bool'),
+                                  expr, [a, b, c])
     assert equivalent.startswith('This gives F for a = False, b = False, c = False')
-    modulo = run_code("FCodePrinter(standard=95, source_format='fixed')",
-                      FCodePrinter({'standard': 95}).doprint(Mod(x, n)),
-                      [('n', 'int'), ('x', 'real')], None, Mod(x, n), [n, x])
+    modulo = find_run_problem("FCodePrinter(standard=95, source_format='fixed')",
+                              FCodePrinter({'standard': 95}).doprint(Mod(x, n)),
+                              [('n', 'int'), ('x', 'real')], None, Mod(x, n), [n, x])
     assert modulo.startswith("This doesn't compile.") and 'must have the same type' in modulo

@@ -1,18 +1,21 @@
 from __future__ import annotations
-from hypothesis import given, settings
+from hypothesis import given, settings, strategies as st
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import (Function, Lambda, diff)
 from sympy.core.mod import Mod
+from sympy.core.mul import Mul
 from sympy.core import (Catalan, EulerGamma, GoldenRatio)
-from sympy.core.numbers import (E, Float, I, Integer, Rational, pi)
+from sympy.core.numbers import (E, Float, I, Integer, Rational, nan, oo, pi, zoo)
+from sympy.core.power import Pow
 from sympy.core.relational import Eq
 from sympy.core.singleton import S
 from sympy.core.symbol import (Dummy, symbols)
 from sympy.functions.combinatorial.factorials import factorial
-from sympy.functions.elementary.complexes import (conjugate, sign)
+from sympy.functions.elementary.complexes import (Abs, conjugate, sign)
 from sympy.functions.elementary.exponential import (exp, log)
-from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.functions.elementary.integers import floor
+from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import (atan2, cos, sin)
 from sympy.functions.special.gamma_functions import gamma
@@ -31,7 +34,7 @@ from sympy.printing.fortran import fcode, FCodePrinter
 from sympy.tensor import IndexedBase, Idx
 from sympy.tensor.array.expressions import ArraySymbol, ArrayElement
 from sympy.utilities.lambdify import implemented_function
-from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
 from sympy.testing.pytest import raises, skip, XFAIL
 
 
@@ -867,12 +870,34 @@ def test_FunctionDefinition_print():
     raises(NotImplementedError, lambda: fcode(fd1))
 
 
+def random_expressions():
+    """A Hypothesis strategy for expressions in real x, y and integer i, j,
+    such as Max(i, y) or sin(x)**2 + floor(j/2)."""
+    x, y = symbols('x y', real=True)
+    i, j = symbols('i j', integer=True)
+    leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
+    binary = st.sampled_from([Add, Mul, Pow, Mod, Min, Max])
+    unary = st.sampled_from([sin, exp, log, sqrt, Abs, floor, sign])
+
+    def apply(function, *args):
+        try:
+            return function(*args)
+        except (ValueError, TypeError, ZeroDivisionError):
+            return nan  # e.g. Min of a complex number
+
+    return st.recursive(
+        leaves,
+        lambda e: st.builds(apply, binary, e, e) | st.builds(apply, unary, e),
+        max_leaves=5,
+    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
+
+
 @XFAIL  # fcode(Mod(x, i)) prints modulo(x, i), but modulo needs arguments of one type
 @settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
-@given(expressions())
+@given(random_expressions())
 @check_printed_code
 def test_fcode_hypothesis(expr):
-    if not compiling():
+    if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
     # Not the default Fortran 77, for which fcode can't print Mod or sign
     fcode(expr, standard=95)
