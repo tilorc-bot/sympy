@@ -4,9 +4,8 @@ import math
 import shutil
 
 from sympy.core.mod import Mod
-from sympy.core.numbers import oo
+from sympy.core.numbers import oo, pi
 from sympy.core.relational import Gt
-from sympy.core.numbers import pi
 from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import sin
