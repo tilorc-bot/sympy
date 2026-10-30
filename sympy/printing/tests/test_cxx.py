@@ -1,8 +1,11 @@
 from __future__ import annotations
+from hypothesis import given, settings
 from sympy.core.numbers import Float, Integer, Rational
 from sympy.core.symbol import symbols
 from sympy.functions import beta, Ei, zeta, Max, Min, sqrt, riemann_xi, frac
 from sympy.printing.cxx import CXX98CodePrinter, CXX11CodePrinter, CXX17CodePrinter, cxxcode
+from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.pytest import skip, XFAIL
 from sympy.codegen.cfunctions import log1p
 
 
@@ -85,3 +88,13 @@ def test_subclass_Integer_Float():
         assert p.doprint(i) == 'bigInt("%d")' % i
     assert p.doprint(Float(0.5)) == 'bigFloat(bigInt("1"), bigInt("2"))'
     assert p.doprint(x**-1.0) == 'bigFloat(bigInt("1"), bigInt("1"))/x'
+
+
+@XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
+@settings(deadline=None, derandomize=True, database=None)
+@given(expressions())
+@check_printed_code
+def test_cxxcode_hypothesis(expr):
+    if not compiling():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    cxxcode(expr)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from hypothesis import given, settings
 from sympy.core import (
     S, pi, oo, Symbol, symbols, Rational, Integer, Float, Function, Mod, GoldenRatio, EulerGamma, Catalan,
     Lambda, Dummy, nan, Mul, Pow, UnevaluatedExpr
@@ -12,8 +13,8 @@ from sympy.functions import (
 from sympy.sets import Range
 from sympy.logic import ITE, Implies, Equivalent
 from sympy.codegen import For, aug_assign, Assignment
-from sympy.testing.check_printed_code import check_printed_code
-from sympy.testing.pytest import raises, XFAIL
+from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.pytest import raises, skip, XFAIL
 from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.c import C89CodePrinter, C99CodePrinter, get_math_macros
 from sympy.codegen.ast import (
@@ -893,3 +894,12 @@ def test_ccode_array_like_containers():
 def test_ccode__isinf_isnan():
     assert ccode(isinf(x)) == 'isinf(x)'
     assert ccode(isnan(x)) == 'isnan(x)'
+
+
+@settings(deadline=None, derandomize=True, database=None)
+@given(expressions())
+@check_printed_code
+def test_ccode_hypothesis(expr):
+    if not compiling():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    ccode(expr)
