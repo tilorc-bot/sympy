@@ -380,7 +380,7 @@ def test_parenthesize_typecast():
 
 
 @XFAIL  # rust_code(sin(i)) calls sin on an i32, rust_code(i**x) raises TypeError
-@settings(deadline=None, derandomize=True, database=None)
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
 @given(expressions())
 @check_printed_code
 def test_rust_code_hypothesis(expr):

@@ -896,7 +896,7 @@ def test_ccode__isinf_isnan():
     assert ccode(isnan(x)) == 'isnan(x)'
 
 
-@settings(deadline=None, derandomize=True, database=None)
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
 @given(expressions())
 @check_printed_code
 def test_ccode_hypothesis(expr):
