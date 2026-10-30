@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
+from contextlib import contextmanager
 
 from sympy.core.mod import Mod
 from sympy.core.numbers import oo
@@ -17,9 +19,9 @@ from sympy.printing.codeprinter import rust_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.testing.check_printed_code import (PrintedCodeError, check,
-                                              check_printed_code, describe,
-                                              fixed_values, program, run_snippets,
-                                              sympy_value)
+                                              check_printed_code, compiling,
+                                              describe, fixed_values, program,
+                                              run_snippets, sympy_value)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -134,6 +136,26 @@ def test_check_printed_code():
         assert ccode(z + 1) == 'wrong'
     raises(AssertionError, test_fails)
     assert CodePrinter.doprint is doprint
+
+
+def test_compiling():
+    with _environment('0'):
+        assert not compiling()
+    with _environment('1'):
+        assert compiling()
+
+
+@contextmanager
+def _environment(value):
+    old = os.environ.get('SYMPY_CHECK_PRINTED_CODE')
+    os.environ['SYMPY_CHECK_PRINTED_CODE'] = value
+    try:
+        yield
+    finally:
+        if old is None:
+            del os.environ['SYMPY_CHECK_PRINTED_CODE']
+        else:
+            os.environ['SYMPY_CHECK_PRINTED_CODE'] = old
 
 
 def test_run_snippets():
