@@ -409,6 +409,22 @@ def warns_deprecated_sympy():
         yield
 
 
+def uncompilable_code(reason):
+    """Decorator for a test whose printed C, C++ or Rust code is deliberately
+    not valid code, such as a test of the "Not supported" comment.
+
+    ``sympy/testing/check_printed_code.py`` does not compile the code that
+    such a test prints. The reason is required.
+    """
+    if not isinstance(reason, str) or not reason:
+        raise TypeError('use @uncompilable_code("why the code does not compile")')
+
+    def decorator(test_func):
+        test_func._uncompilable_code = reason
+        return test_func
+    return decorator
+
+
 def skip_under_pyodide(message):
     """Decorator to skip a test if running under Pyodide/WASM."""
     def decorator(test_func):
