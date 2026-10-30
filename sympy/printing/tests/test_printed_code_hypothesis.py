@@ -1,6 +1,6 @@
-"""Check that the C, C++ and Rust printers print code that compiles, and
-computes the same values as SymPy, for expressions generated with
-Hypothesis.
+"""Check that the C, C++, Fortran and Rust printers print code that
+compiles, and computes the same values as SymPy, for expressions generated
+with Hypothesis.
 
 The tests are skipped unless SYMPY_CHECK_PRINTED_CODE is set, as in the
 "printed code" CI job (see sympy/testing/check_printed_code.py). They are
@@ -28,6 +28,7 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.printing.c import ccode
 from sympy.printing.codeprinter import rust_code
 from sympy.printing.cxx import cxxcode
+from sympy.printing.fortran import fcode
 from sympy.testing.check_printed_code import ENVIRONMENT_VARIABLE, check_printed_code
 from sympy.testing.pytest import XFAIL, skip
 
@@ -73,6 +74,12 @@ def test_ccode_compiles():
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double; fmod
 def test_cxxcode_compiles():
     check_compiles(cxxcode)
+
+
+@XFAIL  # fcode(Mod(x, i)) prints modulo(x, i), but modulo needs arguments of one type
+def test_fcode_compiles():
+    # Not the default Fortran 77, for which fcode cannot print Mod or sign
+    check_compiles(lambda expr: fcode(expr, standard=95))
 
 
 @XFAIL  # rust_code(sin(i)) calls sin on an i32, rust_code(i**x) raises TypeError

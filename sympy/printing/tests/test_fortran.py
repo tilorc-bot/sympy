@@ -30,6 +30,7 @@ from sympy.printing.fortran import fcode, FCodePrinter
 from sympy.tensor import IndexedBase, Idx
 from sympy.tensor.array.expressions import ArraySymbol, ArrayElement
 from sympy.utilities.lambdify import implemented_function
+from sympy.testing.check_printed_code import check_printed_code
 from sympy.testing.pytest import raises
 
 
@@ -82,6 +83,7 @@ def test_fcode_Pow():
     assert fcode(x**Rational(3, 7)) == '      x**(3.0d0/7.0d0)'
 
 
+@check_printed_code
 def test_fcode_Pow_with_folded_negative_function():
     expr = sin(Float("1.265344399150595") - Float("0.5") * pi) ** 2
     assert fcode(expr, source_format="free", standard=95) == "(-0.30072421433515855d0)**2"
@@ -97,11 +99,13 @@ def test_fcode_Rational():
     assert fcode(Rational(3, 7)*x) == "      (3.0d0/7.0d0)*x"
 
 
+@check_printed_code
 def test_fcode_Integer():
     assert fcode(Integer(67)) == "      67"
     assert fcode(Integer(-1)) == "      -1"
 
 
+@check_printed_code
 def test_fcode_Float():
     assert fcode(Float(42.0)) == "      42.0000000000000d0"
     assert fcode(Float(-1e20)) == "      -1.00000000000000d+20"
@@ -281,6 +285,7 @@ def test_fcode_precedence():
         "x < y .eqv. y < x + 1"
 
 
+@check_printed_code
 def test_fcode_Logical():
     x, y, z = symbols("x y z")
     # unary Not
@@ -330,6 +335,7 @@ def test_fcode_Logical():
         ".not. (x .or. y .or. z)"
 
 
+@check_printed_code
 def test_fcode_Xlogical():
     x, y, z = symbols("x y z")
     # binary Xor
