@@ -1,5 +1,6 @@
-# Compile the C, C++ and Rust code printed by the tests decorated with
-# @check_printed_code. See sympy/testing/check_printed_code.py.
+# Compile and run the C, C++ and Rust code printed by the tests decorated
+# with @check_printed_code, and compare its values with SymPy's. See
+# sympy/testing/check_printed_code.py.
 
 name: printed code
 
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   compile:
-    name: Printed code compiles
+    name: Printed code compiles and computes the right values
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
