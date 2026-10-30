@@ -1,4 +1,5 @@
 from __future__ import annotations
+from hypothesis import given, settings
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import (Function, Lambda, diff)
@@ -30,8 +31,8 @@ from sympy.printing.fortran import fcode, FCodePrinter
 from sympy.tensor import IndexedBase, Idx
 from sympy.tensor.array.expressions import ArraySymbol, ArrayElement
 from sympy.utilities.lambdify import implemented_function
-from sympy.testing.check_printed_code import check_printed_code
-from sympy.testing.pytest import raises
+from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.pytest import raises, skip, XFAIL
 
 
 def test_UnevaluatedExpr():
@@ -864,3 +865,14 @@ def test_FunctionDefinition_print():
     # Should be changed to proper test once multi-line generation is working
     # see https://github.com/sympy/sympy/issues/15824
     raises(NotImplementedError, lambda: fcode(fd1))
+
+
+@XFAIL  # fcode(Mod(x, i)) prints modulo(x, i), but modulo needs arguments of one type
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
+@given(expressions())
+@check_printed_code
+def test_fcode_hypothesis(expr):
+    if not compiling():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    # Not the default Fortran 77, for which fcode can't print Mod or sign
+    fcode(expr, standard=95)

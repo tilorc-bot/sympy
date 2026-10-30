@@ -1,12 +1,13 @@
 from __future__ import annotations
+from hypothesis import given, settings
 from sympy.core import (S, pi, oo, symbols, Rational, Integer, Symbol,
                         GoldenRatio, EulerGamma, Catalan, Lambda, Dummy,
                         Eq, Ne, Le, Lt, Gt, Ge, Mod)
 from sympy.functions import (Piecewise, sin, cos, Abs, exp, ceiling, sqrt,
                              sign, floor, log)
 from sympy.logic import ITE
-from sympy.testing.check_printed_code import check_printed_code
-from sympy.testing.pytest import raises
+from sympy.testing.check_printed_code import check_printed_code, compiling, expressions
+from sympy.testing.pytest import raises, skip, XFAIL
 from sympy.utilities.lambdify import implemented_function
 from sympy.tensor import IndexedBase, Idx
 from sympy.matrices import MatrixSymbol, SparseMatrix, Matrix
@@ -376,3 +377,13 @@ def test_parenthesize_typecast():
     modulus = Symbol("modulus")
     exp = (2 ** (2.0 * ceiling(-y + log(x) / log(2.0) + 4)) + 0.5) / (3 * modulus**2)
     assert(rust_code(exp) == '(1_f64/3.0)*(0.5 + (2.0*(-y + 1.44269504088896*x.ln()).ceil() + 8.0).exp2())*modulus.powi(-2)')
+
+
+@XFAIL  # rust_code(sin(i)) calls sin on an i32, rust_code(i**x) raises TypeError
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
+@given(expressions())
+@check_printed_code
+def test_rust_code_hypothesis(expr):
+    if not compiling():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    rust_code(expr)
