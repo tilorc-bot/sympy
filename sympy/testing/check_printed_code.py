@@ -1,4 +1,5 @@
-"""Check that the C, C++ and Rust code printed by a test compiles.
+"""Check that the C, C++ and Rust code printed by a test compiles and
+computes the same values as SymPy.
 
 Code printer tests compare printed strings, e.g.
 ``assert rust_code(expr) == "..."``, so nothing checks that the asserted code
@@ -30,9 +31,24 @@ While a decorated test runs, every snippet printed by the printers in
      must not use the decorator.
 
 2. If the environment variable ``SYMPY_CHECK_PRINTED_CODE`` is set, each
-   snippet is wrapped in a function and compiled (``gcc -fsyntax-only``,
-   ``g++ -fsyntax-only``, ``rustc --emit=metadata``), and the test fails if
-   one does not compile. CI does this for the tests that use the decorator::
+   snippet is wrapped in a program that reads the values of its symbols from
+   the command line and prints the snippet's value (or the value assigned).
+   The test fails if the program does not compile, or if for some values it
+   prints a different value than SymPy computes for the expression. The
+   values are generated with Hypothesis, which reports the simplest values
+   it finds that give a different value:
+
+   - Reals are floats in [-10, 10], integers are in [-10, 10], and values
+     that contradict a symbol's assumptions (``positive=True``,
+     ``even=True``, ...) are not used.
+   - SymPy's value is computed with 30 digits (``evalf(30)``). Values for
+     which it is not real (``1/x`` at 0, ``sqrt(x)`` at -1, ...) are not
+     used. Infinite values and nan must be printed exactly.
+   - The printed value must be within a relative error of 1e-9 (or an
+     absolute error of 1e-9 if SymPy's value is smaller than 1). A boolean
+     must be equal.
+
+   CI does this for the tests that use the decorator::
 
        SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
@@ -41,26 +57,31 @@ A decorated test must print at least one C, C++ or Rust snippet.
 from __future__ import annotations
 
 import functools
+import math
 import os
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
+from sympy.core.numbers import Float, Integer
+from sympy.core.singleton import S
 from sympy.core.symbol import Dummy, Symbol
 from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
-from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
-                                 Nor, Not, Or, Xnor, Xor)
+from sympy.logic.boolalg import (And, Boolean, BooleanAtom, Equivalent, ITE,
+                                 Implies, Nand, Nor, Not, Or, Xnor, Xor, false,
+                                 true)
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
 from sympy.printing.codeprinter import CodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
 
 # The targets: one per printer class, each with the compiler command (run
-# with the source file appended), the code put before the snippet's function,
-# and the names of the int, real and bool types. Only the printer classes
+# with the source file and output file appended), the code put before the
+# program, and the names of the int, real and bool types. Only the printer classes
 # themselves are checked, not subclasses.
 
 C_HEADER = """\
@@ -76,7 +97,7 @@ use std::f64::consts::*;
 use std::f64::{INFINITY, NAN, NEG_INFINITY};
 """
 
-GCC = ['-fsyntax-only', '-pedantic-errors']
+GCC = ['-pedantic-errors']
 # C89 allows calls to undeclared functions
 C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
@@ -89,8 +110,8 @@ TARGETS = {
     'CXX98CodePrinter': (['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
     'CXX11CodePrinter': (['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
     'CXX17CodePrinter': (['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
-    'RustCodePrinter': (['rustc', '--edition=2021', '--crate-type=lib',
-                         '--emit=metadata', '--error-format=short'], RUST_HEADER,
+    'RustCodePrinter': (['rustc', '--edition=2021', '--error-format=short',
+                         '-C', 'debuginfo=0'], RUST_HEADER,
                         {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
 }
 PRINTER_MODULES = ('sympy.printing.c', 'sympy.printing.cxx', 'sympy.printing.rust')
@@ -106,6 +127,10 @@ C_TYPE_TABLES = ('type_aliases', 'type_mappings', 'type_headers', 'type_macros',
                  'type_math_macro_suffixes')
 
 ENVIRONMENT_VARIABLE = 'SYMPY_CHECK_PRINTED_CODE'
+# The values of the symbols, and how close the printed value must be
+BOUND = 10
+EXAMPLES = 50
+TOLERANCE = 1e-9
 
 
 class PrintedCodeError(AssertionError):
@@ -141,8 +166,8 @@ def check_printed_code(test_func):
             result = test_func(*args, **kwargs)
         finally:
             CodePrinter.doprint = original  # type: ignore[method-assign]
-        compile = compile_snippet if os.environ.get(ENVIRONMENT_VARIABLE) else None
-        check(snippets, compile)
+        run = run_snippets if os.environ.get(ENVIRONMENT_VARIABLE) else None
+        check(snippets, run)
         return result
     return wrapper
 
@@ -152,11 +177,13 @@ def describe(printer, expr, assign_to, code):
 
     Returns a dict with the printer class name, the code, the parameters
     and assigned variable as ``[printed name, kind]`` pairs (kind is
-    'int', 'real', 'bool' or None when undeclared) and, if the snippet
-    cannot be checked, the reason.
+    'int', 'real', 'bool' or None when undeclared), the expression and the
+    symbols of the parameters and, if the snippet cannot be checked, the
+    reason.
     """
     record = {'printer': type(printer).__name__, 'code': code,
-              'params': [], 'target': None, 'reason': unsupported(printer, expr, assign_to)}
+              'params': [], 'target': None, 'expr': expr, 'symbols': [],
+              'reason': unsupported(printer, expr, assign_to)}
     if record['reason']:
         return record
     booleans = set()
@@ -177,8 +204,8 @@ def describe(printer, expr, assign_to, code):
             kind = None
         return [printer._print(symbol), kind]
 
-    record['params'] = [declare(s, s in booleans)
-                        for s in sorted(expr.free_symbols, key=str)]
+    record['symbols'] = sorted(expr.free_symbols, key=str)
+    record['params'] = [declare(s, s in booleans) for s in record['symbols']]
     if assign_to is not None:
         target = Symbol(assign_to) if isinstance(assign_to, str) else assign_to
         is_boolean = isinstance(expr, Boolean) and not isinstance(expr, Symbol)
@@ -216,37 +243,45 @@ def unsupported(printer, expr, assign_to):
     return None
 
 
-def check(snippets, compile=None):
+def check(snippets, run=None):
     """Raise PrintedCodeError if a snippet is not fully declared or, when
-    ``compile`` is given, if it returns an error for a snippet."""
+    ``run`` is given, if it returns an error for a snippet.
+
+    ``run`` takes a list of snippets and returns a list with a description
+    of the problem with each, or None.
+    """
     if not snippets:
         raise PrintedCodeError('@check_printed_code: the test printed no C, '
                                'C++ or Rust code')
     unique = {}
     for s in snippets:
         unique.setdefault(key(s), s)
-    errors = []
+    errors, to_run = [], []
     for s in unique.values():
-        about = '%s printed\n%s\n' % (
-            s['printer'], '\n'.join(indent(s['code'].splitlines(), '  > ')))
         missing = [name for name, kind in declared(s) if kind is None]
         if s['reason']:
-            errors.append(about + 'which cannot be checked (%s), so the test '
+            errors.append(about(s) + 'which cannot be checked (%s), so the test '
                           'cannot use @check_printed_code' % s['reason'])
         elif missing:
-            errors.append(about + 'but the test does not declare the type of %s. '
+            errors.append(about(s) + 'but the test does not declare the type of %s. '
                           'Create the symbols with real=True or integer=True, '
                           "e.g. Symbol('%s', real=True)" % (', '.join(missing), missing[0]))
-        elif compile is not None:
-            error = compile(s)
+        else:
+            to_run.append(s)
+    if run is not None and to_run:
+        for s, error in zip(to_run, run(to_run)):
             if error is not None:
                 numbered = ['%4d | %s' % (n, line)
-                            for n, line in enumerate(source(s).splitlines(), 1)]
-                errors.append('%swhich does not compile. %s:\n%s\nwrapped source:\n%s' % (
-                    about, ' '.join(TARGETS[s['printer']][0]),
-                    '\n'.join(indent(error.splitlines(), '  ')), '\n'.join(numbered)))
+                            for n, line in enumerate(program(s).splitlines(), 1)]
+                errors.append('%s%s\nwrapped source:\n%s' % (
+                    about(s), error, '\n'.join(numbered)))
     if errors:
         raise PrintedCodeError('@check_printed_code:\n\n' + '\n\n'.join(errors))
+
+
+def about(snippet):
+    return '%s printed\n%s\n' % (
+        snippet['printer'], '\n'.join(indent(snippet['code'].splitlines(), '  > ')))
 
 
 def key(snippet):
@@ -254,54 +289,211 @@ def key(snippet):
             repr(snippet['target']), snippet['reason'])
 
 
-def source(snippet):
-    """The snippet wrapped into a function, so that it compiles if valid."""
+def program(snippet):
+    """A program that reads lines with values of the snippet's symbols from
+    standard input and prints the snippet's value (or the value assigned)
+    for each."""
     _, header, types = TARGETS[snippet['printer']]
     rust = snippet['printer'] == 'RustCodePrinter'
-    params = [(name, types[kind]) for name, kind in snippet['params']]
     lines = snippet['code'].splitlines()
     target = snippet['target']
-    if target is None:
-        if rust:
+    params = snippet['params']
+    if rust:
+        body = ['let mut sympy_values = sympy_line.split_whitespace();']
+        body += ['let mut %s: %s = sympy_values.next().unwrap().parse().unwrap();'
+                 % (name, types[kind]) for name, kind in params]
+        if target is None:
             # A block, since an expression can follow declarations of
             # number constants such as GoldenRatio
-            body = ['let _ = {', *indent(lines, '    '), '};']
+            body += ['let sympy_value = {', *indent(lines, '    '), '};']
         else:
-            n = 0
-            while n < len(lines) and (lines[n].endswith(';')
-                                      or lines[n].startswith(('//', '/*'))):
-                n += 1
-            body = lines[:n] + ['(void)(', *indent(lines[n:], '    '), ');']
-    elif target[0] in [name for name, _ in params]:
-        body = lines
-    elif rust:
-        body = ['let mut %s: %s;' % (target[0], types[target[1]]), *lines]
+            if target[0] not in dict(params):
+                body.append('let mut %s: %s;' % (target[0], types[target[1]]))
+            body += [*lines, 'let sympy_value = %s;' % target[0]]
+        body += ['println!("{:?}", sympy_value);', 'sympy_line.clear();']
+        return ('%s\nfn main()\n{\n    let mut sympy_line = String::new();\n'
+                '    while std::io::stdin().read_line(&mut sympy_line).unwrap() > 0 {\n'
+                '%s\n    }\n}\n' % (header, '\n'.join(indent(body, '        '))))
+    read = {'int': '(int)strtol(sympy_p, &sympy_p, 10)',
+            'real': 'strtod(sympy_p, &sympy_p)',
+            'bool': '(int)strtol(sympy_p, &sympy_p, 10)'}
+    body = ['char *sympy_p = sympy_line;']
+    body += ['%s %s = %s;' % (types[kind], name, read[kind]) for name, kind in params]
+    if target is None:
+        n = 0
+        while n < len(lines) and (lines[n].endswith(';')
+                                  or lines[n].startswith(('//', '/*'))):
+            n += 1
+        body += lines[:n] + ['printf("%.17g\\n", (double)(',
+                             *indent(lines[n:], '    '), '));']
     else:
-        body = ['%s %s;' % (types[target[1]], target[0]), *lines]
-    if rust:
-        signature = 'pub fn f(%s)' % ', '.join(
-            '%s%s: %s' % ('mut ' if target and name == target[0] else '', name, type_)
-            for name, type_ in params)
-    else:
-        signature = 'void f(%s)' % (', '.join(
-            '%s %s' % (type_, name) for name, type_ in params) or 'void')
-    return '%s\n%s\n{\n%s\n}\n' % (header, signature, '\n'.join(indent(body, '    ')))
+        if target[0] not in dict(params):
+            body.append('%s %s;' % (types[target[1]], target[0]))
+        body += [*lines, 'printf("%%.17g\\n", (double)%s);' % target[0]]
+    body.append('fflush(stdout);')
+    return ('%s#include <stdio.h>\n\nint main(void)\n{\n    char sympy_line[4096];\n'
+            '    while (fgets(sympy_line, sizeof sympy_line, stdin)) {\n%s\n    }\n'
+            '    return 0;\n}\n' % (header, '\n'.join(indent(body, '        '))))
 
 
-def compile_snippet(snippet):
-    """Compile the snippet; return the compiler's error output, or None."""
-    command = TARGETS[snippet['printer']][0]
-    if shutil.which(command[0]) is None:
-        raise PrintedCodeError('%s is needed to check printed code (%s is set)'
-                               % (command[0], ENVIRONMENT_VARIABLE))
-    suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
+def run_snippets(snippets):
+    """Compile the snippets' programs and compare the values they print with
+    SymPy's; return a description of the first problem with each, or None."""
+    for printer in {s['printer'] for s in snippets}:
+        compiler = TARGETS[printer][0][0]
+        if shutil.which(compiler) is None:
+            raise PrintedCodeError('%s is needed to check printed code (%s is set)'
+                                   % (compiler, ENVIRONMENT_VARIABLE))
     with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, 'snippet' + suffix)
-        with open(path, 'w') as f:
-            f.write(source(snippet))
-        result = subprocess.run(command + [path], cwd=tmp, capture_output=True,
-                                text=True)
-    return result.stderr.replace(path, 'snippet' + suffix) if result.returncode else None
+        paths = [os.path.join(tmp, str(i)) for i in range(len(snippets))]
+        with ThreadPoolExecutor(4) as pool:
+            errors = list(pool.map(build, snippets, paths))
+        return [error if error is not None else check_values(s, path)
+                for s, path, error in zip(snippets, paths, errors)]
+
+
+def build(snippet, executable):
+    """Compile the snippet's program; return the compiler's errors, or None."""
+    command = TARGETS[snippet['printer']][0]
+    suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
+    path = executable + suffix
+    with open(path, 'w') as f:
+        f.write(program(snippet))
+    libraries = [] if command[0] == 'rustc' else ['-lm']
+    result = subprocess.run(command + [path, '-o', executable] + libraries,
+                            cwd=os.path.dirname(path), capture_output=True, text=True)
+    if result.returncode:
+        return 'which does not compile. %s:\n%s' % (' '.join(command), '\n'.join(
+            indent(result.stderr.replace(path, 'snippet' + suffix).splitlines(), '  ')))
+    return None
+
+
+class Program:
+    """A running snippet program, which is restarted if it exits."""
+
+    def __init__(self, executable):
+        self.executable = executable
+        self.process = None
+
+    def value(self, arguments):
+        """The line the program prints for the arguments, or raise
+        PrintedCodeError if it exits."""
+        if self.process is None:
+            self.process = subprocess.Popen(
+                [self.executable], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True)
+        try:
+            self.process.stdin.write(' '.join(arguments) + '\n')
+            self.process.stdin.flush()
+            output = self.process.stdout.readline()
+        except BrokenPipeError:
+            output = ''
+        if not output:
+            process, self.process = self.process, None
+            process.stdin.close()
+            status = process.wait()
+            raise PrintedCodeError('which exits with status %d' % status
+                                   + (':\n' + process.stderr.read().strip()))
+        return output.strip()
+
+    def close(self):
+        if self.process is not None:
+            self.process.stdin.close()
+            self.process.wait()
+            self.process.stdout.close()
+            self.process.stderr.close()
+
+
+def check_values(snippet, executable):
+    """Compare the values printed by the compiled program with SymPy's for
+    values of the symbols generated with Hypothesis; return a description
+    of a difference, or None."""
+    from hypothesis import HealthCheck, assume, given, settings, strategies as st
+    from hypothesis.errors import Unsatisfiable
+
+    rust = snippet['printer'] == 'RustCodePrinter'
+    names = [name for name, _ in snippet['params']]
+    running = Program(executable)
+
+    def compare(values):
+        expected = sympy_value(snippet, values)
+        if names:
+            assume(expected is not None)
+        arguments = [str(v).lower() if rust else str(int(v)) if isinstance(v, bool)
+                     else repr(v) for v in values]
+        given_values = ', '.join('%s = %r' % (n, v) for n, v in zip(names, values))
+        given_values = ' for ' + given_values if given_values else ''
+        try:
+            output = running.value(arguments)
+        except PrintedCodeError as e:
+            raise PrintedCodeError(str(e).replace(':', given_values + ':', 1))
+        value = {'true': 1.0, 'false': 0.0}.get(output)
+        if value is None:
+            value = float(output)
+        if not (value == expected or math.isnan(value) and math.isnan(expected)
+                or abs(value - expected) <= TOLERANCE * max(1.0, abs(expected))):
+            raise PrintedCodeError('which prints %s%s, but SymPy computes %r for %s' % (
+                output, given_values, expected, snippet['expr']))
+
+    try:
+        if not names:
+            if sympy_value(snippet, []) is None:
+                return 'whose value SymPy does not compute as a real number'
+            compare([])
+        else:
+            strategies = [symbol_values(symbol, kind, st) for symbol, (_, kind)
+                          in zip(snippet['symbols'], snippet['params'])]
+            settings(max_examples=EXAMPLES, deadline=None, database=None,
+                     derandomize=True, report_multiple_bugs=False,
+                     suppress_health_check=list(HealthCheck),
+                     )(given(st.tuples(*strategies))(compare))()
+    except PrintedCodeError as e:
+        return str(e)
+    except Unsatisfiable:
+        return ('for which no values of the symbols were found for which SymPy '
+                'computes a real number')
+    finally:
+        running.close()
+    return None
+
+
+def symbol_values(symbol, kind, st):
+    """A strategy for values of the symbol that agree with its assumptions."""
+    if kind == 'bool':
+        return st.booleans()
+    if kind == 'int':
+        values = st.integers(-BOUND, BOUND)
+    else:
+        values = st.floats(-BOUND, BOUND, allow_subnormal=False)
+    assumptions = [k for k, v in symbol.assumptions0.items() if v]
+    return values.filter(lambda v: all(
+        getattr(sympy_number(kind, v), 'is_' + k) for k in assumptions))
+
+
+def sympy_number(kind, value):
+    if kind == 'bool':
+        return true if value else false
+    # Float(value, 30) is exactly the value of the float
+    return Integer(value) if kind == 'int' else Float(value, 30)
+
+
+def sympy_value(snippet, values):
+    """SymPy's value of the snippet's expression as a float (1.0 or 0.0 for
+    a boolean, and possibly infinite or nan), or None if it is not real."""
+    try:
+        value = snippet['expr'].xreplace({
+            symbol: sympy_number(kind, v)
+            for symbol, (_, kind), v in zip(snippet['symbols'], snippet['params'], values)})
+        if isinstance(value, BooleanAtom):
+            return float(value == true)
+        if isinstance(value, Boolean):
+            return None
+        value = value.doit().evalf(30)
+    except (ArithmeticError, ValueError):  # e.g. Mod(x, 0)
+        return None
+    if not value.is_Number or value is S.ComplexInfinity:
+        return None
+    return float(value)
 
 
 def indent(lines, prefix):
