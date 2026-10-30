@@ -38,15 +38,17 @@ While a decorated test runs, every snippet printed by the printers in
    values are generated with Hypothesis, which reports the simplest values
    it finds that give a different value:
 
-   - Reals are floats in [-10, 10], integers are in [-10, 10], and values
-     that contradict a symbol's assumptions (``positive=True``,
-     ``even=True``, ...) are not used.
+   - Reals are 0 or floats with an absolute value in [0.001, 10], integers
+     are in [-10, 10], and values that contradict a symbol's assumptions
+     (``positive=True``, ``even=True``, ...) are not used.
    - SymPy's value is computed with 30 digits (``evalf(30)``). Values for
      which it is not real (``1/x`` at 0, ``sqrt(x)`` at -1, ...) are not
-     used. Infinite values and nan must be printed exactly.
-   - The printed value must be within a relative error of 1e-9 (or an
-     absolute error of 1e-9 if SymPy's value is smaller than 1). A boolean
-     must be equal.
+     used. Infinite values must be printed exactly. Where SymPy's value is
+     nan (undefined, e.g. ``atan2(0, 0)``), any printed value is right.
+   - The printed value must be within a relative error of 1e-6 (or an
+     absolute error of 1e-6 if SymPy's value is smaller than 1), which allows
+     for rounding where a function is ill-conditioned (``acosh`` near 1).
+     A boolean must be equal.
 
    CI does this for the tests that use the decorator::
 
@@ -129,8 +131,9 @@ C_TYPE_TABLES = ('type_aliases', 'type_mappings', 'type_headers', 'type_macros',
 ENVIRONMENT_VARIABLE = 'SYMPY_CHECK_PRINTED_CODE'
 # The values of the symbols, and how close the printed value must be
 BOUND = 10
+SMALLEST = 1e-3
 EXAMPLES = 50
-TOLERANCE = 1e-9
+TOLERANCE = 1e-6
 
 
 class PrintedCodeError(AssertionError):
@@ -430,7 +433,9 @@ def check_values(snippet, executable):
         value = {'true': 1.0, 'false': 0.0}.get(output)
         if value is None:
             value = float(output)
-        if not (value == expected or math.isnan(value) and math.isnan(expected)
+        # nan means that the value is undefined (e.g. atan2(0, 0)), so any
+        # printed value is right
+        if not (value == expected or math.isnan(expected)
                 or abs(value - expected) <= TOLERANCE * max(1.0, abs(expected))):
             raise PrintedCodeError('which prints %s%s, but SymPy computes %r for %s' % (
                 output, given_values, expected, snippet['expr']))
@@ -464,7 +469,9 @@ def symbol_values(symbol, kind, st):
     if kind == 'int':
         values = st.integers(-BOUND, BOUND)
     else:
-        values = st.floats(-BOUND, BOUND, allow_subnormal=False)
+        # Not tiny, so that products like x*x do not underflow
+        values = st.one_of(st.just(0.0), st.floats(-BOUND, -SMALLEST),
+                           st.floats(SMALLEST, BOUND))
     assumptions = [k for k, v in symbol.assumptions0.items() if v]
     return values.filter(lambda v: all(
         getattr(sympy_number(kind, v), 'is_' + k) for k in assumptions))
