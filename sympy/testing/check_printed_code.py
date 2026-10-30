@@ -275,8 +275,9 @@ def unsupported_reason(printer: CodePrinter, expr: Basic,
 
 def wrap_in_program(printer_name: str, code: str, parameters: list[Declaration],
                     assigned: Declaration | None) -> str:
-    """A program that reads lines with values of parameters from standard input
-    and prints the code's value (or the value assigned to assigned) for each.
+    """Return the source of a program that reads lines with values of the
+    parameters from standard input, and prints the code's value (or the value
+    of the assigned variable) for each.
 
     >>> from sympy.testing.check_printed_code import wrap_in_program
     >>> print(wrap_in_program('C99CodePrinter', 'fmod(x, 2)', [('x', 'real')], None))
@@ -344,9 +345,10 @@ def wrap_in_program(printer_name: str, code: str, parameters: list[Declaration],
 def find_run_problem(printer_name: str, code: str, parameters: list[Declaration],
                      assigned: Declaration | None, expr: Basic,
                      symbols: list[Basic]) -> str | None:
-    """What is wrong with the code when it is compiled into wrap_in_program() and run,
-    or None. It must print SymPy's value of expr for the values of symbols
-    (whose names and types are parameters) from find_value_problem()."""
+    """Compile the code as wrap_in_program() wraps it and run it, and return
+    what is wrong with it, or None. For the values of symbols (whose names and
+    types are parameters) that find_value_problem() tries, it must print
+    SymPy's value of expr."""
     command = TARGETS[printer_name].command
     if shutil.which(command[0]) is None:
         raise PrintedCodeError('%s is needed to check printed code, since '
@@ -381,7 +383,7 @@ class RunningProgram:
         self.process = None
 
     def value(self, arguments):
-        """The line the program prints for the arguments, or raise
+        """Return the line the program prints for the arguments, or raise
         PrintedCodeError if it exits."""
         if self.process is None:
             self.process = subprocess.Popen(
@@ -411,10 +413,11 @@ class RunningProgram:
 
 def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
                        parameters: list[Declaration], executable: str) -> str | None:
-    """What is wrong with the values that the compiled program prints, or None.
+    """Run the compiled program for values of symbols, and return what is wrong
+    with the values it prints, or None.
 
-    The values of symbols are generated with Hypothesis or, inside a
-    Hypothesis test, are FIXED_VALUES (see fixed_values()).
+    The values are generated with Hypothesis or, inside a Hypothesis test,
+    are FIXED_VALUES (see fixed_values()).
     """
     from hypothesis import (HealthCheck, assume, currently_in_test_context, given,
                             settings, strategies as st)
@@ -433,7 +436,8 @@ def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
         arguments = [str(value).lower() if printer_name == 'RustCodePrinter'
                      else str(int(value)) if isinstance(value, bool) else repr(value)
                      for value in values]
-        given_values = ' for ' + ', '.join('%s = %r' % (name, value) for name, value in zip(names, values))
+        given_values = ' for ' + ', '.join('%s = %r' % (name, value)
+                                           for name, value in zip(names, values))
         try:
             output = running.value(arguments)
         except PrintedCodeError as e:
@@ -477,8 +481,8 @@ def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
 
 
 def fixed_values(symbols: list[Basic], symbol_types: list[str]) -> list[tuple]:
-    """Up to EXAMPLES combinations of FIXED_VALUES for the symbols that agree
-    with their assumptions.
+    """Return up to EXAMPLES combinations of FIXED_VALUES for the symbols that
+    agree with their assumptions.
 
     >>> from sympy import Symbol
     >>> from sympy.testing.check_printed_code import fixed_values
@@ -493,13 +497,13 @@ def fixed_values(symbols: list[Basic], symbol_types: list[str]) -> list[tuple]:
 
 
 def agrees_with_assumptions(symbol: Basic, type_name: str, value) -> bool:
-    """Whether the value agrees with the symbol's assumptions."""
+    """Return whether the value agrees with the symbol's assumptions."""
     return type_name == 'bool' or all(getattr(as_sympy_number(type_name, value), 'is_' + assumption)
                                   for assumption, holds in symbol.assumptions0.items() if holds)
 
 
 def values_strategy(symbol: Basic, type_name: str, st):
-    """A strategy for values of the symbol that agree with its assumptions:
+    """Return a strategy for values of the symbol that agree with its assumptions:
     0 or floats with an absolute value in [SMALLEST, BOUND] for reals, and
     integers in [-BOUND, BOUND]."""
     if type_name == 'bool':
@@ -522,8 +526,9 @@ def as_sympy_number(type_name: str, value) -> Basic:
 
 def sympy_value(expr: Basic, symbols: list[Basic], symbol_types: list[str],
                 values) -> float | None:
-    """SymPy's value of expr for the values of symbols as a float (1.0 or 0.0
-    for a boolean, and possibly infinite or nan), or None if it isn't real.
+    """Return SymPy's value of expr for the values of symbols as a float (1.0
+    or 0.0 for a boolean, and possibly infinite or nan), or None if it isn't
+    real.
 
     >>> from sympy import Symbol, sqrt
     >>> from sympy.testing.check_printed_code import sympy_value
