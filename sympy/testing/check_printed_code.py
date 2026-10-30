@@ -21,7 +21,7 @@ C, C++ or Rust code, or code that can't be checked yet (arrays, matrices,
 most non-default printer settings).
 
 In a Hypothesis test, put the decorator below @given and use
-@settings(deadline=None). expressions() generates expressions to print.
+@settings(deadline=None).
 """
 from __future__ import annotations
 
@@ -34,21 +34,10 @@ import textwrap
 from typing import NamedTuple
 
 from sympy.codegen.ast import CodegenAST
-from sympy.core.add import Add
 from sympy.core.basic import Basic
-from sympy.core.mod import Mod
-from sympy.core.mul import Mul
-from sympy.core.numbers import Float, I, Rational, nan, oo, zoo
-from sympy.core.power import Pow
-from sympy.core.singleton import S
-from sympy.core.symbol import Symbol, symbols
+from sympy.core.symbol import Symbol
 from sympy.core.traversal import preorder_traversal
-from sympy.functions.elementary.complexes import Abs, sign
-from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.integers import floor
-from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.piecewise import ExprCondPair
-from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
                                  Nor, Not, Or, Xnor, Xor)
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
@@ -56,11 +45,15 @@ from sympy.printing.c import C89CodePrinter
 from sympy.printing.codeprinter import CodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
+# The printed name of a variable and its type, 'int', 'real' or 'bool',
+# e.g. ('x', 'real')
+Declaration = tuple[str, str]
+
 
 class Target(NamedTuple):
     command: list[str]
     header: str
-    types: dict[str, str]
+    type_names: dict[str, str]
 
 
 C_HEADER = """\
@@ -79,16 +72,16 @@ use std::f64::{INFINITY, NAN, NEG_INFINITY};
 GCC = ['-fsyntax-only', '-pedantic-errors']
 # C89 allows calls to undeclared functions
 C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
-C_TYPES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
+C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 TARGETS = {
     'C89CodePrinter': Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
                              {'int': 'int', 'real': 'double', 'bool': 'int'}),
-    'C99CodePrinter': Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPES),
-    'C11CodePrinter': Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPES),
-    'CXX98CodePrinter': Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
-    'CXX11CodePrinter': Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
-    'CXX17CodePrinter': Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
+    'C99CodePrinter': Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
+    'C11CodePrinter': Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
+    'CXX98CodePrinter': Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPE_NAMES),
+    'CXX11CodePrinter': Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPE_NAMES),
+    'CXX17CodePrinter': Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPE_NAMES),
     'RustCodePrinter': Target(['rustc', '--edition=2021', '--crate-type=lib',
                                '--emit=metadata', '--error-format=short'],
                               RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
@@ -102,10 +95,10 @@ HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
 # keep as attributes instead of in _settings
 C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('type_')]
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
-LOGIC = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
+LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
 
 
-def compiling():
+def compiling_enabled() -> bool:
     """Whether SYMPY_CHECK_PRINTED_CODE is set (and not to 0)."""
     return os.environ.get('SYMPY_CHECK_PRINTED_CODE', '') not in ('', '0')
 
@@ -115,36 +108,39 @@ class PrintedCodeError(AssertionError):
 
 
 def check_printed_code(test_func):
-    """While the test runs, CodePrinter.doprint is replaced by a wrapper that
-    checks the code the C, C++ and Rust printers print (see check()). When
-    the test returns, it fails if any of that code is wrong.
+    """Make the test fail if C, C++ or Rust code that it prints is wrong (see
+    find_problem() for what is checked).
+
+    While the test runs, CodePrinter.doprint is replaced by a wrapper that
+    checks what these printers print. The problems are raised when the test
+    returns.
     """
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
         printed, problems = set(), []
-        original = CodePrinter.doprint
+        original_doprint = CodePrinter.doprint
 
         # The printers inherit doprint and none calls it recursively, so this
         # sees everything the test prints once
         def doprint(self, expr, assign_to=None):
-            code = original(self, expr, assign_to)
-            name = type(self).__name__
+            code = original_doprint(self, expr, assign_to)
+            printer_name = type(self).__name__
             # Only the classes in TARGETS, not subclasses defined by tests
-            if (name in TARGETS and type(self).__module__ in PRINTER_MODULES
+            if (printer_name in TARGETS and type(self).__module__ in PRINTER_MODULES
                     and isinstance(code, str)
-                    and (name, code, expr, assign_to) not in printed):
-                printed.add((name, code, expr, assign_to))
-                problem = check(self, expr, assign_to, code)
+                    and (printer_name, code, expr, assign_to) not in printed):
+                printed.add((printer_name, code, expr, assign_to))
+                problem = find_problem(self, expr, assign_to, code)
                 if problem:
                     problems.append('%s printed\n\n%s\n\n%s' % (
-                        name, textwrap.indent(code, '    '), problem))
+                        printer_name, textwrap.indent(code, '    '), problem))
             return code
 
         CodePrinter.doprint = doprint  # type: ignore[method-assign]
         try:
             result = test_func(*args, **kwargs)
         finally:
-            CodePrinter.doprint = original  # type: ignore[method-assign]
+            CodePrinter.doprint = original_doprint  # type: ignore[method-assign]
         if not printed:
             raise PrintedCodeError('The test printed no C, C++ or Rust code, so it '
                                    "shouldn't use @check_printed_code.")
@@ -154,64 +150,66 @@ def check_printed_code(test_func):
     return wrapper
 
 
-def check(printer, expr, assign_to, code):
-    """What is wrong with the code that printer printed for expr (assigned to
-    assign_to), or None.
+def find_problem(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
+                 code: str) -> str | None:
+    """Return a description of what is wrong with code, which printer printed
+    for expr (assigned to assign_to, if it isn't None), or None.
+
+    Without SYMPY_CHECK_PRINTED_CODE, this only checks that the code could be
+    compiled: that each of its symbols has a type, and that nothing in it is
+    unsupported (see unsupported_reason()). With it, this also compiles the
+    code (see find_compile_problem()).
 
     >>> from sympy import Symbol, sin
     >>> from sympy.printing.c import C99CodePrinter
-    >>> from sympy.testing.check_printed_code import check
-    >>> print(check(C99CodePrinter(), sin(Symbol('x')), None, 'sin(x)'))
+    >>> from sympy.testing.check_printed_code import find_problem
+    >>> print(find_problem(C99CodePrinter(), sin(Symbol('x')), None, 'sin(x)'))
     The type of x is unknown, so this can't be compiled. Create x with
     real=True or integer=True, e.g. Symbol('x', real=True).
-
-    With x = Symbol('x', real=True), there is nothing wrong, unless
-    SYMPY_CHECK_PRINTED_CODE is set and the code doesn't compile as
-    source() wraps it.
     """
-    reason = unsupported(printer, expr, assign_to)
+    reason = unsupported_reason(printer, expr, assign_to)
     if reason:
         return textwrap.fill("This can't be checked, since %s, so the test can't "
                              "use @check_printed_code." % reason, 72)
     booleans = set()
     for node in preorder_traversal(expr):
-        if isinstance(node, LOGIC):
+        if isinstance(node, LOGIC_FUNCTIONS):
             booleans.update(node.args)
         elif isinstance(node, ExprCondPair):
             booleans.add(node.cond)
-    params = [(printer._print(s), symbol_type(s, s in booleans))
-              for s in sorted(expr.free_symbols, key=str)]
-    target = None
+    parameters = [(printer._print(symbol), symbol_type(symbol, symbol in booleans))
+                  for symbol in sorted(expr.free_symbols, key=str)]
+    assigned = None
     if assign_to is not None:
         symbol = Symbol(assign_to) if isinstance(assign_to, str) else assign_to
         name = printer._print(symbol)
         is_boolean = isinstance(expr, Boolean) and not isinstance(expr, Symbol)
-        target = (name, dict(params).get(name, symbol_type(symbol, is_boolean)))
-    names = params + ([target] if target else [])
+        assigned = (name, dict(parameters).get(name, symbol_type(symbol, is_boolean)))
+    declarations = parameters + ([assigned] if assigned else [])
 
-    not_names = [name for name, _ in names if not name.isidentifier()]
-    if not_names:
+    invalid_names = [name for name, _ in declarations if not name.isidentifier()]
+    if invalid_names:
         return textwrap.fill("This can't be checked, since %s isn't a name, so the "
                              "test can't use @check_printed_code."
-                             % ' or '.join(not_names), 72)
-    unknown = [name for name, type_ in names if type_ is None]
-    if len(unknown) == 1:
+                             % ' or '.join(invalid_names), 72)
+    untyped = [name for name, type_name in declarations if type_name is None]
+    if len(untyped) == 1:
         return textwrap.fill(
             "The type of %s is unknown, so this can't be compiled. Create %s with "
             "real=True or integer=True, e.g. Symbol(%r, real=True)."
-            % (unknown[0], unknown[0], unknown[0]), 72)
-    if unknown:
+            % (untyped[0], untyped[0], untyped[0]), 72)
+    if untyped:
         return textwrap.fill(
             "The types of %s are unknown, so this can't be compiled. Create them "
             "with real=True or integer=True, e.g. Symbol(%r, real=True)."
-            % (' and '.join(unknown), unknown[0]), 72)
-    if compiling():
-        return compile_code(type(printer).__name__, code, params, target)
+            % (' and '.join(untyped), untyped[0]), 72)
+    if compiling_enabled():
+        return find_compile_problem(type(printer).__name__, code, parameters, assigned)
     return None
 
 
-def symbol_type(symbol, is_boolean):
-    """'bool', 'int' or 'real', or None if the symbol's type is unknown."""
+def symbol_type(symbol: Basic, is_boolean: bool) -> str | None:
+    """Return 'bool', 'int' or 'real', or None if the symbol's type is unknown."""
     if is_boolean:
         return 'bool'
     if symbol.is_integer:
@@ -221,21 +219,25 @@ def symbol_type(symbol, is_boolean):
     return None
 
 
-def unsupported(printer, expr, assign_to):
-    """Why the code that printer printed for expr can't be checked, or None.
+def unsupported_reason(printer: CodePrinter, expr: Basic,
+                       assign_to: str | Basic | None) -> str | None:
+    """Return why the code that printer printed for expr (assigned to
+    assign_to) can't be checked, or None if it can.
 
     >>> from sympy import MatrixSymbol
     >>> from sympy.printing.c import C99CodePrinter
-    >>> from sympy.testing.check_printed_code import unsupported
-    >>> unsupported(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1], None)
+    >>> from sympy.testing.check_printed_code import unsupported_reason
+    >>> unsupported_reason(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1], None)
     "it uses arrays or matrices, whose sizes can't be declared"
     """
     for name, value in printer._settings.items():
         if name not in HARMLESS_SETTINGS and value != printer._default_settings.get(name):
             return "it's printed with the setting %s, which can need other declarations" % name
-    for name in C_TYPE_SETTINGS:
-        if getattr(printer, name, None) != getattr(type(printer), name, None):
-            return "it's printed with the setting %s, which can need other declarations" % name
+    if isinstance(printer, C89CodePrinter):
+        for name in C_TYPE_SETTINGS:
+            if getattr(printer, name) != getattr(type(printer), name):
+                return ("it's printed with the setting %s, which can need other "
+                        "declarations" % name)
     if isinstance(expr, CodegenAST) or not isinstance(expr, Basic):
         return "it's a %s, not an expression" % type(expr).__name__
     if (expr.is_Matrix or expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement)
@@ -244,11 +246,15 @@ def unsupported(printer, expr, assign_to):
     return None
 
 
-def source(printer_name, code, params, target):
-    """The code wrapped into a function, with params and target declared.
+def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration],
+                     assigned: Declaration | None) -> str:
+    """Return the source of a function that declares the parameters and the
+    assigned variable and runs the code, so that it compiles if the code is
+    valid.
 
-    >>> from sympy.testing.check_printed_code import source
-    >>> print(source('C99CodePrinter', 'y = fmod(x, 2);', [('x', 'real')], ('y', 'real')))
+    >>> from sympy.testing.check_printed_code import wrap_in_function
+    >>> print(wrap_in_function('C99CodePrinter', 'y = fmod(x, 2);',
+    ...                        [('x', 'real')], ('y', 'real')))
     #define _XOPEN_SOURCE 700
     #include <math.h>
     #include <stdlib.h>
@@ -261,82 +267,62 @@ def source(printer_name, code, params, target):
     }
     <BLANKLINE>
     """
-    _, header, types = TARGETS[printer_name]
+    _, header, type_names = TARGETS[printer_name]
     rust = printer_name == 'RustCodePrinter'
-    params = [(name, types[type_]) for name, type_ in params]
+    parameters = [(name, type_names[type_name]) for name, type_name in parameters]
     lines = code.splitlines()
-    if target is None:
+    if assigned is None:
         if rust:
             # A block, since an expression can follow declarations of
             # number constants such as GoldenRatio
             body = ['let _ = {', *['    ' + line for line in lines], '};']
         else:
-            n = 0
-            while n < len(lines) and (lines[n].endswith(';')
-                                      or lines[n].startswith(('//', '/*'))):
-                n += 1
-            body = lines[:n] + ['(void)(', *['    ' + line for line in lines[n:]], ');']
-    elif target[0] in dict(params):
+            declarations_end = 0
+            while declarations_end < len(lines) and (
+                    lines[declarations_end].endswith(';')
+                    or lines[declarations_end].startswith(('//', '/*'))):
+                declarations_end += 1
+            body = lines[:declarations_end] + [
+                '(void)(', *['    ' + line for line in lines[declarations_end:]], ');']
+    elif assigned[0] in dict(parameters):
         body = lines
     elif rust:
-        body = ['let mut %s: %s;' % (target[0], types[target[1]]), *lines]
+        body = ['let mut %s: %s;' % (assigned[0], type_names[assigned[1]]), *lines]
     else:
-        body = ['%s %s;' % (types[target[1]], target[0]), *lines]
+        body = ['%s %s;' % (type_names[assigned[1]], assigned[0]), *lines]
     if rust:
         signature = 'pub fn f(%s)' % ', '.join(
-            '%s%s: %s' % ('mut ' if target and name == target[0] else '', name, type_)
-            for name, type_ in params)
+            '%s%s: %s' % ('mut ' if assigned and name == assigned[0] else '', name, type_name)
+            for name, type_name in parameters)
     else:
         signature = 'void f(%s)' % (', '.join(
-            '%s %s' % (type_, name) for name, type_ in params) or 'void')
+            '%s %s' % (type_name, name) for name, type_name in parameters) or 'void')
     return '%s\n%s\n{\n%s\n}\n' % (header, signature, textwrap.indent('\n'.join(body), '    '))
 
 
-def compile_code(printer_name, code, params, target):
-    """What the compiler says about the code wrapped by source(), or None if
-    it compiles."""
+def find_compile_problem(printer_name: str, code: str, parameters: list[Declaration],
+                         assigned: Declaration | None) -> str | None:
+    """Compile the code as wrap_in_function() wraps it, and return what the
+    compiler says is wrong with it, or None if it compiles."""
     command = TARGETS[printer_name].command
     if shutil.which(command[0]) is None:
         raise PrintedCodeError('%s is needed to check printed code, since '
                                'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
-    wrapped = source(printer_name, code, params, target)
+    source = wrap_in_function(printer_name, code, parameters, assigned)
     suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
-    with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, 'code' + suffix)
-        with open(path, 'w') as f:
-            f.write(wrapped)
-        result = subprocess.run(command + [path], cwd=tmp, capture_output=True,
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'code' + suffix)
+        with open(path, 'w') as file:
+            file.write(source)
+        result = subprocess.run(command + [path], cwd=directory, capture_output=True,
                                 text=True)
     if not result.returncode:
         return None
     # Not the notes and the code around the error, which the source shows
     errors = ''.join(line.replace(path, 'code' + suffix) + '\n'
                      for line in result.stderr.splitlines() if 'error' in line)
-    numbered = ''.join('%4d | %s\n' % (n, line)
-                       for n, line in enumerate(wrapped.splitlines(), 1))
+    numbered_source = ''.join('%4d | %s\n' % (number, line)
+                              for number, line in enumerate(source.splitlines(), 1))
     return "This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
-        ' '.join(command), textwrap.indent(errors, '    '), textwrap.indent(numbered, '    '))
-
-
-def expressions():
-    """A Hypothesis strategy for expressions in real x, y and integer i, j,
-    such as Max(i, y) or sin(x)**2 + floor(j/2)."""
-    from hypothesis import strategies as st
-
-    x, y = symbols('x y', real=True)
-    i, j = symbols('i j', integer=True)
-    leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
-    binary = st.sampled_from([Add, Mul, Pow, Mod, Min, Max])
-    unary = st.sampled_from([sin, exp, log, sqrt, Abs, floor, sign])
-
-    def apply(f, *args):
-        try:
-            return f(*args)
-        except (ValueError, TypeError, ZeroDivisionError):
-            return nan  # e.g. Min of a complex number
-
-    return st.recursive(
-        leaves,
-        lambda e: st.builds(apply, binary, e, e) | st.builds(apply, unary, e),
-        max_leaves=5,
-    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
+        ' '.join(command), textwrap.indent(errors, '    '),
+        textwrap.indent(numbered_source, '    '))

@@ -14,10 +14,10 @@ from sympy.printing.c import C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (PrintedCodeError, check,
-                                              check_printed_code, compile_code,
-                                              compiling, source, symbol_type,
-                                              unsupported)
+from sympy.testing.check_printed_code import (PrintedCodeError, check_printed_code,
+                                              compiling_enabled, find_compile_problem,
+                                              find_problem, symbol_type,
+                                              unsupported_reason, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -32,34 +32,34 @@ def test_symbol_type():
     assert symbol_type(z, False) is None
 
 
-def _check(printer, expr, assign_to=None):
-    return check(printer, expr, assign_to, printer.doprint(expr, assign_to))
+def _find_problem(printer, expr, assign_to=None):
+    return find_problem(printer, expr, assign_to, printer.doprint(expr, assign_to))
 
 
-def test_check():
+def test_find_problem():
     with _environment('0'):
-        assert _check(C99CodePrinter(), sin(x) + n) is None
-        assert _check(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
-        assert _check(C99CodePrinter(), z + x).startswith('The type of z is unknown')
-        assert _check(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
-        assert _check(C99CodePrinter(), z + b).startswith('The types of b and z are unknown')
-        assert 'since it uses arrays' in _check(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
+        assert _find_problem(C99CodePrinter(), sin(x) + n) is None
+        assert _find_problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
+        assert _find_problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
+        assert _find_problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
+        assert _find_problem(C99CodePrinter(), z + b).startswith('The types of b and z are unknown')
+        assert 'since it uses arrays' in _find_problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
 
 
-def test_unsupported():
-    assert unsupported(C99CodePrinter(), x, None) is None
-    assert 'setting user_functions' in unsupported(
+def test_unsupported_reason():
+    assert unsupported_reason(C99CodePrinter(), x, None) is None
+    assert 'setting user_functions' in unsupported_reason(
         C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x), None)
-    assert 'setting type_aliases' in unsupported(
+    assert 'setting type_aliases' in unsupported_reason(
         C99CodePrinter({'type_aliases': {real: float80}}), x, None)
-    assert 'arrays' in unsupported(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+    assert 'arrays' in unsupported_reason(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
 
 
-def test_source():
-    assert source('C89CodePrinter', 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
+def test_wrap_in_function():
+    assert wrap_in_function('C89CodePrinter', 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
         '#define _XOPEN_SOURCE 700\n#include <math.h>\n#include <stdlib.h>\n'
         '\nvoid f(double x)\n{\n    double y;\n    y = M_PI*x;\n}\n')
-    assert source('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
+    assert wrap_in_function('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
                   ).endswith('\npub fn f(b: bool, x: f64)\n{\n    let _ = {\n'
                              '        b && x > 0.0\n    };\n}\n')
 
@@ -92,11 +92,11 @@ def test_check_printed_code():
     assert CodePrinter.doprint is doprint
 
 
-def test_compiling():
+def test_compiling_enabled():
     with _environment('0'):
-        assert not compiling()
+        assert not compiling_enabled()
     with _environment('1'):
-        assert compiling()
+        assert compiling_enabled()
 
 
 @contextmanager
@@ -112,11 +112,11 @@ def _environment(value):
             os.environ['SYMPY_CHECK_PRINTED_CODE'] = old
 
 
-def test_compile_code():
+def test_find_compile_problem():
     if shutil.which('rustc') is None or shutil.which('gcc') is None:
         skip('rustc and gcc are needed')
-    error = compile_code('RustCodePrinter', 'x + 42', [('x', 'real')], None)
+    error = find_compile_problem('RustCodePrinter', 'x + 42', [('x', 'real')], None)
     assert error.startswith("This doesn't compile.") and 'cannot add' in error
-    assert compile_code('RustCodePrinter', 'x + 42.0', [('x', 'real')], None) is None
-    assert 'invalid operands' in compile_code('C99CodePrinter', 'x % x', [('x', 'real')], None)
-    assert compile_code('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None) is None
+    assert find_compile_problem('RustCodePrinter', 'x + 42.0', [('x', 'real')], None) is None
+    assert 'invalid operands' in find_compile_problem('C99CodePrinter', 'x % x', [('x', 'real')], None)
+    assert find_compile_problem('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None) is None
