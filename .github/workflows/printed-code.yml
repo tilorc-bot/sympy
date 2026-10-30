@@ -1,6 +1,6 @@
-# Compile and run the C, C++ and Rust code printed by the tests decorated
-# with @check_printed_code, and compare its values with SymPy's. See
-# sympy/testing/check_printed_code.py.
+# Compile and run the C, C++, Fortran and Rust code printed by the tests
+# decorated with @check_printed_code, and compare its values with SymPy's.
+# See sympy/testing/check_printed_code.py.
 
 name: printed code
 
@@ -35,7 +35,7 @@ jobs:
       - run: pip install mpmath pytest hypothesis
 
       - name: Show the compilers (preinstalled on the runner)
-        run: gcc --version && g++ --version && rustc --version
+        run: gcc --version && g++ --version && gfortran --version && rustc --version
 
       - name: Run the tests that use @check_printed_code
         env:
