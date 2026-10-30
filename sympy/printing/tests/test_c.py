@@ -897,7 +897,7 @@ def test_ccode__isinf_isnan():
 
 
 @XFAIL  # ccode(Mod(x, y)) prints fmod(x, y), which has the sign of x, not y
-@settings(deadline=None, derandomize=True, database=None)
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
 @given(expressions())
 @check_printed_code
 def test_ccode_hypothesis(expr):

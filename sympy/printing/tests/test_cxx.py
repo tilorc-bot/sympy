@@ -91,7 +91,7 @@ def test_subclass_Integer_Float():
 
 
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double; fmod
-@settings(deadline=None, derandomize=True, database=None)
+@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
 @given(expressions())
 @check_printed_code
 def test_cxxcode_hypothesis(expr):
