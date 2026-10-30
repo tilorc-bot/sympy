@@ -1,53 +1,50 @@
-"""Check that new C, C++ and Rust code printed by SymPy's tests compiles.
+"""Check that the C, C++ and Rust code printed by a test compiles.
 
 Code printer tests compare printed strings, e.g.
 ``assert rust_code(expr) == "..."``, so nothing checks that the asserted code
-is valid in the target language. This module does, in two steps:
+is valid in the target language. A test opts in to that check with the
+``check_printed_code`` decorator::
 
-1. Loaded as a pytest plugin, it records every snippet that the printers in
-   ``TARGETS`` print during the tests, with the test that printed it and the
-   types the test declares for its symbols::
+    from sympy.testing.check_printed_code import check_printed_code
 
-       pytest -p sympy.testing.check_printed_code --printed-code=head.json sympy/printing
+    @check_printed_code
+    def test_sign():
+        x, y = symbols('x y', real=True)
+        assert rust_code(sign(x + y)) == "..."
 
-2. Run as a script on two such captures (of the merge base and the head of a
-   pull request), it compiles each snippet that is in the head capture but
-   not in the base capture::
+While a decorated test runs, every snippet printed by the printers in
+``TARGETS`` is recorded. When the test returns:
 
-       python -m sympy.testing.check_printed_code base.json head.json
+1. Each snippet must be fully declared by the test, and the test fails if one
+   is not. This needs no compiler, so it is done in every test run. The types
+   come only from what the test declares, nothing is guessed:
 
-A snippet is new if the base capture has no snippet from the same printer
-with the same code and declarations. Only new snippets are checked, so
-existing output is never examined unless a pull request changes it.
+   - A symbol with ``integer=True`` is an ``int`` (``i32`` in Rust), and a
+     symbol with ``real=True`` (and not integer) is a ``double`` (``f64``).
+   - A symbol used as a boolean (an argument of ``And``, ``Or``, ``Not``, ...
+     or a ``Piecewise`` condition) is a ``bool``.
+   - Any other symbol must be declared with ``real=True`` or ``integer=True``.
+   - Snippets that need declarations that cannot be made this way (arrays,
+     matrices, codegen AST nodes, ``user_functions``, ``dereference`` and other
+     non-default settings) cannot be checked, so a test that prints them
+     must not use the decorator.
 
-The types come only from what a test declares:
+2. If the environment variable ``SYMPY_CHECK_PRINTED_CODE`` is set, each
+   snippet is wrapped in a function and compiled (``gcc -fsyntax-only``,
+   ``g++ -fsyntax-only``, ``rustc --emit=metadata``), and the test fails if
+   one does not compile. CI does this for the tests that use the decorator::
 
-- A symbol with ``integer=True`` is an ``int`` (``i32`` in Rust), a symbol
-  with ``real=True`` (and not integer) is a ``double`` (``f64``), and a
-  symbol used as a boolean (an argument of ``And``, ``Or``, ``Not``, ... or
-  a ``Piecewise`` condition) is a ``bool``. For any other symbol the test
-  must declare ``real=True`` or ``integer=True``. If a new or edited test
-  (one whose source differs from the merge base's) does not, that is a
-  failure. If an unchanged test prints new code, it is a warning.
-- Snippets that need declarations the check cannot make (arrays, matrices,
-  codegen AST nodes, ``user_functions``, ``dereference`` and other
-  non-default settings) are not checked, which is reported for new and
-  edited tests.
-- A test whose printed code is deliberately not valid code, for example a
-  test of the "Not supported" comment, is marked with
-  ``@uncompilable_code(reason)`` from ``sympy.testing.pytest`` and is not
-  captured.
+       SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
+
+A decorated test must print at least one C, C++ or Rust snippet.
 """
 from __future__ import annotations
 
-import hashlib
-import inspect
-import json
+import functools
+import os
 import shutil
 import subprocess
-import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
@@ -93,7 +90,7 @@ TARGETS = {
     'CXX11CodePrinter': (['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
     'CXX17CodePrinter': (['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
     'RustCodePrinter': (['rustc', '--edition=2021', '--crate-type=lib',
-                         '--emit=metadata'], RUST_HEADER,
+                         '--emit=metadata', '--error-format=short'], RUST_HEADER,
                         {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
 }
 PRINTER_MODULES = ('sympy.printing.c', 'sympy.printing.cxx', 'sympy.printing.rust')
@@ -108,62 +105,46 @@ C_TYPE_TABLES = ('type_aliases', 'type_mappings', 'type_headers', 'type_macros',
                  'type_func_suffixes', 'type_literal_suffixes',
                  'type_math_macro_suffixes')
 
-
-# ---------------------------------------------------------------- capture --
-
-_capture: dict | None = None    # {'tests': ..., 'snippets': ...} while capturing
-_current_test: str | None = None
+ENVIRONMENT_VARIABLE = 'SYMPY_CHECK_PRINTED_CODE'
 
 
-def pytest_addoption(parser):
-    parser.addoption('--printed-code', metavar='FILE',
-                     help='record C, C++ and Rust printer output to FILE')
+class PrintedCodeError(AssertionError):
+    """The code printed by a test decorated with ``check_printed_code`` is
+    not declared or does not compile."""
 
 
-def pytest_configure(config):
-    global _capture
-    if config.getoption('printed_code') is None:
-        return
-    if hasattr(config, 'workerinput'):
-        raise RuntimeError('--printed-code does not support pytest-xdist')
-    _capture = {'tests': {}, 'snippets': []}
-    original = CodePrinter.doprint
+def check_printed_code(test_func):
+    """Decorator for a test whose printed C, C++ and Rust code must compile.
 
-    # Every C, C++ and Rust printer inherits doprint from CodePrinter and
-    # no printer calls it recursively, so wrapping it here sees each
-    # snippet a test prints exactly once. A passing test asserts the string
-    # that doprint returned, so checking that string checks the test.
-    def doprint(self, expr, assign_to=None):
-        code = original(self, expr, assign_to)
-        if (_current_test is not None and type(self).__name__ in TARGETS
-                and type(self).__module__ in PRINTER_MODULES
-                and isinstance(code, str)):
-            _capture['snippets'].append(dict(
-                describe(self, expr, assign_to, code), test=_current_test))
-        return code
+    See the docstring of :mod:`sympy.testing.check_printed_code`.
+    """
+    @functools.wraps(test_func)
+    def wrapper(*args, **kwargs):
+        snippets = []
+        original = CodePrinter.doprint
 
-    CodePrinter.doprint = doprint  # type: ignore[method-assign]
+        # Every C, C++ and Rust printer inherits doprint from CodePrinter and
+        # no printer calls it recursively, so wrapping it here sees each
+        # snippet the test prints exactly once. A passing test asserts the
+        # string that doprint returned, so checking that string checks the
+        # test.
+        def doprint(self, expr, assign_to=None):
+            code = original(self, expr, assign_to)
+            if (type(self).__name__ in TARGETS
+                    and type(self).__module__ in PRINTER_MODULES
+                    and isinstance(code, str)):
+                snippets.append(describe(self, expr, assign_to, code))
+            return code
 
-
-def pytest_runtest_setup(item):
-    global _current_test
-    if _capture is None or not hasattr(item, 'function'):
-        return
-    source = inspect.getsource(item.function)
-    _capture['tests'][item.nodeid] = hashlib.sha1(source.encode()).hexdigest()
-    if not hasattr(item.function, '_uncompilable_code'):
-        _current_test = item.nodeid
-
-
-def pytest_runtest_teardown(item):
-    global _current_test
-    _current_test = None
-
-
-def pytest_unconfigure(config):
-    if _capture is not None:
-        with open(config.getoption('printed_code'), 'w') as f:
-            json.dump(_capture, f, indent=0)
+        CodePrinter.doprint = doprint  # type: ignore[method-assign]
+        try:
+            result = test_func(*args, **kwargs)
+        finally:
+            CodePrinter.doprint = original  # type: ignore[method-assign]
+        compile = compile_snippet if os.environ.get(ENVIRONMENT_VARIABLE) else None
+        check(snippets, compile)
+        return result
+    return wrapper
 
 
 def describe(printer, expr, assign_to, code):
@@ -227,7 +208,7 @@ def unsupported(printer, expr, assign_to):
     if expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement):
         return 'arrays'
     if expr.atoms(Dummy):
-        return 'Dummy symbols, whose names change between runs'
+        return 'Dummy symbols'
     if not all(isinstance(s, Symbol) for s in expr.free_symbols):
         return 'free symbols that are not Symbols'
     if assign_to is not None and not isinstance(assign_to, (str, Symbol)):
@@ -235,11 +216,42 @@ def unsupported(printer, expr, assign_to):
     return None
 
 
-# ------------------------------------------------------------------ check --
+def check(snippets, compile=None):
+    """Raise PrintedCodeError if a snippet is not fully declared or, when
+    ``compile`` is given, if it returns an error for a snippet."""
+    if not snippets:
+        raise PrintedCodeError('@check_printed_code: the test printed no C, '
+                               'C++ or Rust code')
+    unique = {}
+    for s in snippets:
+        unique.setdefault(key(s), s)
+    errors = []
+    for s in unique.values():
+        about = '%s printed\n%s\n' % (
+            s['printer'], '\n'.join(indent(s['code'].splitlines(), '  > ')))
+        missing = [name for name, kind in declared(s) if kind is None]
+        if s['reason']:
+            errors.append(about + 'which cannot be checked (%s), so the test '
+                          'cannot use @check_printed_code' % s['reason'])
+        elif missing:
+            errors.append(about + 'but the test does not declare the type of %s. '
+                          'Create the symbols with real=True or integer=True, '
+                          "e.g. Symbol('%s', real=True)" % (', '.join(missing), missing[0]))
+        elif compile is not None:
+            error = compile(s)
+            if error is not None:
+                numbered = ['%4d | %s' % (n, line)
+                            for n, line in enumerate(source(s).splitlines(), 1)]
+                errors.append('%swhich does not compile. %s:\n%s\nwrapped source:\n%s' % (
+                    about, ' '.join(TARGETS[s['printer']][0]),
+                    '\n'.join(indent(error.splitlines(), '  ')), '\n'.join(numbered)))
+    if errors:
+        raise PrintedCodeError('@check_printed_code:\n\n' + '\n\n'.join(errors))
+
 
 def key(snippet):
-    return json.dumps([snippet['printer'], snippet['code'], snippet['params'],
-                       snippet['target'], snippet['reason']])
+    return (snippet['printer'], snippet['code'], repr(snippet['params']),
+            repr(snippet['target']), snippet['reason'])
 
 
 def source(snippet):
@@ -279,9 +291,12 @@ def source(snippet):
 def compile_snippet(snippet):
     """Compile the snippet; return the compiler's error output, or None."""
     command = TARGETS[snippet['printer']][0]
+    if shutil.which(command[0]) is None:
+        raise PrintedCodeError('%s is needed to check printed code (%s is set)'
+                               % (command[0], ENVIRONMENT_VARIABLE))
     suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
     with tempfile.TemporaryDirectory() as tmp:
-        path = '%s/snippet%s' % (tmp, suffix)
+        path = os.path.join(tmp, 'snippet' + suffix)
         with open(path, 'w') as f:
             f.write(source(snippet))
         result = subprocess.run(command + [path], cwd=tmp, capture_output=True,
@@ -289,81 +304,5 @@ def compile_snippet(snippet):
     return result.stderr.replace(path, 'snippet' + suffix) if result.returncode else None
 
 
-def check(base, head, compile=compile_snippet):
-    """Check the snippets in the capture head that are not in base.
-
-    Returns the number of new snippets and a (status, message) pair for
-    each. The status is 'ok', 'fail', 'warning', 'not checked', or 'ignored'
-    for a snippet that cannot be checked and was printed only by unchanged
-    tests (such as one with names that differ between runs).
-    """
-    old = {key(s) for s in base['snippets']}
-    new = {}
-    for s in head['snippets']:
-        if key(s) not in old:
-            tests = new.setdefault(key(s), (s, []))[1]
-            if s['test'] not in tests:
-                tests.append(s['test'])
-    to_compile, results = [], []
-    for s, tests in new.values():
-        touched = any(head['tests'][t] != base['tests'].get(t) for t in tests)
-        about = '%s printed by %s (%s)\n%s\n' % (
-            s['printer'], ', '.join(tests),
-            'new or edited test' if touched else 'unchanged test, new output',
-            '\n'.join(indent(s['code'].splitlines(), '  > ')))
-        missing = [name for name, kind in declared(s) if kind is None]
-        if s['reason']:
-            results.append(('not checked' if touched else 'ignored',
-                            about + 'cannot check: %s' % s['reason']))
-        elif missing:
-            results.append(('fail' if touched else 'warning', about + (
-                'cannot check: the test does not declare the type of %s. Create '
-                'the symbols with real=True or integer=True, e.g. '
-                "Symbol('%s', real=True)" % (', '.join(missing), missing[0]))))
-        else:
-            to_compile.append((s, about))
-    with ThreadPoolExecutor(4) as pool:
-        errors = list(pool.map(compile, [s for s, _ in to_compile]))
-    for (s, about), error in zip(to_compile, errors):
-        if error is None:
-            results.append(('ok', about))
-        else:
-            command = ' '.join(TARGETS[s['printer']][0])
-            numbered = ['%4d | %s' % (n, line)
-                        for n, line in enumerate(source(s).splitlines(), 1)]
-            results.append(('fail', '%s%s failed:\n%s\nwrapped source:\n%s' % (
-                about, command, '\n'.join(indent(error.splitlines(), '  ')),
-                '\n'.join(numbered))))
-    return results, len(new)
-
-
 def indent(lines, prefix):
     return [prefix + line for line in lines]
-
-
-def main(base_file, head_file):
-    with open(base_file) as f:
-        base = json.load(f)
-    with open(head_file) as f:
-        head = json.load(f)
-    for command, _, _ in TARGETS.values():
-        if shutil.which(command[0]) is None:
-            sys.exit('%s is needed to check printed code' % command[0])
-    results, count = check(base, head)
-    for status in ('fail', 'warning', 'not checked'):
-        for s, message in results:
-            if s == status:
-                print('%s: %s\n' % (status.upper(), message))
-    counts = [sum(s == status for s, _ in results)
-              for status in ('fail', 'ok', 'warning', 'not checked', 'ignored')]
-    print('%d failed. Of %d printed snippets, %d are new: %d compiled, %d warnings, '
-          '%d not checked, %d not checked in unchanged tests.' % (
-              counts[0], len(head['snippets']), count, *counts[1:]))
-    if counts[0]:
-        print('\nA test whose printed code is deliberately not valid code can be '
-              'marked with @uncompilable_code(reason) from sympy.testing.pytest.')
-    return 1 if counts[0] else 0
-
-
-if __name__ == '__main__':
-    sys.exit(main(*sys.argv[1:]))
