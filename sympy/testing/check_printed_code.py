@@ -1,10 +1,8 @@
 """Check that the C, C++, Fortran and Rust code printed by a test compiles
 and computes the same values as SymPy.
 
-Code printer tests compare printed strings, e.g.
-``assert rust_code(expr) == "..."``, so nothing checks that the asserted code
-is valid in the target language. A test opts in to that check with the
-``check_printed_code`` decorator::
+Code printer tests only compare strings. A test opts in to checking the
+code with a decorator::
 
     from sympy.testing.check_printed_code import check_printed_code
 
@@ -13,63 +11,31 @@ is valid in the target language. A test opts in to that check with the
         x, y = symbols('x y', real=True)
         assert rust_code(sign(x + y)) == "..."
 
-While a decorated test runs, every snippet printed by the printers in
-``TARGETS`` is recorded. When the test returns:
+The code is only compiled if SYMPY_CHECK_PRINTED_CODE is set, as in CI::
 
-1. Each snippet must be fully declared by the test, and the test fails if one
-   is not. This needs no compiler, so it is done in every test run. The types
-   come only from what the test declares, nothing is guessed:
+    SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
-   - A symbol with ``integer=True`` is an ``int`` (``i32`` in Rust,
-     ``integer`` in Fortran), and a symbol with ``real=True`` (and not
-     integer) is a ``double`` (``f64``, ``double precision``).
-   - A symbol used as a boolean (an argument of ``And``, ``Or``, ``Not``, ...
-     or a ``Piecewise`` condition) is a ``bool`` (``logical``).
-   - Any other symbol must be declared with ``real=True`` or ``integer=True``.
-   - Snippets that need declarations that cannot be made this way (arrays,
-     matrices, codegen AST nodes, ``user_functions``, ``dereference`` and other
-     non-default settings) cannot be checked, so a test that prints them
-     must not use the decorator.
+In every run, a decorated test fails if a symbol in its printed code has no
+type: integer=True gives an int, real=True a double, and a symbol used in
+And, Or, Not or a Piecewise condition a bool. It also fails if it prints no
+C, C++, Fortran or Rust code, or code that can't be checked yet (arrays,
+matrices, most non-default printer settings).
 
-2. If the environment variable ``SYMPY_CHECK_PRINTED_CODE`` is set, each
-   snippet is wrapped in a program that reads the values of its symbols from
-   the command line and prints the snippet's value (or the value assigned).
-   The test fails if the program does not compile, or if for some values it
-   prints a different value than SymPy computes for the expression. The
-   values are generated with Hypothesis, which reports the simplest values
-   it finds that give a different value:
+With SYMPY_CHECK_PRINTED_CODE set, each snippet is also run: it is wrapped
+in a program that reads values of its symbols from standard input and
+prints its value. The test fails if that value differs from SymPy's
+evalf(30) value by more than TOLERANCE. Hypothesis generates the values
+(see symbol_values) and reports the simplest ones that give a different
+value. Values for which SymPy's value isn't real are skipped, and where it
+is nan (e.g. atan2(0, 0)) any printed value is accepted.
 
-   - Reals are 0 or floats with an absolute value in [0.001, 10], integers
-     are in [-10, 10], and values that contradict a symbol's assumptions
-     (``positive=True``, ``even=True``, ...) are not used.
-   - SymPy's value is computed with 30 digits (``evalf(30)``). Values for
-     which it is not real (``1/x`` at 0, ``sqrt(x)`` at -1, ...) are not
-     used. Infinite values must be printed exactly. Where SymPy's value is
-     nan (undefined, e.g. ``atan2(0, 0)``), any printed value is right.
-   - The printed value must be within a relative error of 1e-6 (or an
-     absolute error of 1e-6 if SymPy's value is smaller than 1), which allows
-     for rounding where a function is ill-conditioned (``acosh`` near 1).
-     A boolean must be equal.
+Fortran code is compiled with gfortran for the standard and source format
+it is printed for. Fortran 77 and 90 code is checked as Fortran 95, and
+Fortran 66 code can't be checked.
 
-   CI does this for the tests that use the decorator::
-
-       SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
-
-   Fortran code is compiled with gfortran for the ``standard`` and
-   ``source_format`` it is printed for. gfortran checks only Fortran 95 and
-   later, so code printed for Fortran 77 and 90 is checked as Fortran 95
-   (which contains them): that it is valid and computes the right values,
-   but not that it uses only features of the older standard. Fortran 66
-   code cannot be checked.
-
-A decorated test must print at least one C, C++, Fortran or Rust snippet.
-
-In a Hypothesis test, put the decorator below ``@given``, so that each
-example is checked and Hypothesis shrinks a failing one, and use
-``@settings(deadline=None)``, since compiling takes longer than the
-default deadline. See ``sympy/printing/tests/test_printed_code_hypothesis.py``.
-Since Hypothesis tests cannot be nested, the values of the symbols are then
-the combinations of ``FIXED_VALUES`` that agree with their assumptions.
+In a Hypothesis test, put the decorator below @given and use
+@settings(deadline=None). The symbols then take the FIXED_VALUES, since
+Hypothesis tests can't be nested.
 """
 from __future__ import annotations
 
@@ -83,12 +49,13 @@ import subprocess
 import tempfile
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
 from sympy.core.numbers import Float, Integer
 from sympy.core.singleton import S
-from sympy.core.symbol import Dummy, Symbol
+from sympy.core.symbol import Symbol
 from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, BooleanAtom, Equivalent, ITE,
@@ -99,11 +66,11 @@ from sympy.printing.codeprinter import CodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
 
-# The targets: one per printer class (and per value of the settings in
-# TARGET_SETTINGS), each with the compiler command (run with the source file
-# and output file appended), the code put before the program, and the names
-# of the int, real and bool types. Only the printer classes themselves are
-# checked, not subclasses.
+class Target(NamedTuple):
+    command: list[str]
+    header: str
+    types: dict[str, str]
+
 
 C_HEADER = """\
 #define _XOPEN_SOURCE 700
@@ -124,31 +91,27 @@ C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 TARGETS = {
-    'C89CodePrinter': (['gcc', '-std=c89', *C_FLAGS], C_HEADER,
-                       {'int': 'int', 'real': 'double', 'bool': 'int'}),
-    'C99CodePrinter': (['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPES),
-    'C11CodePrinter': (['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPES),
-    'CXX98CodePrinter': (['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
-    'CXX11CodePrinter': (['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
-    'CXX17CodePrinter': (['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
-    'RustCodePrinter': (['rustc', '--edition=2021', '--error-format=short',
-                         '-C', 'debuginfo=0'], RUST_HEADER,
-                        {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
+    'C89CodePrinter': Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
+                             {'int': 'int', 'real': 'double', 'bool': 'int'}),
+    'C99CodePrinter': Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPES),
+    'C11CodePrinter': Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPES),
+    'CXX98CodePrinter': Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
+    'CXX11CodePrinter': Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
+    'CXX17CodePrinter': Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
+    'RustCodePrinter': Target(['rustc', '--edition=2021', '--error-format=short',
+                               '-C', 'debuginfo=0'],
+                              RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
 }
-# FCodePrinter prints different code for each Fortran standard and source
-# format, so each combination is a target, named like
-# "FCodePrinter(standard=95, source_format='free')" (see target_name()).
-# gfortran's oldest standard is Fortran 95, which contains 77 and 90 (but
-# not 66).
+# fcode's output depends on these settings, so each combination is a target,
+# e.g. "FCodePrinter(standard=95, source_format='free')" (see target_name())
 TARGET_SETTINGS = {'FCodePrinter': ('standard', 'source_format')}
 FORTRAN_STANDARDS = {77: 'f95', 90: 'f95', 95: 'f95', 2003: 'f2003', 2008: 'f2008'}
 # double precision is the type of the 1.0d0 literals that fcode prints
 FORTRAN_TYPES = {'int': 'integer', 'real': 'double precision', 'bool': 'logical'}
 for standard, std in FORTRAN_STANDARDS.items():
     for form in ('fixed', 'free'):
-        TARGETS['FCodePrinter(standard=%r, source_format=%r)' % (standard, form)] = (
-            # Without -Werror=line-truncation, gfortran ignores what comes
-            # after column 72 in fixed form
+        TARGETS['FCodePrinter(standard=%r, source_format=%r)' % (standard, form)] = Target(
+            # Otherwise gfortran ignores what comes after column 72 in fixed form
             ['gfortran', '-std=' + std, '-f%s-form' % form, *GCC,
              '-Werror=line-truncation'], '', FORTRAN_TYPES)
 PRINTERS = {name.partition('(')[0] for name in TARGETS}
@@ -160,30 +123,32 @@ HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
                      'strict', 'error_on_reserved', 'reserved_word_suffix', 'inline'}
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
 LOGIC = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
-# C printer settings that __init__ removes from the settings and stores here
+# Settings that the C printers store as attributes, not in _settings
 C_TYPE_TABLES = ('type_aliases', 'type_mappings', 'type_headers', 'type_macros',
                  'type_func_suffixes', 'type_literal_suffixes',
                  'type_math_macro_suffixes')
 
 ENVIRONMENT_VARIABLE = 'SYMPY_CHECK_PRINTED_CODE'
-# The values of the symbols, and how close the printed value must be
 BOUND = 10
 SMALLEST = 1e-3
 EXAMPLES = 50
-TOLERANCE = 1e-6
-# The values used inside a Hypothesis test, which generates the expressions
+TOLERANCE = 1e-6  # allows for ill-conditioned functions, e.g. acosh near 1
 FIXED_VALUES = {'bool': [False, True], 'int': [0, 1, -1, 2, -3, 7],
                 'real': [0.0, 1.0, -1.0, 0.5, -2.5, 3.75]}
 
 
+def compiling():
+    return os.environ.get(ENVIRONMENT_VARIABLE, '') not in ('', '0')
+
+
 class PrintedCodeError(AssertionError):
     """The code printed by a test decorated with ``check_printed_code`` is
-    not declared or does not compile."""
+    not declared, does not compile or computes a wrong value."""
 
 
 def check_printed_code(test_func):
     """Decorator for a test whose printed C, C++, Fortran and Rust code must
-    compile.
+    be right.
 
     See the docstring of :mod:`sympy.testing.check_printed_code`.
     """
@@ -192,13 +157,11 @@ def check_printed_code(test_func):
         snippets = []
         original = CodePrinter.doprint
 
-        # Every C, C++, Fortran and Rust printer inherits doprint from
-        # CodePrinter and no printer calls it recursively, so wrapping it here
-        # sees each snippet the test prints exactly once. A passing test
-        # asserts the string that doprint returned, so checking that string
-        # checks the test.
+        # Every C, C++, Fortran and Rust printer inherits doprint and none
+        # calls it recursively, so this sees each snippet once
         def doprint(self, expr, assign_to=None):
             code = original(self, expr, assign_to)
+            # The classes in TARGETS, not subclasses defined by tests
             if (type(self).__name__ in PRINTERS
                     and type(self).__module__ in PRINTER_MODULES
                     and isinstance(code, str)):
@@ -210,7 +173,7 @@ def check_printed_code(test_func):
             result = test_func(*args, **kwargs)
         finally:
             CodePrinter.doprint = original  # type: ignore[method-assign]
-        run = run_snippets if os.environ.get(ENVIRONMENT_VARIABLE) else None
+        run = run_snippets if compiling() else None
         check(snippets, run)
         return result
     return wrapper
@@ -226,13 +189,12 @@ def target_name(printer):
 
 
 def describe(printer, expr, assign_to, code):
-    """Describe a printed snippet by what the test declared about it.
+    """The snippet as a dict of the target's name, the code, the
+    parameters and assigned variable as [name, kind] pairs, and the reason
+    it can't be checked, or None.
 
-    Returns a dict with the name of the target, the code, the parameters
-    and assigned variable as ``[printed name, kind]`` pairs (kind is
-    'int', 'real', 'bool' or None when undeclared), the expression and the
-    symbols of the parameters and, if the snippet cannot be checked, the
-    reason.
+    The kind is 'int', 'real', 'bool', or None if the test doesn't declare it.
+    The dict also has the expression and the parameters' symbols.
     """
     record = {'printer': target_name(printer), 'code': code,
               'params': [], 'target': None, 'expr': expr, 'symbols': [],
@@ -290,8 +252,6 @@ def unsupported(printer, expr, assign_to):
         return 'printing a %s' % type(expr).__name__
     if expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement):
         return 'arrays'
-    if expr.atoms(Dummy):
-        return 'Dummy symbols'
     if not all(isinstance(s, Symbol) for s in expr.free_symbols):
         return 'free symbols that are not Symbols'
     if assign_to is not None and not isinstance(assign_to, (str, Symbol)):
@@ -300,12 +260,8 @@ def unsupported(printer, expr, assign_to):
 
 
 def check(snippets, run=None):
-    """Raise PrintedCodeError if a snippet is not fully declared or, when
-    ``run`` is given, if it returns an error for a snippet.
-
-    ``run`` takes a list of snippets and returns a list with a description
-    of the problem with each, or None.
-    """
+    """Raise PrintedCodeError if a snippet isn't fully declared or, when
+    ``run`` is given, if ``run(snippets)`` reports a problem with one."""
     if not snippets:
         raise PrintedCodeError('@check_printed_code: the test printed no C, '
                                'C++, Fortran or Rust code')
@@ -402,8 +358,7 @@ def fortran_program(snippet):
     """The program for a snippet printed by FCodePrinter."""
     command, _, types = TARGETS[snippet['printer']]
     fixed = '-ffixed-form' in command
-    # In fixed form, a statement starts in column 7 (the printed lines
-    # already do) and a continuation line has a character in column 6
+    # Fixed form: statements start in column 7, continuations have @ in column 6
     lead = '      ' if fixed else ''
     lines = snippet['code'].splitlines()
     target = snippet['target']
@@ -413,8 +368,7 @@ def fortran_program(snippet):
             return [lead + parts[0], *('     @' + part for part in parts[1:])]
         return [part + ' &' for part in parts[:-1]] + [parts[-1]]
 
-    # The parameters (and comments on unsupported functions) the code starts
-    # with are specification statements, which must come before the loop
+    # The parameters and comments the code starts with must come before the loop
     n = 0
     while n < len(lines) and (PARAMETER.match(lines[n]) or lines[n].lstrip()[:1] == '!'
                               or fixed and lines[n][:1] == 'C'):
@@ -440,7 +394,7 @@ def run_snippets(snippets):
     """Compile the snippets' programs and compare the values they print with
     SymPy's; return a description of the first problem with each, or None."""
     for printer in {s['printer'] for s in snippets}:
-        compiler = TARGETS[printer][0][0]
+        compiler = TARGETS[printer].command[0]
         if shutil.which(compiler) is None:
             raise PrintedCodeError('%s is needed to check printed code (%s is set)'
                                    % (compiler, ENVIRONMENT_VARIABLE))
@@ -454,7 +408,7 @@ def run_snippets(snippets):
 
 def build(snippet, executable):
     """Compile the snippet's program; return the compiler's errors, or None."""
-    command = TARGETS[snippet['printer']][0]
+    command = TARGETS[snippet['printer']].command
     suffix = {'gcc': '.c', 'g++': '.cpp', 'gfortran': '.f90', 'rustc': '.rs'}[command[0]]
     path = executable + suffix
     with open(path, 'w') as f:
@@ -515,7 +469,7 @@ def check_values(snippet, executable):
     from hypothesis.errors import Unsatisfiable
 
     # Rust and Fortran read booleans as true and false, C as 1 and 0
-    words = TARGETS[snippet['printer']][0][0] in ('rustc', 'gfortran')
+    words = TARGETS[snippet['printer']].command[0] in ('rustc', 'gfortran')
     names = [name for name, _ in snippet['params']]
     running = Program(executable)
 
@@ -541,8 +495,7 @@ def check_values(snippet, executable):
             except ValueError:  # e.g. a complex number
                 raise PrintedCodeError('which prints %s%s, which is not a real number' % (
                     output, given_values))
-        # nan means that the value is undefined (e.g. atan2(0, 0)), so any
-        # printed value is right
+        # nan means undefined, e.g. atan2(0, 0)
         if not (value == expected or math.isnan(expected)
                 or abs(value - expected) <= TOLERANCE * max(1.0, abs(expected))):
             raise PrintedCodeError('which prints %s%s, but SymPy computes %r for %s' % (
