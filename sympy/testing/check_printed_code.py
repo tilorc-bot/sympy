@@ -171,8 +171,8 @@ def check(printer, expr, assign_to, code):
     """
     reason = unsupported(printer, expr, assign_to)
     if reason:
-        return ("This can't be checked, since %s, so the test can't use "
-                "@check_printed_code." % reason)
+        return textwrap.fill("This can't be checked, since %s, so the test can't "
+                             "use @check_printed_code." % reason, 72)
     booleans = set()
     for node in preorder_traversal(expr):
         if isinstance(node, LOGIC):
@@ -191,8 +191,9 @@ def check(printer, expr, assign_to, code):
 
     not_names = [name for name, _ in names if not name.isidentifier()]
     if not_names:
-        return ("This can't be checked, since %s isn't a name, so the test can't "
-                "use @check_printed_code." % ' or '.join(not_names))
+        return textwrap.fill("This can't be checked, since %s isn't a name, so the "
+                             "test can't use @check_printed_code."
+                             % ' or '.join(not_names), 72)
     unknown = [name for name, type_ in names if type_ is None]
     if len(unknown) == 1:
         return textwrap.fill(
