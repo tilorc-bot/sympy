@@ -37,6 +37,11 @@ While a decorated test runs, every snippet printed by the printers in
        SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
 A decorated test must print at least one C, C++ or Rust snippet.
+
+In a Hypothesis test, put the decorator below ``@given``, so that each
+example is checked and Hypothesis shrinks a failing one, and use
+``@settings(deadline=None)``, since compiling takes longer than the
+default deadline. See ``sympy/printing/tests/test_printed_code_hypothesis.py``.
 """
 from __future__ import annotations
 
