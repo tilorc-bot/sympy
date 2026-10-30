@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
@@ -171,7 +171,7 @@ def find_problem(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
     if reason:
         return textwrap.fill("This can't be checked, since %s, so the test can't "
                              "use @check_printed_code." % reason, 72)
-    booleans = set()
+    booleans: set[Basic] = set()
     for node in preorder_traversal(expr):
         if isinstance(node, LOGIC_FUNCTIONS):
             booleans.update(node.args)
@@ -204,7 +204,10 @@ def find_problem(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
             "with real=True or integer=True, e.g. Symbol(%r, real=True)."
             % (' and '.join(untyped), untyped[0]), 72)
     if compiling_enabled():
-        return find_compile_problem(type(printer).__name__, code, parameters, assigned)
+        # Every type is known now
+        return find_compile_problem(type(printer).__name__, code,
+                                    cast('list[Declaration]', parameters),
+                                    cast('Declaration | None', assigned))
     return None
 
 
