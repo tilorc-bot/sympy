@@ -18,7 +18,8 @@ from sympy.printing.rust import RustCodePrinter
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.testing.check_printed_code import (PrintedCodeError, check,
                                               check_printed_code, describe,
-                                              program, run_snippets, sympy_value)
+                                              fixed_values, program, run_snippets,
+                                              sympy_value)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -74,6 +75,17 @@ def test_sympy_value():
     assert value(1/x, 0.0) is None
     assert value(Mod(x, n), 0, 1.5) is None
     assert value(x*oo, 1.0) == math.inf
+
+
+def test_fixed_values():
+    p = Symbol('p', positive=True)
+    values = fixed_values(_describe(C99CodePrinter(), p + n + x))
+    assert len(values) == 50 and len(set(values)) == 50
+    assert all(isinstance(i, int) and v > 0 for i, v, _ in values)
+    assert fixed_values(_describe(C99CodePrinter(), b & (x > 0))) == [
+        (False, 0.0), (False, 1.0), (False, -1.0), (False, 0.5), (False, -2.5),
+        (False, 3.75), (True, 0.0), (True, 1.0), (True, -1.0), (True, 0.5),
+        (True, -2.5), (True, 3.75)]
 
 
 def _snippet(code, kind, reason=None):

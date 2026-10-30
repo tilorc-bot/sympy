@@ -60,10 +60,13 @@ In a Hypothesis test, put the decorator below ``@given``, so that each
 example is checked and Hypothesis shrinks a failing one, and use
 ``@settings(deadline=None)``, since compiling takes longer than the
 default deadline. See ``sympy/printing/tests/test_printed_code_hypothesis.py``.
+Since Hypothesis tests cannot be nested, the values of the symbols are then
+the combinations of ``FIXED_VALUES`` that agree with their assumptions.
 """
 from __future__ import annotations
 
 import functools
+import itertools
 import math
 import os
 import shutil
@@ -139,6 +142,9 @@ BOUND = 10
 SMALLEST = 1e-3
 EXAMPLES = 50
 TOLERANCE = 1e-6
+# The values used inside a Hypothesis test, which generates the expressions
+FIXED_VALUES = {'bool': [False, True], 'int': [0, 1, -1, 2, -3, 7],
+                'real': [0.0, 1.0, -1.0, 0.5, -2.5, 3.75]}
 
 
 class PrintedCodeError(AssertionError):
@@ -414,9 +420,10 @@ class Program:
 
 def check_values(snippet, executable):
     """Compare the values printed by the compiled program with SymPy's for
-    values of the symbols generated with Hypothesis; return a description
-    of a difference, or None."""
-    from hypothesis import HealthCheck, assume, given, settings, strategies as st
+    values of the symbols generated with Hypothesis (or FIXED_VALUES inside
+    a Hypothesis test); return a description of a difference, or None."""
+    from hypothesis import (HealthCheck, assume, currently_in_test_context, given,
+                            settings, strategies as st)
     from hypothesis.errors import Unsatisfiable
 
     rust = snippet['printer'] == 'RustCodePrinter'
@@ -424,9 +431,11 @@ def check_values(snippet, executable):
     running = Program(executable)
 
     def compare(values):
+        """Return False if SymPy's value is not real, else raise
+        PrintedCodeError if the printed value differs."""
         expected = sympy_value(snippet, values)
-        if names:
-            assume(expected is not None)
+        if expected is None:
+            return False
         arguments = [str(v).lower() if rust else str(int(v)) if isinstance(v, bool)
                      else repr(v) for v in values]
         given_values = ', '.join('%s = %r' % (n, v) for n, v in zip(names, values))
@@ -444,27 +453,52 @@ def check_values(snippet, executable):
                 or abs(value - expected) <= TOLERANCE * max(1.0, abs(expected))):
             raise PrintedCodeError('which prints %s%s, but SymPy computes %r for %s' % (
                 output, given_values, expected, snippet['expr']))
+        return True
 
+    no_values = ('for which no values of the symbols were found for which SymPy '
+                 'computes a real number')
+    kinds = [kind for _, kind in snippet['params']]
     try:
         if not names:
-            if sympy_value(snippet, []) is None:
+            if not compare([]):
                 return 'whose value SymPy does not compute as a real number'
-            compare([])
+        elif currently_in_test_context():
+            # Hypothesis tests cannot be nested
+            if not sum(compare(values) for values in fixed_values(snippet)):
+                return no_values
         else:
-            strategies = [symbol_values(symbol, kind, st) for symbol, (_, kind)
-                          in zip(snippet['symbols'], snippet['params'])]
-            settings(max_examples=EXAMPLES, deadline=None, database=None,
-                     derandomize=True, report_multiple_bugs=False,
-                     suppress_health_check=list(HealthCheck),
-                     )(given(st.tuples(*strategies))(compare))()
+            strategies = [symbol_values(symbol, kind, st)
+                          for symbol, kind in zip(snippet['symbols'], kinds)]
+
+            @settings(max_examples=EXAMPLES, deadline=None, database=None,
+                      derandomize=True, report_multiple_bugs=False,
+                      suppress_health_check=list(HealthCheck))
+            @given(st.tuples(*strategies))
+            def generated(values):
+                assume(compare(values))
+            generated()
     except PrintedCodeError as e:
         return str(e)
     except Unsatisfiable:
-        return ('for which no values of the symbols were found for which SymPy '
-                'computes a real number')
+        return no_values
     finally:
         running.close()
     return None
+
+
+def fixed_values(snippet):
+    """Up to EXAMPLES combinations of FIXED_VALUES for the snippet's symbols
+    that agree with their assumptions."""
+    choices = [[v for v in FIXED_VALUES[kind] if agrees(symbol, kind, v)]
+               for symbol, (_, kind) in zip(snippet['symbols'], snippet['params'])]
+    combinations = list(itertools.product(*choices))
+    return combinations[::max(1, len(combinations) // EXAMPLES)][:EXAMPLES]
+
+
+def agrees(symbol, kind, value):
+    """Whether the value agrees with the symbol's assumptions."""
+    return kind == 'bool' or all(getattr(sympy_number(kind, value), 'is_' + k)
+               for k, v in symbol.assumptions0.items() if v)
 
 
 def symbol_values(symbol, kind, st):
@@ -477,9 +511,7 @@ def symbol_values(symbol, kind, st):
         # Not tiny, so that products like x*x do not underflow
         values = st.one_of(st.just(0.0), st.floats(-BOUND, -SMALLEST),
                            st.floats(SMALLEST, BOUND))
-    assumptions = [k for k, v in symbol.assumptions0.items() if v]
-    return values.filter(lambda v: all(
-        getattr(sympy_number(kind, v), 'is_' + k) for k in assumptions))
+    return values.filter(lambda v: agrees(symbol, kind, v))
 
 
 def sympy_number(kind, value):

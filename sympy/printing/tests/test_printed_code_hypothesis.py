@@ -1,11 +1,11 @@
-"""Check that the C, C++ and Rust printers print code that compiles for
-expressions generated with Hypothesis.
+"""Check that the C, C++ and Rust printers print code that compiles, and
+computes the same values as SymPy, for expressions generated with
+Hypothesis.
 
 The tests are skipped unless SYMPY_CHECK_PRINTED_CODE is set, as in the
-"printed code" CI job (see sympy/testing/check_printed_code.py). The C++ and
-Rust tests are marked XFAIL because those printers still print code that
-does not compile for some expressions; the comments give the simplest
-examples Hypothesis finds.
+"printed code" CI job (see sympy/testing/check_printed_code.py). They are
+marked XFAIL because each printer still prints wrong code for some
+expressions; the comments give the simplest examples Hypothesis finds.
 """
 from __future__ import annotations
 
@@ -65,11 +65,12 @@ def check_compiles(printer):
     compiles()
 
 
+@XFAIL  # ccode(Mod(x, y)) prints fmod(x, y), which has the sign of x, not y
 def test_ccode_compiles():
     check_compiles(ccode)
 
 
-@XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
+@XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double; fmod
 def test_cxxcode_compiles():
     check_compiles(cxxcode)
 
