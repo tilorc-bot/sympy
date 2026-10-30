@@ -324,7 +324,8 @@ def wrap_in_program(printer_name: str, code: str, parameters: list[Declaration],
             'real': 'strtod(sympy_p, &sympy_p)',
             'bool': '(int)strtol(sympy_p, &sympy_p, 10)'}
     body = ['char *sympy_p = sympy_line;']
-    body += ['%s %s = %s;' % (type_names[type_name], name, read[type_name]) for name, type_name in parameters]
+    body += ['%s %s = %s;' % (type_names[type_name], name, read[type_name])
+             for name, type_name in parameters]
     if assigned is None:
         declarations_end = 0
         while declarations_end < len(lines) and (lines[declarations_end].endswith(';')
