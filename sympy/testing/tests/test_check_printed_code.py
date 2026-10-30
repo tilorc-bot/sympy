@@ -6,12 +6,14 @@ import shutil
 from sympy.core.mod import Mod
 from sympy.core.numbers import oo
 from sympy.core.relational import Gt
+from sympy.core.numbers import pi
 from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import sin
-from sympy.logic.boolalg import And
+from sympy.logic.boolalg import And, Equivalent
 from sympy.printing.c import C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter
+from sympy.printing.fortran import FCodePrinter
 from sympy.printing.octave import octave_code
 from sympy.printing.codeprinter import rust_code
 from sympy.printing.rust import RustCodePrinter
@@ -46,6 +48,11 @@ def test_describe():
     assert _describe(C99CodePrinter({'user_functions': {'sin': 'mysin'}}),
                      sin(x))['reason'] == 'printer setting user_functions'
     assert _describe(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])['reason'] == 'arrays'
+    s = _describe(FCodePrinter({'standard': 95, 'source_format': 'free'}), x)
+    assert s['printer'] == "FCodePrinter(standard=95, source_format='free')"
+    assert s['reason'] is None
+    assert _describe(FCodePrinter({'standard': 66}), x)['reason'] == (
+        "there is no compiler for FCodePrinter(standard=66, source_format='fixed')")
 
 
 def test_program():
@@ -64,6 +71,33 @@ def test_program():
             '        let mut x: f64 = sympy_values.next().unwrap().parse().unwrap();\n'
             '        let sympy_value = {\n            b && x > 0.0\n        };\n'
             '        println!("{:?}", sympy_value);\n') in rust
+
+
+def test_fortran_program():
+    a = symbols('a:12', real=True)
+    fixed = program(_describe(FCodePrinter(), pi*sum(a)))
+    assert fixed == (
+        '      program sympy_check\n'
+        '      implicit none\n'
+        '      integer sympy_status\n'
+        + ''.join('      double precision a%d\n' % i for i in [0, 1, 10, 11, *range(2, 10)]) +
+        '      double precision pi\n'
+        '      parameter (pi = 3.1415926535897932d0)\n'
+        '      do\n'
+        '      read (*, *, iostat=sympy_status) a0, a1, a10, a11, a2, a3,\n'
+        '     @      a4, a5, a6, a7, a8, a9\n'
+        '      if (sympy_status /= 0) exit\n'
+        '      print *,\n'
+        '     @pi*(a0 + a1 + a10 + a11 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9)\n'
+        '      end do\n'
+        '      end program\n')
+    free = program(_describe(FCodePrinter({'source_format': 'free'}),
+                             And(b, Gt(x, 0)), 'y'))
+    assert free == (
+        'program sympy_check\nimplicit none\ninteger sympy_status\n'
+        'logical b\ndouble precision x\nlogical y\n'
+        'do\nread (*, *, iostat=sympy_status) b, x\nif (sympy_status /= 0) exit\n'
+        'y = b .and. x > 0\nprint *, y\nend do\nend program\n')
 
 
 def test_sympy_value():
@@ -111,7 +145,7 @@ def test_check():
     e = raises(PrintedCodeError, lambda: check([_snippet('A[0]', 'real', 'arrays')]))
     assert 'cannot be checked (arrays)' in str(e.value)
     e = raises(PrintedCodeError, lambda: check([]))
-    assert 'printed no C, C++ or Rust code' in str(e.value)
+    assert 'printed no C, C++, Fortran or Rust code' in str(e.value)
 
 
 def test_check_printed_code():
@@ -151,3 +185,18 @@ def test_run_snippets():
     assert wrong.startswith('which prints 1.5 for x = 0.0, but SymPy computes 1.0')
     # fmod has the sign of r, but Mod(r, s) has the sign of s
     assert fmod.startswith('which prints') and 'for Mod(r, s)' in fmod
+
+
+def test_run_fortran_snippets():
+    if shutil.which('gfortran') is None:
+        skip('gfortran is needed')
+    a, c = symbols('a c')
+    free = FCodePrinter({'standard': 2003, 'source_format': 'free'})
+    snippets = [_describe(FCodePrinter(), pi*x + n),
+                _describe(free, Equivalent(a, b, c), Symbol('e')),
+                _describe(FCodePrinter({'standard': 95}), Mod(x, n))]
+    ok, equivalent, modulo = run_snippets(snippets)
+    assert ok is None
+    # a .eqv. b .eqv. c is (a .eqv. b) .eqv. c
+    assert equivalent.startswith('which prints F for a = False, b = False, c = False')
+    assert 'which does not compile' in modulo and 'must have the same type' in modulo
