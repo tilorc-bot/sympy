@@ -1,15 +1,8 @@
 """Check that the C, C++ and Rust printers print code that compiles for
-expressions generated with Hypothesis.
-
-The tests are skipped unless SYMPY_CHECK_PRINTED_CODE is set, as in the
-"printed code" CI job (see sympy/testing/check_printed_code.py). The C++ and
-Rust tests are marked XFAIL because those printers still print code that
-does not compile for some expressions; the comments give the simplest
-examples Hypothesis finds.
+expressions generated with Hypothesis. Skipped unless SYMPY_CHECK_PRINTED_CODE
+is set (see sympy/testing/check_printed_code.py).
 """
 from __future__ import annotations
-
-import os
 
 from hypothesis import given, settings, strategies as st
 
@@ -28,7 +21,7 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.printing.c import ccode
 from sympy.printing.codeprinter import rust_code
 from sympy.printing.cxx import cxxcode
-from sympy.testing.check_printed_code import ENVIRONMENT_VARIABLE, check_printed_code
+from sympy.testing.check_printed_code import check_printed_code, compiling
 from sympy.testing.pytest import XFAIL, skip
 
 x, y = symbols('x y', real=True)
@@ -54,8 +47,8 @@ expressions = st.recursive(
 
 
 def check_compiles(printer):
-    if not os.environ.get(ENVIRONMENT_VARIABLE):
-        skip('%s is not set' % ENVIRONMENT_VARIABLE)
+    if not compiling():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
 
     @settings(deadline=None, derandomize=True, database=None)
     @given(expressions)

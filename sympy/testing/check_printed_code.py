@@ -1,9 +1,7 @@
 """Check that the C, C++ and Rust code printed by a test compiles.
 
-Code printer tests compare printed strings, e.g.
-``assert rust_code(expr) == "..."``, so nothing checks that the asserted code
-is valid in the target language. A test opts in to that check with the
-``check_printed_code`` decorator::
+Code printer tests only compare strings. A test opts in to checking the
+code with a decorator::
 
     from sympy.testing.check_printed_code import check_printed_code
 
@@ -12,36 +10,18 @@ is valid in the target language. A test opts in to that check with the
         x, y = symbols('x y', real=True)
         assert rust_code(sign(x + y)) == "..."
 
-While a decorated test runs, every snippet printed by the printers in
-``TARGETS`` is recorded. When the test returns:
+The code is only compiled if SYMPY_CHECK_PRINTED_CODE is set, as in CI::
 
-1. Each snippet must be fully declared by the test, and the test fails if one
-   is not. This needs no compiler, so it is done in every test run. The types
-   come only from what the test declares, nothing is guessed:
+    SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
-   - A symbol with ``integer=True`` is an ``int`` (``i32`` in Rust), and a
-     symbol with ``real=True`` (and not integer) is a ``double`` (``f64``).
-   - A symbol used as a boolean (an argument of ``And``, ``Or``, ``Not``, ...
-     or a ``Piecewise`` condition) is a ``bool``.
-   - Any other symbol must be declared with ``real=True`` or ``integer=True``.
-   - Snippets that need declarations that cannot be made this way (arrays,
-     matrices, codegen AST nodes, ``user_functions``, ``dereference`` and other
-     non-default settings) cannot be checked, so a test that prints them
-     must not use the decorator.
+In every run, a decorated test fails if a symbol in its printed code has no
+type: integer=True gives an int, real=True a double, and a symbol used in
+And, Or, Not or a Piecewise condition a bool. It also fails if it prints no
+C, C++ or Rust code, or code that can't be checked yet (arrays, matrices,
+most non-default printer settings).
 
-2. If the environment variable ``SYMPY_CHECK_PRINTED_CODE`` is set, each
-   snippet is wrapped in a function and compiled (``gcc -fsyntax-only``,
-   ``g++ -fsyntax-only``, ``rustc --emit=metadata``), and the test fails if
-   one does not compile. CI does this for the tests that use the decorator::
-
-       SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
-
-A decorated test must print at least one C, C++ or Rust snippet.
-
-In a Hypothesis test, put the decorator below ``@given``, so that each
-example is checked and Hypothesis shrinks a failing one, and use
-``@settings(deadline=None)``, since compiling takes longer than the
-default deadline. See ``sympy/printing/tests/test_printed_code_hypothesis.py``.
+In a Hypothesis test, put the decorator below @given and use
+@settings(deadline=None).
 """
 from __future__ import annotations
 
@@ -50,10 +30,11 @@ import os
 import shutil
 import subprocess
 import tempfile
+from typing import NamedTuple
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
-from sympy.core.symbol import Dummy, Symbol
+from sympy.core.symbol import Symbol
 from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
@@ -63,10 +44,11 @@ from sympy.printing.codeprinter import CodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
 
-# The targets: one per printer class, each with the compiler command (run
-# with the source file appended), the code put before the snippet's function,
-# and the names of the int, real and bool types. Only the printer classes
-# themselves are checked, not subclasses.
+class Target(NamedTuple):
+    command: list[str]
+    header: str
+    types: dict[str, str]
+
 
 C_HEADER = """\
 #define _XOPEN_SOURCE 700
@@ -87,16 +69,16 @@ C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 TARGETS = {
-    'C89CodePrinter': (['gcc', '-std=c89', *C_FLAGS], C_HEADER,
-                       {'int': 'int', 'real': 'double', 'bool': 'int'}),
-    'C99CodePrinter': (['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPES),
-    'C11CodePrinter': (['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPES),
-    'CXX98CodePrinter': (['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
-    'CXX11CodePrinter': (['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
-    'CXX17CodePrinter': (['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
-    'RustCodePrinter': (['rustc', '--edition=2021', '--crate-type=lib',
-                         '--emit=metadata', '--error-format=short'], RUST_HEADER,
-                        {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
+    'C89CodePrinter': Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
+                             {'int': 'int', 'real': 'double', 'bool': 'int'}),
+    'C99CodePrinter': Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPES),
+    'C11CodePrinter': Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPES),
+    'CXX98CodePrinter': Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPES),
+    'CXX11CodePrinter': Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPES),
+    'CXX17CodePrinter': Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPES),
+    'RustCodePrinter': Target(['rustc', '--edition=2021', '--crate-type=lib',
+                               '--emit=metadata', '--error-format=short'],
+                              RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
 }
 PRINTER_MODULES = ('sympy.printing.c', 'sympy.printing.cxx', 'sympy.printing.rust')
 
@@ -105,12 +87,16 @@ HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
                      'strict', 'error_on_reserved', 'reserved_word_suffix', 'inline'}
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
 LOGIC = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
-# C printer settings that __init__ removes from the settings and stores here
+# Settings that the C printers store as attributes, not in _settings
 C_TYPE_TABLES = ('type_aliases', 'type_mappings', 'type_headers', 'type_macros',
                  'type_func_suffixes', 'type_literal_suffixes',
                  'type_math_macro_suffixes')
 
 ENVIRONMENT_VARIABLE = 'SYMPY_CHECK_PRINTED_CODE'
+
+
+def compiling():
+    return os.environ.get(ENVIRONMENT_VARIABLE, '') not in ('', '0')
 
 
 class PrintedCodeError(AssertionError):
@@ -128,13 +114,11 @@ def check_printed_code(test_func):
         snippets = []
         original = CodePrinter.doprint
 
-        # Every C, C++ and Rust printer inherits doprint from CodePrinter and
-        # no printer calls it recursively, so wrapping it here sees each
-        # snippet the test prints exactly once. A passing test asserts the
-        # string that doprint returned, so checking that string checks the
-        # test.
+        # Every C, C++ and Rust printer inherits doprint and none calls it
+        # recursively, so this sees each snippet once
         def doprint(self, expr, assign_to=None):
             code = original(self, expr, assign_to)
+            # The classes in TARGETS, not subclasses defined by tests
             if (type(self).__name__ in TARGETS
                     and type(self).__module__ in PRINTER_MODULES
                     and isinstance(code, str)):
@@ -146,19 +130,18 @@ def check_printed_code(test_func):
             result = test_func(*args, **kwargs)
         finally:
             CodePrinter.doprint = original  # type: ignore[method-assign]
-        compile = compile_snippet if os.environ.get(ENVIRONMENT_VARIABLE) else None
+        compile = compile_snippet if compiling() else None
         check(snippets, compile)
         return result
     return wrapper
 
 
 def describe(printer, expr, assign_to, code):
-    """Describe a printed snippet by what the test declared about it.
+    """The snippet as a dict of the printer's class name, the code, the
+    parameters and assigned variable as [name, kind] pairs, and the reason
+    it can't be checked, or None.
 
-    Returns a dict with the printer class name, the code, the parameters
-    and assigned variable as ``[printed name, kind]`` pairs (kind is
-    'int', 'real', 'bool' or None when undeclared) and, if the snippet
-    cannot be checked, the reason.
+    The kind is 'int', 'real', 'bool', or None if the test doesn't declare it.
     """
     record = {'printer': type(printer).__name__, 'code': code,
               'params': [], 'target': None, 'reason': unsupported(printer, expr, assign_to)}
@@ -212,8 +195,6 @@ def unsupported(printer, expr, assign_to):
         return 'printing a %s' % type(expr).__name__
     if expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement):
         return 'arrays'
-    if expr.atoms(Dummy):
-        return 'Dummy symbols'
     if not all(isinstance(s, Symbol) for s in expr.free_symbols):
         return 'free symbols that are not Symbols'
     if assign_to is not None and not isinstance(assign_to, (str, Symbol)):
@@ -248,7 +229,7 @@ def check(snippets, compile=None):
                 numbered = ['%4d | %s' % (n, line)
                             for n, line in enumerate(source(s).splitlines(), 1)]
                 errors.append('%swhich does not compile. %s:\n%s\nwrapped source:\n%s' % (
-                    about, ' '.join(TARGETS[s['printer']][0]),
+                    about, ' '.join(TARGETS[s['printer']].command),
                     '\n'.join(indent(error.splitlines(), '  ')), '\n'.join(numbered)))
     if errors:
         raise PrintedCodeError('@check_printed_code:\n\n' + '\n\n'.join(errors))
@@ -295,7 +276,7 @@ def source(snippet):
 
 def compile_snippet(snippet):
     """Compile the snippet; return the compiler's error output, or None."""
-    command = TARGETS[snippet['printer']][0]
+    command = TARGETS[snippet['printer']].command
     if shutil.which(command[0]) is None:
         raise PrintedCodeError('%s is needed to check printed code (%s is set)'
                                % (command[0], ENVIRONMENT_VARIABLE))
