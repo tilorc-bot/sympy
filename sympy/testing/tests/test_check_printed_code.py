@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from contextlib import contextmanager
 
+import pytest
+
 from sympy.codegen.ast import float80, real
+from sympy.core.numbers import I
 from sympy.core.relational import Gt
 from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.trigonometric import sin
@@ -15,8 +19,8 @@ from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
                                               COMPILER_PROBLEMS, check_printed_code,
-                                              compiling_enabled, declarations, declare,
-                                              wrap_in_function)
+                                              compiler_problem, compiling_enabled,
+                                              declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -39,10 +43,17 @@ def test_declarations():
         {n: ('n', 'int'), x: ('x', 'real')}, ('x', 'real'))
     assert declarations(C99CodePrinter(), And(b, Gt(x, 0)), Symbol('c')) == (
         {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
-    raises(PrintedCodeError, lambda: declarations(C99CodePrinter(), x, 'z'))
+    assert declarations(C99CodePrinter(), x + n, 'z') == (
+        {n: ('n', 'int'), x: ('x', 'real')}, ('z', 'real'))
+    assert declarations(C99CodePrinter(), 2*n, 'z')[1] == ('z', 'int')
+    raises(PrintedCodeError, lambda: declarations(C99CodePrinter(), I*x, 'z'))
     m = Symbol('m', integer=True)
     assert declarations(RustCodePrinter(), ITE(Gt(n, 1), m, n), Symbol('r', integer=True)) == (
         {m: ('m', 'int'), n: ('n', 'int')}, ('r', 'int'))
+    nested = ITE(Gt(n, 0), ITE(Gt(n, 1), m, n), ITE(Gt(n, 2), n, m))
+    assert declarations(RustCodePrinter(), nested, Symbol('r', integer=True)) == (
+        {m: ('m', 'int'), n: ('n', 'int')}, ('r', 'int'))
+    raises(PrintedCodeError, lambda: declarations(RustCodePrinter(), nested, 'r'))
     assert declarations(RustCodePrinter(), ITE(b, b, Gt(x, 0)), 'c') == (
         {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
 
@@ -62,7 +73,8 @@ def test_check_code():
     assert _problem(C99CodePrinter(), x, 'x') is None
     assert _problem(C99CodePrinter(), 5) is None
     assert _problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
-    assert _problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
+    assert _problem(C99CodePrinter(), x, 'z') is None
+    assert _problem(C99CodePrinter(), I*x, 'z').startswith('The type of z is unknown')
     assert 'since it uses arrays' in _problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
     assert 'since it uses arrays' in _problem(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
     assert "since it's a list" in _problem(C99CodePrinter(), [x, x])
@@ -82,6 +94,7 @@ def test_wrap_in_function():
                              '        b && x > 0.0\n    };\n}\n')
 
 
+@pytest.mark.thread_unsafe(reason='runs tests that replace CodePrinter.doprint')
 def test_check_printed_code():
     doprint = CodePrinter.doprint
 
@@ -95,6 +108,7 @@ def test_check_printed_code():
         assert SubclassPrinter().doprint(z) == 'z'  # not checked
     test_declared()
     assert test_declared.__name__ == 'test_declared'
+    assert [mark.name for mark in test_declared.pytestmark] == ['thread_unsafe']
 
     @check_printed_code
     def test_undeclared():
@@ -124,17 +138,34 @@ def test_check_printed_code():
     assert CodePrinter.doprint is doprint
 
 
+@pytest.mark.thread_unsafe(reason='changes PATH and SYMPY_CHECK_PRINTED_CODE')
 def test_compiling_enabled():
+    with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
+        assert not compiling_enabled(C99CodePrinter)
     COMPILER_PROBLEMS.clear()
     try:
         with _environment('PATH', ''):
-            with _environment('SYMPY_STRICT_COMPILER_CHECKS', '0'):
+            with _environment('SYMPY_CHECK_PRINTED_CODE', ''):
                 assert not compiling_enabled(C99CodePrinter)
-            with _environment('SYMPY_STRICT_COMPILER_CHECKS', '1'):
+            with _environment('SYMPY_CHECK_PRINTED_CODE', '1'):
                 e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
                 assert str(e.value) == 'gcc is needed to check printed code, but it is not found'
     finally:
         COMPILER_PROBLEMS.clear()
+
+
+@pytest.mark.thread_unsafe(reason='changes PATH')
+def test_compiler_problem_cannot_run():
+    if os.name == 'nt':
+        skip('needs a shebang line')
+    with tempfile.TemporaryDirectory() as directory:
+        gcc = os.path.join(directory, 'gcc')
+        with open(gcc, 'w') as file:
+            file.write('#!/nonexistent/interpreter\n')
+        os.chmod(gcc, 0o755)
+        with _environment('PATH', directory):
+            assert "gcc is needed to check printed code, but it can't be run" in (
+                compiler_problem(C99CodePrinter))
 
 
 @contextmanager
