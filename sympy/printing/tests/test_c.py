@@ -12,8 +12,9 @@ from sympy.functions import (
 from sympy.sets import Range
 from sympy.logic import ITE, Implies, Equivalent
 from sympy.codegen import For, aug_assign, Assignment
-from sympy.testing.check_printed_code import check_printed_code
-from sympy.testing.pytest import raises, XFAIL
+from sympy.testing.check_printed_code import (check_printed_code, compiled_function,
+                                              compiling_enabled)
+from sympy.testing.pytest import raises, skip, XFAIL
 from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.c import C89CodePrinter, C99CodePrinter, get_math_macros
 from sympy.codegen.ast import (
@@ -175,6 +176,24 @@ def test_ccode_functions2():
     assert ccode(Mod(-n, p2)) == '(-n) % p2'
     assert ccode(fibonacci(n)) == '((1.0/5.0)*pow(2, -n)*sqrt(5)*(-pow(1 - sqrt(5), n) + pow(1 + sqrt(5), n)))'
     assert ccode(lucas(n)) == '(pow(2, -n)*(pow(1 - sqrt(5), n) + pow(1 + sqrt(5), n)))'
+
+
+@XFAIL
+def test_ccode_Mod_values():
+    # fmod(r, s) has the sign of r, but Mod(r, s) has the sign of s
+    if not compiling_enabled(C99CodePrinter):
+        skip("gcc isn't found or doesn't work")
+    r, s = symbols('r s', real=True)
+    assert compiled_function(C99CodePrinter(), [r, s], Mod(r, s))(-1.0, 2.0) == 1.0
+
+
+@XFAIL
+def test_ccode_integer_division_values():
+    # i/j is integer division in C
+    if not compiling_enabled(C99CodePrinter):
+        skip("gcc isn't found or doesn't work")
+    i, j = symbols('i j', integer=True)
+    assert compiled_function(C99CodePrinter(), [i, j], i/j)(1, 2) == 0.5
 
 
 def test_ccode_user_functions():

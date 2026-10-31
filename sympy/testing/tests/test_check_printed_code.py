@@ -10,6 +10,7 @@ from sympy.codegen.ast import float80, real
 from sympy.core.numbers import I
 from sympy.core.relational import Gt
 from sympy.core.symbol import Symbol, symbols
+from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import And, ITE
 from sympy.matrices.expressions.matexpr import MatrixSymbol
@@ -18,8 +19,8 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              check_printed_code, compiler_problem,
-                                              compiling_enabled,
+                                              check_printed_code, compiled_function,
+                                              compiler_problem, compiling_enabled,
                                               declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
@@ -207,3 +208,17 @@ def test_check_compiles_rust():
     e = raises(PrintedCodeError, lambda: _wrap_and_compile(RustCodePrinter, 'x + 42'))
     assert str(e.value).startswith("This doesn't compile.")
     _wrap_and_compile(RustCodePrinter, 'x + 42.0')
+
+
+def test_compiled_function():
+    raises(ValueError, lambda: compiled_function(C99CodePrinter(), [x], x - n))
+    raises(ValueError, lambda: compiled_function(C99CodePrinter(), [b, x],
+                                                 Piecewise((x, b), (0, True))))
+    if compiling_enabled(C99CodePrinter):
+        assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
+    if compiling_enabled(RustCodePrinter):
+        assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
+        assert compiled_function(RustCodePrinter(), [x], Gt(x, 0))(2.5) == 1.0
+        printer = RustCodePrinter({'user_functions': {'sin': 'no_such_function'}})
+        e = raises(PrintedCodeError, lambda: compiled_function(printer, [x], sin(x)))
+        assert str(e.value).startswith("This doesn't compile.")
