@@ -23,7 +23,7 @@ from sympy.testing.check_printed_code import compile_function, compiling_enabled
 from sympy.testing.pytest import XFAIL, skip
 
 
-def random_expressions():
+def _random_expressions():
     """A strategy for expressions in real x, y and integer i, j, such as
     Max(i, y) or sin(x)**2 + floor(j/2)."""
     x, y = symbols('x y', real=True)
@@ -50,7 +50,7 @@ INTEGERS = st.integers(-10, 10)
 REALS = st.one_of(st.just(0.0), st.floats(-10, -1e-3), st.floats(1e-3, 10))
 
 
-def check_values(printer_name, code, expr, data):
+def _check_values(printer_name, code, expr, data):
     """Compile code, which the printer printed for expr, and check that it
     computes SymPy's value of expr for 10 values of its symbols from data."""
     symbols = sorted(expr.free_symbols, key=str)
@@ -58,22 +58,22 @@ def check_values(printer_name, code, expr, data):
     function = compile_function(printer_name, code, tuple(zip(map(str, symbols), types)))
     for _ in range(10):
         values = [data.draw(INTEGERS if type_name == 'int' else REALS) for type_name in types]
-        expected = sympy_value(expr, symbols, values)
-        nearby = [sympy_value(expr, symbols, [value*(1 + nudge) for value in values])
+        expected = _sympy_value(expr, symbols, values)
+        nearby = [_sympy_value(expr, symbols, [value*(1 + nudge) for value in values])
                   for nudge in (1e-12, -1e-12)]
         # Not where SymPy's value isn't a real number, where the code could
         # crash (e.g. dividing an integer by 0), or next to a jump (e.g. of
         # floor or Mod), where rounding can give the value on either side
-        if expected is None or not all(value is not None and close(value, expected)
+        if expected is None or not all(value is not None and _close(value, expected)
                                        for value in nearby):
             continue
         value = function(*values)
-        assert close(value, expected), (
+        assert _close(value, expected), (
             '%s printed %s, which gives %r for %s, but SymPy gives %r'
             % (printer_name, code, value, dict(zip(symbols, values)), expected))
 
 
-def sympy_value(expr, symbols, values):
+def _sympy_value(expr, symbols, values):
     """SymPy's value of expr for the values of its symbols, or None if it
     isn't a real number."""
     try:
@@ -87,7 +87,7 @@ def sympy_value(expr, symbols, values):
     return float(value)
 
 
-def close(value, expected):
+def _close(value, expected):
     return math.isclose(value, expected, rel_tol=1e-6, abs_tol=1e-6)
 
 
@@ -97,26 +97,26 @@ def close(value, expected):
 
 @XFAIL  # ccode(Mod(x, y)) prints fmod(x, y), which has the sign of x, not y
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions(), st.data())
+@given(_random_expressions(), st.data())
 def test_ccode(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    check_values('C99CodePrinter', ccode(expr), expr, data)
+    _check_values('C99CodePrinter', ccode(expr), expr, data)
 
 
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions(), st.data())
+@given(_random_expressions(), st.data())
 def test_cxxcode(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    check_values('CXX11CodePrinter', cxxcode(expr), expr, data)
+    _check_values('CXX11CodePrinter', cxxcode(expr), expr, data)
 
 
 @XFAIL  # rust_code(i**2) calls powi on an i32
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions(), st.data())
+@given(_random_expressions(), st.data())
 def test_rust_code(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    check_values('RustCodePrinter', rust_code(expr), expr, data)
+    _check_values('RustCodePrinter', rust_code(expr), expr, data)
