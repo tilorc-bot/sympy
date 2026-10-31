@@ -41,8 +41,10 @@ from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
                                  Nor, Not, Or, Xnor, Xor)
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
-from sympy.printing.c import C89CodePrinter
+from sympy.printing.c import C11CodePrinter, C89CodePrinter, C99CodePrinter
 from sympy.printing.codeprinter import CodePrinter
+from sympy.printing.cxx import CXX11CodePrinter, CXX17CodePrinter, CXX98CodePrinter
+from sympy.printing.rust import RustCodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
 # The printed name of a variable and its type, 'int', 'real' or 'bool',
@@ -75,18 +77,17 @@ C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 TARGETS = {
-    'C89CodePrinter': Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
-                             {'int': 'int', 'real': 'double', 'bool': 'int'}),
-    'C99CodePrinter': Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
-    'C11CodePrinter': Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
-    'CXX98CodePrinter': Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    'CXX11CodePrinter': Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    'CXX17CodePrinter': Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    'RustCodePrinter': Target(['rustc', '--edition=2021', '--crate-type=lib',
-                               '--emit=metadata', '--error-format=short'],
-                              RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
+    C89CodePrinter: Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
+                           {'int': 'int', 'real': 'double', 'bool': 'int'}),
+    C99CodePrinter: Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
+    C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
+    CXX98CodePrinter: Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPE_NAMES),
+    CXX11CodePrinter: Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPE_NAMES),
+    CXX17CodePrinter: Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPE_NAMES),
+    RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
+                             '--emit=metadata', '--error-format=short'],
+                            RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
 }
-PRINTER_MODULES = ('sympy.printing.c', 'sympy.printing.cxx', 'sympy.printing.rust')
 
 # Settings that change how the code is written, but not what it needs declared
 HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
@@ -152,17 +153,15 @@ def check_printed_code(test_func):
         # sees everything the test prints once
         def doprint(self, expr, assign_to=None):
             code = original_doprint(self, expr, assign_to)
-            printer_name = type(self).__name__
             # Only the classes in TARGETS, not subclasses defined by tests
-            if (printer_name in TARGETS and type(self).__module__ in PRINTER_MODULES
-                    and isinstance(code, str)
-                    and (printer_name, code, expr, assign_to) not in printed):
-                printed.add((printer_name, code, expr, assign_to))
+            if (type(self) in TARGETS and isinstance(code, str)
+                    and (type(self), code, expr, assign_to) not in printed):
+                printed.add((type(self), code, expr, assign_to))
                 try:
                     check_code(self, expr, assign_to, code)
                 except PrintedCodeError as problem:
                     problems.append('%s printed\n\n%s\n\n%s' % (
-                        printer_name, textwrap.indent(code, '    '), problem))
+                        type(self).__name__, textwrap.indent(code, '    '), problem))
             return code
 
         CodePrinter.doprint = doprint  # type: ignore[method-assign]
@@ -226,9 +225,8 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
         if not name.isidentifier():
             raise unsupported("%s isn't a name" % name)
     if compiling_enabled():
-        printer_name = type(printer).__name__
-        check_compiles(printer_name, wrap_in_function(
-            printer_name, code, list(parameters.values()), assigned))
+        check_compiles(type(printer), wrap_in_function(
+            type(printer), code, list(parameters.values()), assigned))
 
 
 def declarations(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None
@@ -294,7 +292,7 @@ def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaratio
         "real=True or integer=True, e.g. Symbol(%r, real=True)." % (name, name, name), 72))
 
 
-def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration],
+def wrap_in_function(printer_class: type[CodePrinter], code: str, parameters: list[Declaration],
                      assigned: Declaration | None) -> str:
     """Return the source of a function that declares the parameters and the
     assigned variable and runs the code, so that it compiles if the code is
@@ -303,8 +301,9 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
     Examples
     ========
 
+    >>> from sympy.printing.c import C99CodePrinter
     >>> from sympy.testing.check_printed_code import wrap_in_function
-    >>> print(wrap_in_function('C99CodePrinter', 'y = fmod(x, 2);',
+    >>> print(wrap_in_function(C99CodePrinter, 'y = fmod(x, 2);',
     ...                        [('x', 'real')], ('y', 'real')))
     #define _XOPEN_SOURCE 700
     #include <math.h>
@@ -318,11 +317,11 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
     }
     <BLANKLINE>
     """
-    _, header, type_names = TARGETS[printer_name]
+    _, header, type_names = TARGETS[printer_class]
     parameters = [(name, type_names[type_name]) for name, type_name in parameters]
     if assigned is not None:
         assigned = (assigned[0], type_names[assigned[1]])
-    if printer_name == 'RustCodePrinter':
+    if printer_class is RustCodePrinter:
         function = wrap_in_rust_function(code, parameters, assigned)
     else:
         function = wrap_in_c_function(code, parameters, assigned)
@@ -403,11 +402,11 @@ def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
     return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
-def check_compiles(printer_name: str, source: str) -> None:
+def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
     """Compile source, such as wrap_in_function() returns, with the compiler
-    of the printer called printer_name, and raise PrintedCodeError with what
-    the compiler says if it doesn't compile."""
-    command = TARGETS[printer_name].command
+    for printer_class, and raise PrintedCodeError with what the compiler says
+    if it doesn't compile."""
+    command = TARGETS[printer_class].command
     if shutil.which(command[0]) is None:
         raise RuntimeError('%s is needed to check printed code, since '
                            'SYMPY_CHECK_PRINTED_CODE is set' % command[0])

@@ -9,7 +9,7 @@ from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import And
 from sympy.matrices.expressions.matexpr import MatrixSymbol
-from sympy.printing.c import C99CodePrinter, ccode
+from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
@@ -66,10 +66,10 @@ def test_check_code():
 
 
 def test_wrap_in_function():
-    assert wrap_in_function('C89CodePrinter', 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
+    assert wrap_in_function(C89CodePrinter, 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
         '#define _XOPEN_SOURCE 700\n#include <math.h>\n#include <stdlib.h>\n'
         '\nvoid f(double x)\n{\n    double y;\n    y = M_PI*x;\n}\n')
-    assert wrap_in_function('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
+    assert wrap_in_function(RustCodePrinter, 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
                   ).endswith('\npub fn f(b: bool, x: f64)\n{\n    let _ = {\n'
                              '        b && x > 0.0\n    };\n}\n')
 
@@ -77,10 +77,14 @@ def test_wrap_in_function():
 def test_check_printed_code():
     doprint = CodePrinter.doprint
 
+    class SubclassPrinter(C99CodePrinter):
+        pass
+
     @check_printed_code
     def test_declared():
         assert rust_code(sin(x) + n) == 'n as f64 + x.sin()'
         assert octave_code(z) == 'z'  # not checked
+        assert SubclassPrinter().doprint(z) == 'z'  # not checked
     test_declared()
     assert test_declared.__name__ == 'test_declared'
 
@@ -126,11 +130,11 @@ def test_check_compiles():
     # Compiling is slow, so only in the printed code CI job
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    def wrap_and_compile(printer_name, code):
-        check_compiles(printer_name, wrap_in_function(printer_name, code, [('x', 'real')], None))
-    e = raises(PrintedCodeError, lambda: wrap_and_compile('RustCodePrinter', 'x + 42'))
+    def wrap_and_compile(printer_class, code):
+        check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
+    e = raises(PrintedCodeError, lambda: wrap_and_compile(RustCodePrinter, 'x + 42'))
     assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)
-    wrap_and_compile('RustCodePrinter', 'x + 42.0')
-    e = raises(PrintedCodeError, lambda: wrap_and_compile('C99CodePrinter', 'x % x'))
+    wrap_and_compile(RustCodePrinter, 'x + 42.0')
+    e = raises(PrintedCodeError, lambda: wrap_and_compile(C99CodePrinter, 'x % x'))
     assert 'invalid operands' in str(e.value)
-    wrap_and_compile('C99CodePrinter', 'fmod(x, x)')
+    wrap_and_compile(C99CodePrinter, 'fmod(x, x)')
