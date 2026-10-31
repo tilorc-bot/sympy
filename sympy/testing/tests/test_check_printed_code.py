@@ -14,8 +14,9 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              check_printed_code, compiling_enabled,
-                                              declarations, declare, wrap_in_function)
+                                              COMPILER_PROBLEMS, check_printed_code,
+                                              compiling_enabled, declarations, declare,
+                                              wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -56,21 +57,20 @@ def _problem(printer, expr, assign_to=None):
 
 
 def test_check_code():
-    with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
-        assert _problem(C99CodePrinter(), sin(x) + n) is None
-        assert _problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
-        assert _problem(C99CodePrinter(), x, 'x') is None
-        assert _problem(C99CodePrinter(), 5) is None
-        assert _problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
-        assert _problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
-        assert 'since it uses arrays' in _problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
-        assert 'since it uses arrays' in _problem(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
-        assert "since it's a list" in _problem(C99CodePrinter(), [x, x])
-        assert 'setting user_functions' in _problem(
-            C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x)).replace('\n', ' ')
-        assert 'setting type_aliases' in _problem(
-            C99CodePrinter({'type_aliases': {real: float80}}), x).replace('\n', ' ')
-        assert 'setting human' in _problem(C99CodePrinter({'human': False}), z)
+    assert _problem(C99CodePrinter(), sin(x) + n) is None
+    assert _problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
+    assert _problem(C99CodePrinter(), x, 'x') is None
+    assert _problem(C99CodePrinter(), 5) is None
+    assert _problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
+    assert _problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
+    assert 'since it uses arrays' in _problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
+    assert 'since it uses arrays' in _problem(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+    assert "since it's a list" in _problem(C99CodePrinter(), [x, x])
+    assert 'setting user_functions' in _problem(
+        C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x)).replace('\n', ' ')
+    assert 'setting type_aliases' in _problem(
+        C99CodePrinter({'type_aliases': {real: float80}}), x).replace('\n', ' ')
+    assert 'setting human' in _problem(C99CodePrinter({'human': False}), z)
 
 
 def test_wrap_in_function():
@@ -125,14 +125,16 @@ def test_check_printed_code():
 
 
 def test_compiling_enabled():
-    with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
-        assert not compiling_enabled(C99CodePrinter)
-    with _environment('PATH', ''):
-        with _environment('SYMPY_CHECK_PRINTED_CODE', ''):
-            assert not compiling_enabled(C99CodePrinter)
-        with _environment('SYMPY_CHECK_PRINTED_CODE', '1'):
-            e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
-            assert str(e.value).startswith('gcc is needed')
+    COMPILER_PROBLEMS.clear()
+    try:
+        with _environment('PATH', ''):
+            with _environment('SYMPY_STRICT_COMPILER_CHECKS', '0'):
+                assert not compiling_enabled(C99CodePrinter)
+            with _environment('SYMPY_STRICT_COMPILER_CHECKS', '1'):
+                e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
+                assert str(e.value) == 'gcc is needed to check printed code, but it is not found'
+    finally:
+        COMPILER_PROBLEMS.clear()
 
 
 @contextmanager
@@ -150,7 +152,7 @@ def _environment(name, value):
 
 def test_check_compiles():
     if not (compiling_enabled(C99CodePrinter) and compiling_enabled(RustCodePrinter)):
-        skip("gcc or rustc isn't found or SYMPY_CHECK_PRINTED_CODE is 0")
+        skip("gcc or rustc isn't found or doesn't work")
     def wrap_and_compile(printer_class, code):
         check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
     e = raises(PrintedCodeError, lambda: wrap_and_compile(RustCodePrinter, 'x + 42'))

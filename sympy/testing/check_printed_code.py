@@ -10,11 +10,12 @@ code with a decorator::
         x, y = symbols('x y', real=True)
         assert rust_code(sign(x + y)) == "..."
 
-The code is compiled with gcc, g++ or rustc if it is found.
-SYMPY_CHECK_PRINTED_CODE=0 turns compiling off, and
-SYMPY_CHECK_PRINTED_CODE=1 makes a compiler that isn't found an error::
+The code is compiled with gcc, g++ or rustc if the compiler is found and
+works. With SYMPY_STRICT_COMPILER_CHECKS=1, as for has_c() in
+sympy.utilities._compilation, one that isn't found or doesn't work is an
+error::
 
-    SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
+    SYMPY_STRICT_COMPILER_CHECKS=1 pytest sympy/printing/tests/test_rust.py
 
 In every run, a decorated test fails if a symbol in its printed code has no
 type: integer=True gives an int, real=True a double, and a symbol used in
@@ -90,22 +91,36 @@ HARMLESS_SETTINGS = {'order', 'full_prec', 'precision', 'contract',
 C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('type_')]
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
 LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent)
+# What compiler_problem() returns for each printer class it has been called for
+COMPILER_PROBLEMS: dict[type[CodePrinter], str | None] = {}
 
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
-    """Return whether the code that printer_class prints is compiled: if its
-    compiler is found, unless SYMPY_CHECK_PRINTED_CODE is 0. Raise
-    RuntimeError if it isn't found and SYMPY_CHECK_PRINTED_CODE is set to
-    something else."""
-    setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
-    if setting == '0':
-        return False
-    compiler = TARGETS[printer_class].command[0]
-    if shutil.which(compiler) is not None:
+    """Return whether the code that printer_class prints is compiled, which it
+    is if its compiler is found and compiles a trivial function. If
+    SYMPY_STRICT_COMPILER_CHECKS is 1, raise RuntimeError instead of returning
+    False."""
+    if printer_class not in COMPILER_PROBLEMS:
+        COMPILER_PROBLEMS[printer_class] = compiler_problem(printer_class)
+    problem = COMPILER_PROBLEMS[printer_class]
+    if problem is None:
         return True
-    if setting:
-        raise RuntimeError('%s is needed to check printed code, since '
-                           'SYMPY_CHECK_PRINTED_CODE is set' % compiler)
+    if os.environ.get('SYMPY_STRICT_COMPILER_CHECKS', '0') == '1':
+        raise RuntimeError(problem)
     return False
+
+
+def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
+    """Return why the compiler for printer_class can't be used, or None if it
+    can."""
+    compiler = TARGETS[printer_class].command[0]
+    if shutil.which(compiler) is None:
+        return '%s is needed to check printed code, but it is not found' % compiler
+    try:
+        check_compiles(printer_class, wrap_in_function(printer_class, '0', [], None))
+    except PrintedCodeError as error:
+        return ('%s is needed to check printed code, but it fails on a trivial '
+                'function:\n\n%s' % (compiler, error))
+    return None
 
 
 class PrintedCodeError(AssertionError):
