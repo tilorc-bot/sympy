@@ -20,8 +20,8 @@ And, Or, Not or a Piecewise condition a bool. It also fails if it prints no
 C, C++ or Rust code, or code that can't be checked yet (arrays, matrices,
 most non-default printer settings).
 
-In a Hypothesis test, put the decorator below @given and use
-@settings(deadline=None).
+In a Hypothesis test, put the decorator below @given, so that Hypothesis
+shrinks an expression whose code is wrong.
 """
 from __future__ import annotations
 
@@ -109,10 +109,20 @@ class PrintedCodeError(AssertionError):
 def check_printed_code(test_func):
     """Make the test fail if C, C++ or Rust code that it prints is wrong.
 
+    Explanation
+    ===========
+
     The test checks that a printer prints the code it expects. This checks
     that the code is actually correct, which for now means that it compiles.
-    For example, this test fails, since x has no type, so its code can't be
-    compiled:
+
+    While the test runs, CodePrinter.doprint is replaced by a wrapper that
+    checks what these printers print (see check_code()). The problems are
+    raised when the test returns.
+
+    Examples
+    ========
+
+    This test fails, since x has no type, so its code can't be compiled:
 
     >>> from sympy import Symbol, sin
     >>> from sympy.printing.c import ccode
@@ -132,10 +142,6 @@ def check_printed_code(test_func):
 
     With Symbol('x', real=True), it passes. If SYMPY_CHECK_PRINTED_CODE is
     set, it then also compiles sin(x), and fails if gcc can't compile it.
-
-    While the test runs, CodePrinter.doprint is replaced by a wrapper that
-    checks what these printers print (see check_code()). The problems are
-    raised when the test returns.
     """
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
@@ -182,6 +188,9 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
     check_compiles()). Before that, and otherwise only, it checks that the code
     can be compiled: that nothing in it is unsupported, such as an array, and
     that each of its symbols has a type (see declare()).
+
+    Examples
+    ========
 
     >>> from sympy import MatrixSymbol
     >>> from sympy.printing.c import C99CodePrinter
@@ -240,6 +249,9 @@ def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaratio
     """Return the name that printer prints for symbol and its type, 'bool',
     'int' or 'real', or raise PrintedCodeError if its type is unknown.
 
+    Examples
+    ========
+
     >>> from sympy import Symbol
     >>> from sympy.printing.c import C99CodePrinter
     >>> from sympy.testing.check_printed_code import declare
@@ -263,6 +275,9 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
     """Return the source of a function that declares the parameters and the
     assigned variable and runs the code, so that it compiles if the code is
     valid.
+
+    Examples
+    ========
 
     >>> from sympy.testing.check_printed_code import wrap_in_function
     >>> print(wrap_in_function('C99CodePrinter', 'y = fmod(x, 2);',

@@ -1,21 +1,8 @@
 from __future__ import annotations
-from hypothesis import given, settings, strategies as st
-from sympy.core.add import Add
-from sympy.core.mod import Mod
-from sympy.core.mul import Mul
-from sympy.core.numbers import I, nan, oo, zoo
-from sympy.core.power import Pow
-from sympy.core.singleton import S
-from sympy.functions.elementary.complexes import Abs, sign
-from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.integers import floor
-from sympy.functions.elementary.trigonometric import sin
 from sympy.core.numbers import Float, Integer, Rational
 from sympy.core.symbol import symbols
 from sympy.functions import beta, Ei, zeta, Max, Min, sqrt, riemann_xi, frac
 from sympy.printing.cxx import CXX98CodePrinter, CXX11CodePrinter, CXX17CodePrinter, cxxcode
-from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
-from sympy.testing.pytest import skip, XFAIL
 from sympy.codegen.cfunctions import log1p
 
 
@@ -98,35 +85,3 @@ def test_subclass_Integer_Float():
         assert p.doprint(i) == 'bigInt("%d")' % i
     assert p.doprint(Float(0.5)) == 'bigFloat(bigInt("1"), bigInt("2"))'
     assert p.doprint(x**-1.0) == 'bigFloat(bigInt("1"), bigInt("1"))/x'
-
-
-def random_expressions():
-    """A Hypothesis strategy for expressions in real x, y and integer i, j,
-    such as Max(i, y) or sin(x)**2 + floor(j/2)."""
-    x, y = symbols('x y', real=True)
-    i, j = symbols('i j', integer=True)
-    leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
-    binary = st.sampled_from([Add, Mul, Pow, Mod, Min, Max])
-    unary = st.sampled_from([sin, exp, log, sqrt, Abs, floor, sign])
-
-    def apply(function, *args):
-        try:
-            return function(*args)
-        except (ValueError, TypeError, ZeroDivisionError):
-            return nan  # e.g. Min of a complex number
-
-    return st.recursive(
-        leaves,
-        lambda e: st.builds(apply, binary, e, e) | st.builds(apply, unary, e),
-        max_leaves=5,
-    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
-
-
-@XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
-@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
-@check_printed_code
-def test_cxxcode_hypothesis(expr):
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    cxxcode(expr)

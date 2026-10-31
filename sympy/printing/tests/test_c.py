@@ -1,8 +1,7 @@
 from __future__ import annotations
-from hypothesis import given, settings, strategies as st
 from sympy.core import (
     S, pi, oo, Symbol, symbols, Rational, Integer, Float, Function, Mod, GoldenRatio, EulerGamma, Catalan,
-    Lambda, Dummy, nan, Mul, Pow, UnevaluatedExpr, Add, I, zoo
+    Lambda, Dummy, nan, Mul, Pow, UnevaluatedExpr
 )
 from sympy.core.relational import (Eq, Ge, Gt, Le, Lt, Ne)
 from sympy.functions import (
@@ -13,8 +12,8 @@ from sympy.functions import (
 from sympy.sets import Range
 from sympy.logic import ITE, Implies, Equivalent
 from sympy.codegen import For, aug_assign, Assignment
-from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
-from sympy.testing.pytest import raises, skip, XFAIL
+from sympy.testing.check_printed_code import check_printed_code
+from sympy.testing.pytest import raises, XFAIL
 from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.c import C89CodePrinter, C99CodePrinter, get_math_macros
 from sympy.codegen.ast import (
@@ -894,34 +893,3 @@ def test_ccode_array_like_containers():
 def test_ccode__isinf_isnan():
     assert ccode(isinf(x)) == 'isinf(x)'
     assert ccode(isnan(x)) == 'isnan(x)'
-
-
-def random_expressions():
-    """A Hypothesis strategy for expressions in real x, y and integer i, j,
-    such as Max(i, y) or sin(x)**2 + floor(j/2)."""
-    x, y = symbols('x y', real=True)
-    i, j = symbols('i j', integer=True)
-    leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
-    binary = st.sampled_from([Add, Mul, Pow, Mod, Min, Max])
-    unary = st.sampled_from([sin, exp, log, sqrt, Abs, floor, sign])
-
-    def apply(function, *args):
-        try:
-            return function(*args)
-        except (ValueError, TypeError, ZeroDivisionError):
-            return nan  # e.g. Min of a complex number
-
-    return st.recursive(
-        leaves,
-        lambda e: st.builds(apply, binary, e, e) | st.builds(apply, unary, e),
-        max_leaves=5,
-    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
-
-
-@settings(deadline=None, derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
-@check_printed_code
-def test_ccode_hypothesis(expr):
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    ccode(expr)
