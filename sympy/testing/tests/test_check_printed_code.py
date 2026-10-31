@@ -7,7 +7,7 @@ from sympy.codegen.ast import float80, real
 from sympy.core.relational import Gt
 from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.trigonometric import sin
-from sympy.logic.boolalg import And
+from sympy.logic.boolalg import And, ITE
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
@@ -39,6 +39,11 @@ def test_declarations():
     assert declarations(C99CodePrinter(), And(b, Gt(x, 0)), Symbol('c')) == (
         {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
     raises(PrintedCodeError, lambda: declarations(C99CodePrinter(), x, 'z'))
+    m = Symbol('m', integer=True)
+    assert declarations(RustCodePrinter(), ITE(Gt(n, 1), m, n), Symbol('r', integer=True)) == (
+        {m: ('m', 'int'), n: ('n', 'int')}, ('r', 'int'))
+    assert declarations(RustCodePrinter(), ITE(b, b, Gt(x, 0)), 'c') == (
+        {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
 
 
 def _problem(printer, expr, assign_to=None):
@@ -55,14 +60,17 @@ def test_check_code():
         assert _problem(C99CodePrinter(), sin(x) + n) is None
         assert _problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
         assert _problem(C99CodePrinter(), x, 'x') is None
+        assert _problem(C99CodePrinter(), 5) is None
         assert _problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
         assert _problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
         assert 'since it uses arrays' in _problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
         assert 'since it uses arrays' in _problem(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+        assert "since it's a list" in _problem(C99CodePrinter(), [x, x])
         assert 'setting user_functions' in _problem(
             C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x)).replace('\n', ' ')
         assert 'setting type_aliases' in _problem(
             C99CodePrinter({'type_aliases': {real: float80}}), x).replace('\n', ' ')
+        assert 'setting human' in _problem(C99CodePrinter({'human': False}), z)
 
 
 def test_wrap_in_function():
@@ -103,6 +111,16 @@ def test_check_printed_code():
     def test_prints_nothing():
         pass
     raises(PrintedCodeError, test_prints_nothing)
+
+    @check_printed_code
+    def test_unchecked():
+        assert ccode(sin(x)) == 'sin(x)'
+        assert ccode(sin(x), user_functions={'sin': 'sin'}) == 'sin(x)'
+        assert ccode(z, human=False) == (set(), set(), 'z')
+        ccode([x, x])
+    e = raises(PrintedCodeError, test_unchecked)
+    assert [problem in str(e.value).replace('\n', ' ') for problem in (
+        'setting user_functions', 'setting human', "since it's a list")] == [True]*3
     assert CodePrinter.doprint is doprint
 
 
