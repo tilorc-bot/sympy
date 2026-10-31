@@ -18,8 +18,8 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              COMPILER_PROBLEMS, check_printed_code,
-                                              compiler_problem, compiling_enabled,
+                                              check_printed_code, compiler_problem,
+                                              compiling_enabled,
                                               declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
@@ -143,7 +143,7 @@ def test_check_printed_code():
 def test_compiling_enabled():
     with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
         assert not compiling_enabled(C99CodePrinter)
-    COMPILER_PROBLEMS.clear()
+    compiler_problem.cache_clear()
     try:
         with _environment('PATH', ''):
             with _environment('SYMPY_CHECK_PRINTED_CODE', ''):
@@ -154,7 +154,7 @@ def test_compiling_enabled():
                 e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
                 assert str(e.value) == 'gcc is needed to check printed code, but it is not found'
     finally:
-        COMPILER_PROBLEMS.clear()
+        compiler_problem.cache_clear()
 
 
 @pytest.mark.thread_unsafe(reason='changes PATH')
@@ -166,9 +166,13 @@ def test_compiler_problem_cannot_run():
         with open(gcc, 'w') as file:
             file.write('#!/nonexistent/interpreter\n')
         os.chmod(gcc, 0o755)
-        with _environment('PATH', directory):
-            assert "gcc is needed to check printed code, but it can't be run" in (
-                compiler_problem(C99CodePrinter))
+        compiler_problem.cache_clear()
+        try:
+            with _environment('PATH', directory):
+                assert "gcc is needed to check printed code, but it can't be run" in (
+                    compiler_problem(C99CodePrinter))
+        finally:
+            compiler_problem.cache_clear()
 
 
 @contextmanager

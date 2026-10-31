@@ -100,8 +100,6 @@ HARMLESS_SETTINGS = {'order', 'full_prec', 'precision', 'contract',
 C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('type_')]
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
 LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent)
-# What compiler_problem() returns for each printer class it has been called for
-COMPILER_PROBLEMS: dict[type[CodePrinter], str | None] = {}
 
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     """Return whether the code that printer_class prints is compiled, which it
@@ -111,9 +109,8 @@ def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
     if setting == '0':
         return False
-    if printer_class not in COMPILER_PROBLEMS:
-        COMPILER_PROBLEMS[printer_class] = compiler_problem(printer_class)
-    problem = COMPILER_PROBLEMS[printer_class]
+    # mypy doesn't consider printer classes hashable, since Printer defines __hash__
+    problem = compiler_problem(printer_class)  # type: ignore[arg-type]
     if problem is None:
         return True
     if setting == '1':
@@ -121,6 +118,7 @@ def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     return False
 
 
+@functools.cache
 def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
     """Return why the compiler for printer_class can't be used, or None if it
     can."""
