@@ -295,36 +295,88 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
     <BLANKLINE>
     """
     _, header, type_names = TARGETS[printer_name]
-    rust = printer_name == 'RustCodePrinter'
     parameters = [(name, type_names[type_name]) for name, type_name in parameters]
+    if assigned is not None:
+        assigned = (assigned[0], type_names[assigned[1]])
+    if printer_name == 'RustCodePrinter':
+        function = wrap_in_rust_function(code, parameters, assigned)
+    else:
+        function = wrap_in_c_function(code, parameters, assigned)
+    return '%s\n%s' % (header, function)
+
+
+def wrap_in_c_function(code: str, parameters: list[tuple[str, str]],
+                       assigned: tuple[str, str] | None) -> str:
+    """Return a C or C++ function that declares the parameters and the
+    assigned variable, given with C type names, and runs the code.
+
+    Examples
+    ========
+
+    An expression can follow declarations of number constants:
+
+    >>> from sympy.testing.check_printed_code import wrap_in_c_function
+    >>> print(wrap_in_c_function(
+    ...     'const double GoldenRatio = 1.6180339887498948;\\nGoldenRatio*x',
+    ...     [('x', 'double')], None))
+    void f(double x)
+    {
+        const double GoldenRatio = 1.6180339887498948;
+        (void)(
+            GoldenRatio*x
+        );
+    }
+    <BLANKLINE>
+    """
     lines = code.splitlines()
     if assigned is None:
-        if rust:
-            # A block, since an expression can follow declarations of
-            # number constants such as GoldenRatio
-            body = ['let _ = {', *['    ' + line for line in lines], '};']
-        else:
-            declarations_end = 0
-            while declarations_end < len(lines) and (
-                    lines[declarations_end].endswith(';')
-                    or lines[declarations_end].startswith(('//', '/*'))):
-                declarations_end += 1
-            body = lines[:declarations_end] + [
-                '(void)(', *['    ' + line for line in lines[declarations_end:]], ');']
+        declarations_end = 0
+        while declarations_end < len(lines) and (
+                lines[declarations_end].endswith(';')
+                or lines[declarations_end].startswith(('//', '/*'))):
+            declarations_end += 1
+        body = lines[:declarations_end] + [
+            '(void)(', *['    ' + line for line in lines[declarations_end:]], ');']
     elif assigned[0] in dict(parameters):
         body = lines
-    elif rust:
-        body = ['let mut %s: %s;' % (assigned[0], type_names[assigned[1]]), *lines]
     else:
-        body = ['%s %s;' % (type_names[assigned[1]], assigned[0]), *lines]
-    if rust:
-        signature = 'pub fn f(%s)' % ', '.join(
-            '%s%s: %s' % ('mut ' if assigned and name == assigned[0] else '', name, type_name)
-            for name, type_name in parameters)
+        body = ['%s %s;' % (assigned[1], assigned[0]), *lines]
+    signature = 'void f(%s)' % (', '.join(
+        '%s %s' % (type_name, name) for name, type_name in parameters) or 'void')
+    return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
+
+
+def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
+                          assigned: tuple[str, str] | None) -> str:
+    """Return a Rust function that declares the parameters and the assigned
+    variable, given with Rust type names, and runs the code.
+
+    Examples
+    ========
+
+    A parameter that the code assigns to is declared mut:
+
+    >>> from sympy.testing.check_printed_code import wrap_in_rust_function
+    >>> print(wrap_in_rust_function('x = x + 1.0;', [('x', 'f64')], ('x', 'f64')))
+    pub fn f(mut x: f64)
+    {
+        x = x + 1.0;
+    }
+    <BLANKLINE>
+    """
+    lines = code.splitlines()
+    if assigned is None:
+        # A block, since an expression can follow declarations of
+        # number constants such as GoldenRatio
+        body = ['let _ = {', *['    ' + line for line in lines], '};']
+    elif assigned[0] in dict(parameters):
+        body = lines
     else:
-        signature = 'void f(%s)' % (', '.join(
-            '%s %s' % (type_name, name) for name, type_name in parameters) or 'void')
-    return '%s\n%s\n{\n%s\n}\n' % (header, signature, textwrap.indent('\n'.join(body), '    '))
+        body = ['let mut %s: %s;' % assigned, *lines]
+    signature = 'pub fn f(%s)' % ', '.join(
+        '%s%s: %s' % ('mut ' if assigned and name == assigned[0] else '', name, type_name)
+        for name, type_name in parameters)
+    return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
 def check_compiles(printer_name: str, code: str, parameters: list[Declaration],
