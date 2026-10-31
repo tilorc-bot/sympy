@@ -77,7 +77,7 @@ class Target(NamedTuple):
     header: str
     type_names: dict[str, str]
     # wrap_in_c_function() or wrap_in_rust_function()
-    wrap: Callable[..., str]
+    wrap: Callable[[str, list[tuple[str, str]], tuple[str, str] | None, bool], str]
 
 
 C_HEADER = """\
@@ -135,9 +135,7 @@ def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
         return '%s is needed to check printed code, but it is not found' % compiler
     try:
         check_compiles(printer_class, wrap_in_function(printer_class, '0', [], None))
-        function = _compile_and_load(printer_class, '0', ())
-        if isinstance(function, str):
-            raise PrintedCodeError(function)
+        compiled_function(printer_class(), [], sympify(0))
     except OSError as error:
         return '%s is needed to check printed code, but it can\'t be run: %s' % (
             compiler, error)
@@ -500,22 +498,26 @@ def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
     returns its value as a float.
 
     The args must be the symbols of expr, each with integer=True or real=True.
-    A test that uses this should be skipped if compiling_enabled() is False.
+    The code is what printer.doprint() prints, as in codegen; rust_code()
+    rewrites some functions, such as Mod, before printing. A test that uses
+    this should be skipped if compiling_enabled() is False.
 
     Examples
     ========
 
-    >>> from sympy import Mod, Symbol
+    >>> from sympy import Symbol
     >>> from sympy.printing.c import C99CodePrinter
     >>> from sympy.testing.check_printed_code import compiled_function
     >>> x = Symbol('x', real=True)
-    >>> f = compiled_function(C99CodePrinter(), [x], Mod(x, 2))  # doctest: +SKIP
-    >>> f(5.5)  # doctest: +SKIP
-    1.5
+    >>> f = compiled_function(C99CodePrinter(), [x], x**2 + 1)  # doctest: +SKIP
+    >>> f(1.5)  # doctest: +SKIP
+    3.25
     """
     parameters, _ = declarations(printer, expr, None)
     if sorted(args, key=str) != list(parameters):
         raise ValueError('args must be the symbols of %s' % expr)
+    if any(type_name == 'bool' for _, type_name in parameters.values()):
+        raise ValueError('the symbols of %s must be integers or reals' % expr)
     function = _compile_and_load(type(printer), printer.doprint(expr),  # type: ignore[arg-type]
                                  tuple(parameters[arg] for arg in args))
     if isinstance(function, str):
@@ -538,8 +540,10 @@ def _compile_and_load(printer_class: type[CodePrinter], code: str,
     # Windows can't delete the library while it's loaded, so it's left there
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
         library = os.path.join(directory, 'code.so')
+        # rustc links the math functions itself
+        libraries = ['-lm'] if target.suffix == '.c' else []
         try:
-            run_compiler(command, target.suffix, source, directory, ('-o', library, '-lm'))
+            run_compiler(command, target.suffix, source, directory, ('-o', library, *libraries))
         except PrintedCodeError as error:
             return str(error)
         function = ctypes.CDLL(library).f

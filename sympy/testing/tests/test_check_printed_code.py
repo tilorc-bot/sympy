@@ -10,6 +10,7 @@ from sympy.codegen.ast import float80, real
 from sympy.core.numbers import I
 from sympy.core.relational import Gt
 from sympy.core.symbol import Symbol, symbols
+from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import And, ITE
 from sympy.matrices.expressions.matexpr import MatrixSymbol
@@ -17,8 +18,8 @@ from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              check_printed_code, compiled_function,
+from sympy.testing.check_printed_code import (PrintedCodeError, _compile_and_load, check_code,
+                                              check_compiles, check_printed_code, compiled_function,
                                               compiler_problem, compiling_enabled,
                                               declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
@@ -211,10 +212,13 @@ def test_check_compiles_rust():
 
 def test_compiled_function():
     raises(ValueError, lambda: compiled_function(C99CodePrinter(), [x], x - n))
+    raises(ValueError, lambda: compiled_function(C99CodePrinter(), [b, x],
+                                                 Piecewise((x, b), (0, True))))
     if compiling_enabled(C99CodePrinter):
         assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
     if compiling_enabled(RustCodePrinter):
         assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
-        # n.powi(2), but n is an i32
-        e = raises(PrintedCodeError, lambda: compiled_function(RustCodePrinter(), [n], n**2))
-        assert str(e.value).startswith("This doesn't compile.")
+        # The error is cached, like the function
+        for _ in range(2):
+            error = _compile_and_load(RustCodePrinter, 'x + 42', (('x', 'real'),))
+            assert error.startswith("This doesn't compile.") and 'cannot add' in error
