@@ -40,6 +40,7 @@ git_whitelist = {
     '.github/workflows/checkconflict.yml',
     '.github/workflows/nightly-wheels.yml',
     '.github/workflows/zizmor.yml',
+    '.github/workflows/printed-code.yml',
     '.ci/durations.json',
     '.ci/generate_durations_log.sh',
     '.ci/parse_durations_log.py',
