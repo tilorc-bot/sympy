@@ -9,13 +9,13 @@ from sympy.core.symbol import Symbol, symbols
 from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import And
 from sympy.matrices.expressions.matexpr import MatrixSymbol
-from sympy.printing.c import C99CodePrinter, ccode
+from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
                                               check_printed_code, compiling_enabled,
-                                              declare, wrap_in_function)
+                                              declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -29,6 +29,16 @@ def test_declare():
     assert declare(C99CodePrinter(), b, True) == ('b', 'bool')
     e = raises(PrintedCodeError, lambda: declare(C99CodePrinter(), z, False))
     assert str(e.value).startswith('The type of z is unknown')
+
+
+def test_declarations():
+    assert declarations(C99CodePrinter(), sin(x) + n, None) == (
+        {n: ('n', 'int'), x: ('x', 'real')}, None)
+    assert declarations(C99CodePrinter(), x + n, 'x') == (
+        {n: ('n', 'int'), x: ('x', 'real')}, ('x', 'real'))
+    assert declarations(C99CodePrinter(), And(b, Gt(x, 0)), Symbol('c')) == (
+        {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
+    raises(PrintedCodeError, lambda: declarations(C99CodePrinter(), x, 'z'))
 
 
 def _problem(printer, expr, assign_to=None):
@@ -56,10 +66,10 @@ def test_check_code():
 
 
 def test_wrap_in_function():
-    assert wrap_in_function('C89CodePrinter', 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
+    assert wrap_in_function(C89CodePrinter, 'y = M_PI*x;', [('x', 'real')], ('y', 'real')) == (
         '#define _XOPEN_SOURCE 700\n#include <math.h>\n#include <stdlib.h>\n'
         '\nvoid f(double x)\n{\n    double y;\n    y = M_PI*x;\n}\n')
-    assert wrap_in_function('RustCodePrinter', 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
+    assert wrap_in_function(RustCodePrinter, 'b && x > 0.0', [('b', 'bool'), ('x', 'real')], None
                   ).endswith('\npub fn f(b: bool, x: f64)\n{\n    let _ = {\n'
                              '        b && x > 0.0\n    };\n}\n')
 
@@ -67,10 +77,14 @@ def test_wrap_in_function():
 def test_check_printed_code():
     doprint = CodePrinter.doprint
 
+    class SubclassPrinter(C99CodePrinter):
+        pass
+
     @check_printed_code
     def test_declared():
         assert rust_code(sin(x) + n) == 'n as f64 + x.sin()'
         assert octave_code(z) == 'z'  # not checked
+        assert SubclassPrinter().doprint(z) == 'z'  # not checked
     test_declared()
     assert test_declared.__name__ == 'test_declared'
 
@@ -116,11 +130,11 @@ def test_check_compiles():
     # Compiling is slow, so only in the printed code CI job
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    e = raises(PrintedCodeError, lambda: check_compiles('RustCodePrinter', 'x + 42',
-                                                        [('x', 'real')], None))
+    def wrap_and_compile(printer_class, code):
+        check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
+    e = raises(PrintedCodeError, lambda: wrap_and_compile(RustCodePrinter, 'x + 42'))
     assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)
-    check_compiles('RustCodePrinter', 'x + 42.0', [('x', 'real')], None)
-    e = raises(PrintedCodeError, lambda: check_compiles('C99CodePrinter', 'x % x',
-                                                        [('x', 'real')], None))
+    wrap_and_compile(RustCodePrinter, 'x + 42.0')
+    e = raises(PrintedCodeError, lambda: wrap_and_compile(C99CodePrinter, 'x % x'))
     assert 'invalid operands' in str(e.value)
-    check_compiles('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None)
+    wrap_and_compile(C99CodePrinter, 'fmod(x, x)')
