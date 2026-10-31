@@ -29,8 +29,8 @@ printer were wrong: in Rust an integer literal is an i32, so one that
 doesn't fit in an i32, as in rust_code(2**40), doesn't compile, a symbol
 named like a constant of std::f64::consts, such as E or PI, can't be a
 parameter, and a tuple, which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a
-C expression. A variable that is assigned a Piecewise whose value is a bool
-needs a type, since a Piecewise isn't a Boolean.
+C expression. Assigning a Piecewise whose value is a bool to a variable
+isn't supported, since a Piecewise isn't a Boolean.
 """
 from __future__ import annotations
 

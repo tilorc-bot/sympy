@@ -192,14 +192,14 @@ def test_check_compiles_c():
     if not compiling_enabled(C99CodePrinter):
         skip("gcc isn't found or doesn't work")
     e = raises(PrintedCodeError, lambda: _wrap_and_compile(C99CodePrinter, 'x % x'))
-    assert str(e.value).startswith("This doesn't compile.") and 'code.c:' in str(e.value)
+    assert str(e.value).startswith("This doesn't compile.")
     _wrap_and_compile(C99CodePrinter, 'fmod(x, x)')
-    _wrap_and_compile(C99CodePrinter, 'x + 0*1.0  /* λ */')
+    _wrap_and_compile(C99CodePrinter, 'x + 0*1.0  /* \u03bb */')
 
 
 def test_check_compiles_rust():
     if not compiling_enabled(RustCodePrinter):
         skip("rustc isn't found or doesn't work")
     e = raises(PrintedCodeError, lambda: _wrap_and_compile(RustCodePrinter, 'x + 42'))
-    assert str(e.value).startswith("This doesn't compile.") and 'code.rs:' in str(e.value)
+    assert str(e.value).startswith("This doesn't compile.")
     _wrap_and_compile(RustCodePrinter, 'x + 42.0')

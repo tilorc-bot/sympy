@@ -178,7 +178,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -n auto --timeout 10 --durations=50 --durations-min=5
         env:
-          # Fail instead of skipping if gcc or rustc can't compile printed code
+          # Fail if gcc or rustc is missing or broken, instead of not compiling
+          # the code printed by tests that use @check_printed_code
           SYMPY_CHECK_PRINTED_CODE: 1
 
   # -------------------- Optional dependency tests ----------------- #
