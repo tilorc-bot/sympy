@@ -395,21 +395,29 @@ def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
     declarations = declare_symbols(printer, expr)
     if sorted(args, key=str) != list(declarations):
         raise ValueError('args must be the symbols of %s' % expr)
-    return _compile_and_load(type(printer).__name__, printer.doprint(expr),
-                             tuple(declarations[arg] for arg in args))
+    function = _compile_and_load(type(printer).__name__, printer.doprint(expr),
+                                 tuple(declarations[arg] for arg in args))
+    if isinstance(function, str):
+        raise PrintedCodeError(function)
+    return function
 
 
-# Cached, since a Hypothesis test can print the same code many times
+# Cached, also if the code doesn't compile, since a Hypothesis test can print
+# the same code many times while it shrinks an example
 @functools.cache
 def _compile_and_load(printer_name: str, code: str, parameters: tuple[Declaration, ...]):
     """Compile code, an expression, into a shared library, and return its
-    function of the parameters."""
+    function of the parameters, or what the compiler says if it doesn't
+    compile."""
     command = [new_part for part in TARGETS[printer_name].command
                for new_part in LIBRARY_FLAGS.get(part, [part])]
     source = wrap_in_function(printer_name, code, list(parameters), None, returns=True)
     with tempfile.TemporaryDirectory() as directory:
         library = os.path.join(directory, 'code.so')
-        run_compiler(command, source, directory, ('-o', library, '-lm'))
+        try:
+            run_compiler(command, source, directory, ('-o', library, '-lm'))
+        except PrintedCodeError as error:
+            return str(error)
         function = ctypes.CDLL(library).f
     function.restype = ctypes.c_double
     function.argtypes = [{'int': ctypes.c_int, 'real': ctypes.c_double}[type_name]

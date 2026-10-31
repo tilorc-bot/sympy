@@ -50,27 +50,45 @@ INTEGERS = st.integers(-10, 10)
 REALS = st.one_of(st.just(0.0), st.floats(-10, -1e-3), st.floats(1e-3, 10))
 
 
-def _check_values(printer, expr, data):
-    """Compile the code that printer prints for expr, and check that it
-    computes SymPy's value of expr for 10 values of its symbols from data."""
+@st.composite
+def _expressions_and_points(draw):
+    """A strategy for an expression from _random_expressions() and 10 points,
+    each a value of each of its symbols, sorted by name."""
+    expr = draw(_random_expressions())
+    values = [INTEGERS if symbol.is_integer else REALS
+              for symbol in sorted(expr.free_symbols, key=str)]
+    return expr, draw(st.lists(st.tuples(*values), min_size=10, max_size=10))
+
+
+def _check_values(printer, expr, points):
+    """Check that the compiled code that printer prints for expr gives
+    SymPy's value of expr at each point, a value of each of its symbols,
+    sorted by name."""
     symbols = sorted(expr.free_symbols, key=str)
     function = compiled_function(printer, symbols, expr)
-    for _ in range(10):
-        values = [data.draw(INTEGERS if symbol.is_integer else REALS) for symbol in symbols]
-        expected = _sympy_value(expr, symbols, values)
-        nearby = [_sympy_value(expr, symbols, [value*(1 + nudge) for value in values])
-                  for nudge in (1e-12, -1e-12)]
-        # Not where SymPy's value isn't a real number, where the code could
-        # crash (e.g. dividing an integer by 0), or next to a jump (e.g. of
-        # floor or Mod), where rounding can give the value on either side
-        if expected is None or not all(value is not None and _close(value, expected)
-                                       for value in nearby):
+    for point in points:
+        expected = _expected_value(expr, symbols, point)
+        if expected is None:
             continue
-        value = function(*values)
+        value = function(*point)
         assert _close(value, expected), (
             '%s printed %s, which gives %r for %s, but SymPy gives %r'
             % (type(printer).__name__, printer.doprint(expr), value,
-               dict(zip(symbols, values)), expected))
+               dict(zip(symbols, point)), expected))
+
+
+def _expected_value(expr, symbols, point):
+    """SymPy's value of expr at point, or None if the code may give any value
+    there: where SymPy's value isn't a real number, where the code could crash
+    (e.g. dividing an integer by 0), or next to a jump (e.g. of floor or Mod),
+    where rounding can give the value on either side."""
+    expected = _sympy_value(expr, symbols, point)
+    nearby = [_sympy_value(expr, symbols, [value*(1 + nudge) for value in point])
+              for nudge in (1e-12, -1e-12)]
+    if expected is None or not all(value is not None and _close(value, expected)
+                                   for value in nearby):
+        return None
+    return expected
 
 
 def _sympy_value(expr, symbols, values):
@@ -97,26 +115,27 @@ def _close(value, expected):
 
 @XFAIL  # ccode(Mod(x, y)) prints fmod(x, y), which has the sign of x, not y
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(_random_expressions(), st.data())
-def test_ccode(expr, data):
+@given(_expressions_and_points())
+def test_ccode(expr_and_points):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    _check_values(C99CodePrinter(), expr, data)
+    _check_values(C99CodePrinter(), *expr_and_points)
 
 
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(_random_expressions(), st.data())
-def test_cxxcode(expr, data):
+@given(_expressions_and_points())
+def test_cxxcode(expr_and_points):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    _check_values(CXX11CodePrinter(), expr, data)
+    _check_values(CXX11CodePrinter(), *expr_and_points)
 
 
-@XFAIL  # rust_code(i**2) calls powi on an i32
+@XFAIL  # RustCodePrinter().doprint(Mod(x, 2)) raises, since only rust_code
+        # rewrites Mod, so codegen prints Mod(x, 2), which doesn't compile
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(_random_expressions(), st.data())
-def test_rust_code(expr, data):
+@given(_expressions_and_points())
+def test_rust_code(expr_and_points):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    _check_values(RustCodePrinter(), expr, data)
+    _check_values(RustCodePrinter(), *expr_and_points)
