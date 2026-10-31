@@ -21,9 +21,6 @@ type: integer=True gives an int, real=True a double, and a symbol used in
 And, Or, Not or a Piecewise condition a bool. It also fails if it prints no
 C, C++ or Rust code, or code that can't be checked yet (arrays, matrices,
 most non-default printer settings).
-
-In a Hypothesis test, put the decorator below @given, so that Hypothesis
-shrinks an expression whose code is wrong.
 """
 from __future__ import annotations
 
