@@ -14,11 +14,12 @@ from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.integers import floor
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.trigonometric import sin
-from sympy.printing.c import ccode
+from sympy.printing.c import C99CodePrinter, ccode
 from sympy.printing.codeprinter import rust_code
-from sympy.printing.cxx import cxxcode
+from sympy.printing.cxx import CXX11CodePrinter, cxxcode
+from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
-from sympy.testing.pytest import XFAIL, skip
+from sympy.testing.pytest import XFAIL, skip, slow
 
 
 def _random_expressions():
@@ -44,33 +45,36 @@ def _random_expressions():
 
 
 # The printers must not raise, and @check_printed_code checks that what they
-# print compiles. Compiling needs SYMPY_CHECK_PRINTED_CODE, and without it
-# the tests are skipped.
+# print compiles. The tests are slow, since they compile every expression,
+# and skipped if the compiler isn't found.
 
+@slow
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
 @given(_random_expressions())
 @check_printed_code
 def test_ccode(expr):
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    if not compiling_enabled(C99CodePrinter):
+        skip("gcc isn't found or SYMPY_CHECK_PRINTED_CODE is 0")
     ccode(expr)
 
 
+@slow
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
 @given(_random_expressions())
 @check_printed_code
 def test_cxxcode(expr):
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    if not compiling_enabled(CXX11CodePrinter):
+        skip("g++ isn't found or SYMPY_CHECK_PRINTED_CODE is 0")
     cxxcode(expr)
 
 
+@slow
 @XFAIL  # rust_code(Mod(x, i)) calls recip on an i32
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
 @given(_random_expressions())
 @check_printed_code
 def test_rust_code(expr):
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    if not compiling_enabled(RustCodePrinter):
+        skip("rustc isn't found or SYMPY_CHECK_PRINTED_CODE is 0")
     rust_code(expr)

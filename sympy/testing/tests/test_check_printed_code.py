@@ -51,7 +51,7 @@ def _problem(printer, expr, assign_to=None):
 
 
 def test_check_code():
-    with _environment('0'):
+    with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
         assert _problem(C99CodePrinter(), sin(x) + n) is None
         assert _problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
         assert _problem(C99CodePrinter(), x, 'x') is None
@@ -107,29 +107,32 @@ def test_check_printed_code():
 
 
 def test_compiling_enabled():
-    with _environment('0'):
-        assert not compiling_enabled()
-    with _environment('1'):
-        assert compiling_enabled()
+    with _environment('SYMPY_CHECK_PRINTED_CODE', '0'):
+        assert not compiling_enabled(C99CodePrinter)
+    with _environment('PATH', ''):
+        with _environment('SYMPY_CHECK_PRINTED_CODE', ''):
+            assert not compiling_enabled(C99CodePrinter)
+        with _environment('SYMPY_CHECK_PRINTED_CODE', '1'):
+            e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
+            assert str(e.value).startswith('gcc is needed')
 
 
 @contextmanager
-def _environment(value):
-    old = os.environ.get('SYMPY_CHECK_PRINTED_CODE')
-    os.environ['SYMPY_CHECK_PRINTED_CODE'] = value
+def _environment(name, value):
+    old = os.environ.get(name)
+    os.environ[name] = value
     try:
         yield
     finally:
         if old is None:
-            del os.environ['SYMPY_CHECK_PRINTED_CODE']
+            del os.environ[name]
         else:
-            os.environ['SYMPY_CHECK_PRINTED_CODE'] = old
+            os.environ[name] = old
 
 
 def test_check_compiles():
-    # Compiling is slow, so only in the printed code CI job
-    if not compiling_enabled():
-        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    if not (compiling_enabled(C99CodePrinter) and compiling_enabled(RustCodePrinter)):
+        skip("gcc or rustc isn't found or SYMPY_CHECK_PRINTED_CODE is 0")
     def wrap_and_compile(printer_class, code):
         check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
     e = raises(PrintedCodeError, lambda: wrap_and_compile(RustCodePrinter, 'x + 42'))
