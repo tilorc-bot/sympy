@@ -14,8 +14,8 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              check_printed_code, compiling_enabled,
-                                              declare, wrap_in_function)
+                                              check_printed_code, compiled_function,
+                                              compiling_enabled, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -124,3 +124,11 @@ def test_check_compiles():
                                                         [('x', 'real')], None))
     assert 'invalid operands' in str(e.value)
     check_compiles('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None)
+
+
+def test_compiled_function():
+    raises(ValueError, lambda: compiled_function(C99CodePrinter(), [x], x - n))
+    if not compiling_enabled():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
+    assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
+    assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
