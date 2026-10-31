@@ -48,7 +48,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-from typing import NamedTuple, cast
+from typing import NamedTuple
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
@@ -139,9 +139,8 @@ TOLERANCE = 1e-6  # allows for ill-conditioned functions, e.g. acosh near 1
 FIXED_VALUES: dict[str, list] = {'bool': [False, True], 'int': [0, 1, -1, 2, -3, 7],
                                  'real': [0.0, 1.0, -1.0, 0.5, -2.5, 3.75]}
 
-
 def compiling_enabled() -> bool:
-    """Whether SYMPY_CHECK_PRINTED_CODE is set (and not to 0)."""
+    """Return whether SYMPY_CHECK_PRINTED_CODE is set (and not to 0)."""
     return os.environ.get('SYMPY_CHECK_PRINTED_CODE', '') not in ('', '0')
 
 
@@ -151,11 +150,37 @@ class PrintedCodeError(AssertionError):
 
 def check_printed_code(test_func):
     """Make the test fail if C, C++, Fortran or Rust code that it prints is
-    wrong (see find_problem() for what is checked).
+    wrong.
+
+    The test checks that a printer prints the code it expects. This checks
+    that the code is actually correct: that it compiles and computes the same
+    values as SymPy.
+    For example, this test fails, since x has no type, so its code can't be
+    compiled:
+
+    >>> from sympy import Symbol, sin
+    >>> from sympy.printing.c import ccode
+    >>> from sympy.testing.check_printed_code import check_printed_code
+    >>> @check_printed_code
+    ... def test_sin():
+    ...     assert ccode(sin(Symbol('x'))) == 'sin(x)'
+    >>> test_sin()
+    Traceback (most recent call last):
+    ...
+    sympy.testing.check_printed_code.PrintedCodeError: C99CodePrinter printed
+    <BLANKLINE>
+        sin(x)
+    <BLANKLINE>
+    The type of x is unknown, so this can't be compiled. Create x with
+    real=True or integer=True, e.g. Symbol('x', real=True).
+
+    With Symbol('x', real=True), it passes. If SYMPY_CHECK_PRINTED_CODE is
+    set, it then also compiles and runs sin(x), and fails if gcc can't compile
+    it or it doesn't compute SymPy's values of sin(x).
 
     While the test runs, CodePrinter.doprint is replaced by a wrapper that
-    checks what these printers print. The problems are raised when the test
-    returns.
+    checks what these printers print (see check_code()). The problems are
+    raised when the test returns.
     """
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
@@ -173,8 +198,9 @@ def check_printed_code(test_func):
                     and isinstance(code, str)
                     and (printer_name, code, expr, assign_to) not in printed):
                 printed.add((printer_name, code, expr, assign_to))
-                problem = find_problem(self, expr, assign_to, code)
-                if problem:
+                try:
+                    check_code(self, expr, assign_to, code)
+                except PrintedCodeError as problem:
                     problems.append('%s printed\n\n%s\n\n%s' % (
                         target_name(self), textwrap.indent(code, '    '), problem))
             return code
@@ -193,28 +219,48 @@ def check_printed_code(test_func):
     return wrapper
 
 
-def find_problem(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
-                 code: str) -> str | None:
-    """Return a description of what is wrong with code, which printer printed
-    for expr (assigned to assign_to, if it isn't None), or None.
+def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
+               code: str) -> None:
+    """Raise PrintedCodeError if code, which printer printed for expr (assigned
+    to assign_to, if it isn't None), is wrong.
 
-    Without SYMPY_CHECK_PRINTED_CODE, this only checks that the code could be
-    compiled: that each of its symbols has a type, and that nothing in it is
-    unsupported (see unsupported_reason()). With it, this also compiles and
-    runs the code, and compares its values with SymPy's (see
-    find_run_problem()).
+    If SYMPY_CHECK_PRINTED_CODE is set, this compiles and runs the code, and
+    compares its values with SymPy's (see check_runs()). Before that, and otherwise only, it checks that the code
+    can be compiled: that nothing in it is unsupported, such as an array, and
+    that each of its symbols has a type (see declare()).
 
-    >>> from sympy import Symbol, sin
+    >>> from sympy import MatrixSymbol
     >>> from sympy.printing.c import C99CodePrinter
-    >>> from sympy.testing.check_printed_code import find_problem
-    >>> print(find_problem(C99CodePrinter(), sin(Symbol('x')), None, 'sin(x)'))
-    The type of x is unknown, so this can't be compiled. Create x with
-    real=True or integer=True, e.g. Symbol('x', real=True).
+    >>> from sympy.testing.check_printed_code import check_code
+    >>> check_code(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1], None, 'A[1]')
+    Traceback (most recent call last):
+    ...
+    sympy.testing.check_printed_code.PrintedCodeError: This can't be checked, since it uses arrays or matrices, whose sizes
+    can't be declared, so the test can't use @check_printed_code.
     """
-    reason = unsupported_reason(printer, expr, assign_to)
-    if reason:
-        return textwrap.fill("This can't be checked, since %s, so the test can't "
-                             "use @check_printed_code." % reason, 72)
+    def unsupported(reason):
+        return PrintedCodeError(textwrap.fill(
+            "This can't be checked, since %s, so the test can't use "
+            "@check_printed_code." % reason, 72))
+
+    if target_name(printer) not in TARGETS:
+        raise unsupported('there is no compiler for %s' % target_name(printer))
+    allowed = HARMLESS_SETTINGS.union(TARGET_SETTINGS.get(type(printer).__name__, ()))
+    for name, value in printer._settings.items():
+        if name not in allowed and value != printer._default_settings.get(name):
+            raise unsupported("it's printed with the setting %s, which can need other "
+                              "declarations" % name)
+    if isinstance(printer, C89CodePrinter):
+        for name in C_TYPE_SETTINGS:
+            if getattr(printer, name) != getattr(type(printer), name):
+                raise unsupported("it's printed with the setting %s, which can need "
+                                  "other declarations" % name)
+    if isinstance(expr, CodegenAST) or not isinstance(expr, Basic):
+        raise unsupported("it's a %s, not an expression" % type(expr).__name__)
+    if (expr.is_Matrix or expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement)
+            or not isinstance(assign_to, (str, Symbol, type(None)))):
+        raise unsupported("it uses arrays or matrices, whose sizes can't be declared")
+
     booleans: set[Basic] = set()
     for node in preorder_traversal(expr):
         if isinstance(node, LOGIC_FUNCTIONS):
@@ -222,49 +268,21 @@ def find_problem(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
         elif isinstance(node, ExprCondPair):
             booleans.add(node.cond)
     symbols = sorted(expr.free_symbols, key=str)
-    parameters = [(printer._print(symbol), symbol_type(symbol, symbol in booleans))
-                  for symbol in symbols]
+    parameters = [declare(printer, symbol, symbol in booleans) for symbol in symbols]
     assigned = None
     if assign_to is not None:
         symbol = Symbol(assign_to) if isinstance(assign_to, str) else assign_to
         name = printer._print(symbol)
-        is_boolean = isinstance(expr, Boolean) and not isinstance(expr, Symbol)
-        assigned = (name, dict(parameters).get(name, symbol_type(symbol, is_boolean)))
-    declarations = parameters + ([assigned] if assigned else [])
-
-    invalid_names = [name for name, _ in declarations if not name.isidentifier()]
-    if invalid_names:
-        return textwrap.fill("This can't be checked, since %s isn't a name, so the "
-                             "test can't use @check_printed_code."
-                             % ' or '.join(invalid_names), 72)
-    untyped = [name for name, type_name in declarations if type_name is None]
-    if len(untyped) == 1:
-        return textwrap.fill(
-            "The type of %s is unknown, so this can't be compiled. Create %s with "
-            "real=True or integer=True, e.g. Symbol(%r, real=True)."
-            % (untyped[0], untyped[0], untyped[0]), 72)
-    if untyped:
-        return textwrap.fill(
-            "The types of %s are unknown, so this can't be compiled. Create them "
-            "with real=True or integer=True, e.g. Symbol(%r, real=True)."
-            % (' and '.join(untyped), untyped[0]), 72)
+        if name in dict(parameters):
+            assigned = (name, dict(parameters)[name])
+        else:
+            is_boolean = isinstance(expr, Boolean) and not isinstance(expr, Symbol)
+            assigned = declare(printer, symbol, is_boolean)
+    for name, _ in parameters + ([assigned] if assigned else []):
+        if not name.isidentifier():
+            raise unsupported("%s isn't a name" % name)
     if compiling_enabled():
-        # Every type is known now
-        return find_run_problem(target_name(printer), code,
-                                cast('list[Declaration]', parameters),
-                                cast('Declaration | None', assigned), expr, symbols)
-    return None
-
-
-def symbol_type(symbol: Basic, is_boolean: bool) -> str | None:
-    """Return 'bool', 'int' or 'real', or None if the symbol's type is unknown."""
-    if is_boolean:
-        return 'bool'
-    if symbol.is_integer:
-        return 'int'
-    if symbol.is_real:
-        return 'real'
-    return None
+        check_runs(target_name(printer), code, parameters, assigned, expr, symbols)
 
 
 def target_name(printer: CodePrinter) -> str:
@@ -277,34 +295,26 @@ def target_name(printer: CodePrinter) -> str:
     return name
 
 
-def unsupported_reason(printer: CodePrinter, expr: Basic,
-                       assign_to: str | Basic | None) -> str | None:
-    """Return why the code that printer printed for expr (assigned to
-    assign_to) can't be checked, or None if it can.
+def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaration:
+    """Return the name that printer prints for symbol and its type, 'bool',
+    'int' or 'real', or raise PrintedCodeError if its type is unknown.
 
-    >>> from sympy import MatrixSymbol
+    >>> from sympy import Symbol
     >>> from sympy.printing.c import C99CodePrinter
-    >>> from sympy.testing.check_printed_code import unsupported_reason
-    >>> unsupported_reason(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1], None)
-    "it uses arrays or matrices, whose sizes can't be declared"
+    >>> from sympy.testing.check_printed_code import declare
+    >>> declare(C99CodePrinter(), Symbol('x', real=True), False)
+    ('x', 'real')
     """
-    if target_name(printer) not in TARGETS:
-        return 'there is no compiler for %s' % target_name(printer)
-    allowed = HARMLESS_SETTINGS.union(TARGET_SETTINGS.get(type(printer).__name__, ()))
-    for name, value in printer._settings.items():
-        if name not in allowed and value != printer._default_settings.get(name):
-            return "it's printed with the setting %s, which can need other declarations" % name
-    if isinstance(printer, C89CodePrinter):
-        for name in C_TYPE_SETTINGS:
-            if getattr(printer, name) != getattr(type(printer), name):
-                return ("it's printed with the setting %s, which can need other "
-                        "declarations" % name)
-    if isinstance(expr, CodegenAST) or not isinstance(expr, Basic):
-        return "it's a %s, not an expression" % type(expr).__name__
-    if (expr.is_Matrix or expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement)
-            or not isinstance(assign_to, (str, Symbol, type(None)))):
-        return "it uses arrays or matrices, whose sizes can't be declared"
-    return None
+    name = printer._print(symbol)
+    if is_boolean:
+        return (name, 'bool')
+    if symbol.is_integer:
+        return (name, 'int')
+    if symbol.is_real:
+        return (name, 'real')
+    raise PrintedCodeError(textwrap.fill(
+        "The type of %s is unknown, so this can't be compiled. Create %s with "
+        "real=True or integer=True, e.g. Symbol(%r, real=True)." % (name, name, name), 72))
 
 
 def wrap_in_program(printer_name: str, code: str, parameters: list[Declaration],
@@ -426,17 +436,16 @@ def wrap_in_fortran_program(printer_name: str, code: str, parameters: list[Decla
         lead + 'if (sympy_status /= 0) exit', *body, lead + 'end do', lead + 'end program', ''])
 
 
-def find_run_problem(printer_name: str, code: str, parameters: list[Declaration],
-                     assigned: Declaration | None, expr: Basic,
-                     symbols: list[Basic]) -> str | None:
-    """Compile the code as wrap_in_program() wraps it and run it, and return
-    what is wrong with it, or None. For the values of symbols (whose names and
-    types are parameters) that find_value_problem() tries, it must print
-    SymPy's value of expr."""
+def check_runs(printer_name: str, code: str, parameters: list[Declaration],
+               assigned: Declaration | None, expr: Basic, symbols: list[Basic]) -> None:
+    """Compile the code as wrap_in_program() wraps it and run it, and raise
+    PrintedCodeError if it doesn't compile or doesn't print SymPy's value of
+    expr for the values of symbols (whose names and types are parameters) that
+    check_values() tries."""
     command = TARGETS[printer_name].command
     if shutil.which(command[0]) is None:
-        raise PrintedCodeError('%s is needed to check printed code, since '
-                               'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
+        raise RuntimeError('%s is needed to check printed code, since '
+                           'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
     source = wrap_in_program(printer_name, code, parameters, assigned)
     suffix = {'gcc': '.c', 'g++': '.cpp', 'gfortran': '.f90', 'rustc': '.rs'}[command[0]]
     with tempfile.TemporaryDirectory() as directory:
@@ -455,10 +464,10 @@ def find_run_problem(printer_name: str, code: str, parameters: list[Declaration]
                              if 'error' in line.lower() or re.search(r':\d+:\d+:$', line))
             numbered_source = ''.join('%4d | %s\n' % (number, line)
                                       for number, line in enumerate(source.splitlines(), 1))
-            return "This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
+            raise PrintedCodeError("This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
                 ' '.join(command), textwrap.indent(errors, '    '),
-                textwrap.indent(numbered_source, '    '))
-        return find_value_problem(printer_name, expr, symbols, parameters, executable)
+                textwrap.indent(numbered_source, '    ')))
+        check_values(printer_name, expr, symbols, parameters, executable)
 
 
 class RunningProgram:
@@ -499,10 +508,10 @@ class RunningProgram:
             self.process.stderr.close()
 
 
-def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
-                       parameters: list[Declaration], executable: str) -> str | None:
-    """Run the compiled program for values of symbols, and return what is wrong
-    with the values it prints, or None.
+def check_values(printer_name: str, expr: Basic, symbols: list[Basic],
+                 parameters: list[Declaration], executable: str) -> None:
+    """Run the compiled program for values of symbols, and raise
+    PrintedCodeError if a value it prints isn't SymPy's value of expr.
 
     The values are generated with Hypothesis or, inside a Hypothesis test,
     are FIXED_VALUES (see fixed_values()).
@@ -547,16 +556,18 @@ def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
                 output, given_values if names else '', expr, expected))
         return True
 
-    no_values = ("SymPy's value of %s isn't a real number for any of the values "
-                 "tried, so this can't be checked." % expr)
+    no_values = PrintedCodeError("SymPy's value of %s isn't a real number for any "
+                                 "of the values tried, so this can't be checked." % expr)
     try:
         if not names:
             if not compare([]):
-                return "SymPy's value of %s isn't a real number, so this can't be checked." % expr
+                raise PrintedCodeError("SymPy's value of %s isn't a real number, so this "
+                                       "can't be checked." % expr)
         elif currently_in_test_context():
             # Hypothesis tests can't be nested
-            if not sum(compare(values) for values in fixed_values(symbols, symbol_types)):
-                return no_values
+            compared = [compare(values) for values in fixed_values(symbols, symbol_types)]
+            if not any(compared):
+                raise no_values
         else:
             @settings(max_examples=EXAMPLES, deadline=None, database=None,
                       derandomize=True, report_multiple_bugs=False,
@@ -566,13 +577,10 @@ def find_value_problem(printer_name: str, expr: Basic, symbols: list[Basic],
             def generated(values):
                 assume(compare(values))
             generated()
-    except PrintedCodeError as e:
-        return str(e)
     except Unsatisfiable:
-        return no_values
+        raise no_values
     finally:
         running.close()
-    return None
 
 
 def fixed_values(symbols: list[Basic], symbol_types: list[str]) -> list[tuple]:
