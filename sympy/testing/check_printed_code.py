@@ -74,6 +74,10 @@ GCC = ['-fsyntax-only', '-pedantic-errors']
 # C89 allows calls to undeclared functions
 C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
+# What replaces the flags of TARGETS that only check the code, to compile it
+# into a shared library
+LIBRARY_FLAGS = {'-fsyntax-only': ['-shared', '-fPIC'], '--crate-type=lib': ['--crate-type=cdylib'],
+                 '--emit=metadata': []}
 
 TARGETS = {
     'C89CodePrinter': Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
@@ -222,14 +226,7 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
             or not isinstance(assign_to, (str, Symbol, type(None)))):
         raise unsupported("it uses arrays or matrices, whose sizes can't be declared")
 
-    booleans: set[Basic] = set()
-    for node in preorder_traversal(expr):
-        if isinstance(node, LOGIC_FUNCTIONS):
-            booleans.update(node.args)
-        elif isinstance(node, ExprCondPair):
-            booleans.add(node.cond)
-    parameters = [declare(printer, symbol, symbol in booleans)
-                  for symbol in sorted(expr.free_symbols, key=str)]
+    parameters = declare_symbols(printer, expr)
     assigned = None
     if assign_to is not None:
         symbol = Symbol(assign_to) if isinstance(assign_to, str) else assign_to
@@ -244,6 +241,30 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
             raise unsupported("%s isn't a name" % name)
     if compiling_enabled():
         check_compiles(type(printer).__name__, code, parameters, assigned)
+
+
+def declare_symbols(printer: CodePrinter, expr: Basic) -> list[Declaration]:
+    """Return the declarations of the symbols in expr, sorted by name, or raise
+    PrintedCodeError if the type of one is unknown (see declare()).
+
+    Examples
+    ========
+
+    >>> from sympy import And, Symbol
+    >>> from sympy.printing.c import C99CodePrinter
+    >>> from sympy.testing.check_printed_code import declare_symbols
+    >>> b, x = Symbol('b'), Symbol('x', real=True)
+    >>> declare_symbols(C99CodePrinter(), And(b, x > 0))
+    [('b', 'bool'), ('x', 'real')]
+    """
+    booleans: set[Basic] = set()
+    for node in preorder_traversal(expr):
+        if isinstance(node, LOGIC_FUNCTIONS):
+            booleans.update(node.args)
+        elif isinstance(node, ExprCondPair):
+            booleans.add(node.cond)
+    return [declare(printer, symbol, symbol in booleans)
+            for symbol in sorted(expr.free_symbols, key=str)]
 
 
 def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaration:
@@ -272,10 +293,11 @@ def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaratio
 
 
 def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration],
-                     assigned: Declaration | None) -> str:
+                     assigned: Declaration | None, returns: bool = False) -> str:
     """Return the source of a function that declares the parameters and the
     assigned variable and runs the code, so that it compiles if the code is
-    valid.
+    valid. If returns is True, the code is an expression, and the function
+    returns its value as a double (f64 in Rust) and can be called from C.
 
     Examples
     ========
@@ -303,7 +325,11 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
         if rust:
             # A block, since an expression can follow declarations of
             # number constants such as GoldenRatio
-            body = ['let _ = {', *['    ' + line for line in lines], '};']
+            block = ['    ' + line for line in lines]
+            if returns:
+                body = ['let value = {', *block, '};', 'value as f64']
+            else:
+                body = ['let _ = {', *block, '};']
         else:
             declarations_end = 0
             while declarations_end < len(lines) and (
@@ -311,7 +337,8 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
                     or lines[declarations_end].startswith(('//', '/*'))):
                 declarations_end += 1
             body = lines[:declarations_end] + [
-                '(void)(', *['    ' + line for line in lines[declarations_end:]], ');']
+                'return (double)(' if returns else '(void)(',
+                *['    ' + line for line in lines[declarations_end:]], ');']
     elif assigned[0] in dict(parameters):
         body = lines
     elif rust:
@@ -319,12 +346,22 @@ def wrap_in_function(printer_name: str, code: str, parameters: list[Declaration]
     else:
         body = ['%s %s;' % (type_names[assigned[1]], assigned[0]), *lines]
     if rust:
-        signature = 'pub fn f(%s)' % ', '.join(
+        arguments = ', '.join(
             '%s%s: %s' % ('mut ' if assigned and name == assigned[0] else '', name, type_name)
             for name, type_name in parameters)
+        if returns:
+            signature = '#[no_mangle]\npub extern "C" fn f(%s) -> f64' % arguments
+        else:
+            signature = 'pub fn f(%s)' % arguments
     else:
-        signature = 'void f(%s)' % (', '.join(
-            '%s %s' % (type_name, name) for name, type_name in parameters) or 'void')
+        arguments = ', '.join(
+            '%s %s' % (type_name, name) for name, type_name in parameters) or 'void'
+        if returns:
+            # C++ would otherwise give f a mangled name
+            extern = 'extern "C" ' if printer_name.startswith('CXX') else ''
+            signature = '%sdouble f(%s)' % (extern, arguments)
+        else:
+            signature = 'void f(%s)' % arguments
     return '%s\n%s\n{\n%s\n}\n' % (header, signature, textwrap.indent('\n'.join(body), '    '))
 
 
@@ -352,30 +389,15 @@ def compile_function(printer_name: str, code: str, parameters: tuple[Declaration
     >>> f(5.5)  # doctest: +SKIP
     1.5
     """
-    _, header, type_names = TARGETS[printer_name]
-    arguments = [(name, type_names[type_name]) for name, type_name in parameters]
-    if printer_name == 'RustCodePrinter':
-        command = ['rustc', '--edition=2021', '--crate-type=cdylib', '--error-format=short']
-        source = ('%s\n#[no_mangle]\npub extern "C" fn f(%s) -> f64\n{\n    let value = {\n%s\n'
-                  '    };\n    value as f64\n}\n' % (
-                      header, ', '.join('%s: %s' % argument for argument in arguments),
-                      textwrap.indent(code, '        ')))
-        libraries = []
-    else:
-        command = [*[part for part in TARGETS[printer_name].command
-                     if part != '-fsyntax-only'], '-shared', '-fPIC']
-        # C++ would otherwise give f a mangled name
-        extern = 'extern "C" ' if printer_name.startswith('CXX') else ''
-        source = '%s\n%sdouble f(%s)\n{\n    return (double)(\n%s\n    );\n}\n' % (
-            header, extern, ', '.join('%s %s' % (type_name, name) for name, type_name in arguments)
-            or 'void', textwrap.indent(code, '        '))
-        libraries = ['-lm']
+    command = [new_part for part in TARGETS[printer_name].command
+               for new_part in LIBRARY_FLAGS.get(part, [part])]
+    source = wrap_in_function(printer_name, code, list(parameters), None, returns=True)
     with tempfile.TemporaryDirectory() as directory:
         library = os.path.join(directory, 'code.so')
-        compile_source(command, source, directory, ('-o', library, *libraries))
+        compile_source(command, source, directory, ('-o', library, '-lm'))
         function = ctypes.CDLL(library).f
     function.restype = ctypes.c_double
-    function.argtypes = [ctypes.c_int if type_name == 'int' else ctypes.c_double
+    function.argtypes = [{'int': ctypes.c_int, 'real': ctypes.c_double}[type_name]
                          for _, type_name in parameters]
     return function
 
