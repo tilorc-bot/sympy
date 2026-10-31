@@ -18,8 +18,8 @@ from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (PrintedCodeError, _compile_and_load, check_code,
-                                              check_compiles, check_printed_code, compiled_function,
+from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
+                                              check_printed_code, compiled_function,
                                               compiler_problem, compiling_enabled,
                                               declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
@@ -218,7 +218,6 @@ def test_compiled_function():
         assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
     if compiling_enabled(RustCodePrinter):
         assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
-        # The error is cached, like the function
-        for _ in range(2):
-            error = _compile_and_load(RustCodePrinter, 'x + 42', (('x', 'real'),))
-            assert error.startswith("This doesn't compile.") and 'cannot add' in error
+        printer = RustCodePrinter({'user_functions': {'sin': 'no_such_function'}})
+        e = raises(PrintedCodeError, lambda: compiled_function(printer, [x], sin(x)))
+        assert str(e.value).startswith("This doesn't compile.")

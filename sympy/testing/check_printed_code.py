@@ -135,7 +135,6 @@ def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
         return '%s is needed to check printed code, but it is not found' % compiler
     try:
         check_compiles(printer_class, wrap_in_function(printer_class, '0', [], None))
-        compiled_function(printer_class(), [], sympify(0))
     except OSError as error:
         return '%s is needed to check printed code, but it can\'t be run: %s' % (
             compiler, error)
@@ -497,7 +496,8 @@ def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
     the code that printer prints for expr, compiled into a shared library, and
     returns its value as a float.
 
-    The args must be the symbols of expr, each with integer=True or real=True.
+    The args must be the symbols of expr, each with integer=True or real=True,
+    and the function's integer arguments must fit in a C int.
     The code is what printer.doprint() prints, as in codegen; rust_code()
     rewrites some functions, such as Mod, before printing. A test that uses
     this should be skipped if compiling_enabled() is False.
@@ -548,7 +548,7 @@ def _compile_and_load(printer_class: type[CodePrinter], code: str,
             return str(error)
         function = ctypes.CDLL(library).f
     function.restype = ctypes.c_double
-    function.argtypes = [{'int': ctypes.c_int, 'real': ctypes.c_double}[type_name]
+    function.argtypes = [ctypes.c_int if type_name == 'int' else ctypes.c_double
                          for _, type_name in parameters]
     return function
 

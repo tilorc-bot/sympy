@@ -187,6 +187,15 @@ def test_ccode_Mod_values():
     assert compiled_function(C99CodePrinter(), [r, s], Mod(r, s))(-1.0, 2.0) == 1.0
 
 
+@XFAIL
+def test_ccode_integer_division_values():
+    # i/j is integer division in C
+    if not compiling_enabled(C99CodePrinter):
+        skip("gcc isn't found or doesn't work")
+    i, j = symbols('i j', integer=True)
+    assert compiled_function(C99CodePrinter(), [i, j], i/j)(1, 2) == 0.5
+
+
 def test_ccode_user_functions():
     x = symbols('x', integer=False)
     n = symbols('n', integer=True)

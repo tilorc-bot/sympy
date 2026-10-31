@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import assume, given, settings, strategies as st
 
 from sympy.core.add import Add
 from sympy.core.mul import Mul
@@ -24,8 +24,9 @@ from sympy.testing.pytest import skip, slow
 def _random_expressions():
     """A strategy for expressions in real x, y and integer i, j, such as
     Max(i, y) or sin(x)**2 + floor(j/2). An exponent is a symbol or a number,
-    since i**(i**i) is a huge integer for i = 10. There is no Mod, which ccode
-    prints as fmod, which has the wrong sign (see test_ccode_Mod_values)."""
+    since i**(i**i) is a huge integer for i = 10. There is no Mod or division
+    by an integer, which ccode prints wrongly (see test_ccode_Mod_values and
+    test_ccode_integer_division_values)."""
     x, y = symbols('x y', real=True)
     i, j = symbols('i j', integer=True)
     leaves = st.sampled_from([x, y, i, j, S(2), S(-3), Rational(1, 2), Float(-2.5)])
@@ -43,7 +44,8 @@ def _random_expressions():
         lambda e: (st.builds(apply, binary, e, e) | st.builds(apply, st.just(Pow), e, leaves)
                    | st.builds(apply, unary, e)),
         max_leaves=5,
-    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
+    ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I) and not any(
+        power.exp == -1 and power.base.is_integer for power in e.atoms(Pow)))
 
 
 # Integers, and reals that are 0 or not tiny, so that products don't underflow
@@ -67,6 +69,7 @@ def _check_values(printer, expr, points):
     sorted by name."""
     symbols = sorted(expr.free_symbols, key=str)
     function = compiled_function(printer, symbols, expr)
+    compared = 0
     for point in points:
         expected = _expected_value(expr, symbols, point)
         if expected is None:
@@ -76,21 +79,24 @@ def _check_values(printer, expr, points):
             '%s printed %s, which gives %r for %s, but SymPy gives %r'
             % (type(printer).__name__, printer.doprint(expr), value,
                dict(zip(symbols, point)), expected))
+        compared += 1
+    assume(compared)  # Not an example that checks nothing
 
 
 def _expected_value(expr, symbols, point):
     """SymPy's value of expr at point, or None if the code may give any value
     there: where the value of a part of expr isn't a real number (C has no
     complex numbers, so log(i)**2 is NaN at i = -1), where the code could crash
-    (e.g. dividing an integer by 0), or next to a jump in a real symbol (e.g.
-    of floor), where rounding can give the value on either side."""
+    (e.g. dividing an integer by 0), or where a tiny change of a symbol changes
+    the value, so that rounding can: next to a jump, as of floor(sqrt(i)*sqrt(j))
+    at i = j = 3, or where the value grows fast, as sin(exp(i**2)) does."""
     if any(_sympy_value(part, symbols, point) is None
            for part in preorder_traversal(expr) if part.free_symbols):
         return None
     expected = _sympy_value(expr, symbols, point)
     nearby = [_sympy_value(expr, symbols, [*point[:k], value + nudge*max(1, abs(value)),
                                            *point[k + 1:]])
-              for k, value in enumerate(point) if isinstance(value, float)
+              for k, value in enumerate(point)
               for nudge in (1e-12, -1e-12)]
     if not all(value is not None and _close(value, expected) for value in nearby):
         return None
@@ -122,7 +128,7 @@ def _close(value, expected):
 @slow
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
 @given(_expressions_and_points())
-def test_ccode(expr_and_points):
+def test_ccode_values(expr_and_points):
     if not compiling_enabled(C99CodePrinter):
         skip("gcc isn't found or doesn't work")
     _check_values(C99CodePrinter(), *expr_and_points)
