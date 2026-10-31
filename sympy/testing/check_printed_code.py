@@ -1,4 +1,4 @@
-"""Check that the C, C++ and Rust code printed by a test compiles.
+"""Check that the C and Rust code printed by a test compiles.
 
 Code printer tests only compare strings. A test opts in to checking the
 code with a decorator::
@@ -6,22 +6,28 @@ code with a decorator::
     from sympy.testing.check_printed_code import check_printed_code
 
     @check_printed_code
-    def test_sign():
-        x, y = symbols('x y', real=True)
-        assert rust_code(sign(x + y)) == "..."
+    def test_sin():
+        x = Symbol('x', real=True)
+        assert rust_code(sin(x)) == "x.sin()"
 
-The code is compiled with gcc, g++ or rustc if the compiler is found and
-works. With SYMPY_STRICT_COMPILER_CHECKS=1, as for has_c() in
-sympy.utilities._compilation, one that isn't found or doesn't work is an
-error::
+The code is compiled with gcc or rustc if the compiler is found and works.
+SYMPY_CHECK_PRINTED_CODE=0 turns compiling off, and
+SYMPY_CHECK_PRINTED_CODE=1 makes a compiler that isn't found or doesn't work
+an error::
 
-    SYMPY_STRICT_COMPILER_CHECKS=1 pytest sympy/printing/tests/test_rust.py
+    SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
 In every run, a decorated test fails if a symbol in its printed code has no
 type: integer=True gives an int, real=True a double, and a symbol used in
-And, Or, Not or a Piecewise condition a bool. It also fails if it prints no
-C, C++ or Rust code, or code that can't be checked yet (arrays, matrices,
-most non-default printer settings).
+And, Or, Not or a Piecewise condition a bool. A variable that the code is
+assigned to gets the type of the expression if it has none. A test also
+fails if it prints no C or Rust code, or code that can't be checked yet
+(arrays, matrices, most non-default printer settings).
+
+The code is compiled on its own, so some valid code fails as if the
+printer were wrong: in Rust an integer literal is an i32, so one that
+doesn't fit in an i32, as in rust_code(2**40), doesn't compile, and a tuple,
+which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a C expression.
 """
 from __future__ import annotations
 
@@ -37,6 +43,7 @@ from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
 from sympy.core.symbol import Symbol
 from sympy.core.sympify import sympify
+from sympy.external import import_module
 from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
@@ -44,12 +51,13 @@ from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
 from sympy.printing.c import C11CodePrinter, C89CodePrinter, C99CodePrinter
 from sympy.printing.codeprinter import CodePrinter
-from sympy.printing.cxx import CXX11CodePrinter, CXX17CodePrinter, CXX98CodePrinter
 from sympy.printing.rust import RustCodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+pytest = import_module('pytest')
 
 # The printed name of a variable and its type, 'int', 'real' or 'bool',
 # e.g. ('x', 'real')
@@ -71,16 +79,14 @@ C_HEADER = """\
 #include <stdlib.h>
 """  # M_PI, M_E, ... are POSIX, not ISO C
 C99_HEADER = C_HEADER + "#include <stdbool.h>\n"
-CXX_HEADER = "#include <algorithm>\n#include <cmath>\n#include <cstdlib>\n"
 RUST_HEADER = """\
 #![allow(unused)]
 use std::f64::consts::*;
 use std::f64::{INFINITY, NAN, NEG_INFINITY};
 """
 
-GCC = ['-fsyntax-only', '-pedantic-errors']
 # C89 allows calls to undeclared functions
-C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
+C_FLAGS = ['-fsyntax-only', '-pedantic-errors', '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 # Settings that change how the code is written, but not what it needs declared
@@ -96,15 +102,18 @@ COMPILER_PROBLEMS: dict[type[CodePrinter], str | None] = {}
 
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     """Return whether the code that printer_class prints is compiled, which it
-    is if its compiler is found and compiles a trivial function. If
-    SYMPY_STRICT_COMPILER_CHECKS is 1, raise RuntimeError instead of returning
-    False."""
+    is if its compiler is found and compiles a trivial function, unless
+    SYMPY_CHECK_PRINTED_CODE is 0. If SYMPY_CHECK_PRINTED_CODE is set to
+    something else, raise RuntimeError instead of returning False."""
+    setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
+    if setting == '0':
+        return False
     if printer_class not in COMPILER_PROBLEMS:
         COMPILER_PROBLEMS[printer_class] = compiler_problem(printer_class)
     problem = COMPILER_PROBLEMS[printer_class]
     if problem is None:
         return True
-    if os.environ.get('SYMPY_STRICT_COMPILER_CHECKS', '0') == '1':
+    if setting:
         raise RuntimeError(problem)
     return False
 
@@ -117,6 +126,9 @@ def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
         return '%s is needed to check printed code, but it is not found' % compiler
     try:
         check_compiles(printer_class, wrap_in_function(printer_class, '0', [], None))
+    except OSError as error:
+        return '%s is needed to check printed code, but it can\'t be run: %s' % (
+            compiler, error)
     except PrintedCodeError as error:
         return ('%s is needed to check printed code, but it fails on a trivial '
                 'function:\n\n%s' % (compiler, error))
@@ -128,17 +140,18 @@ class PrintedCodeError(AssertionError):
 
 
 def check_printed_code(test_func):
-    """Make the test fail if C, C++ or Rust code that it prints is wrong.
+    """Make the test fail if C or Rust code that it prints is wrong.
 
     Explanation
     ===========
 
     The test checks that a printer prints the code it expects. This checks
-    that the code is actually correct, which for now means that it compiles.
+    that the code compiles.
 
     While the test runs, CodePrinter.doprint is replaced by a wrapper that
     checks what these printers print (see check_code()). The problems are
-    raised when the test returns.
+    raised when the test returns. Since the wrapper replaces the method for
+    every thread, the test is marked thread_unsafe.
 
     Examples
     ========
@@ -189,11 +202,14 @@ def check_printed_code(test_func):
         finally:
             CodePrinter.doprint = original_doprint  # type: ignore[method-assign]
         if not printed:
-            raise PrintedCodeError('The test printed no C, C++ or Rust code, so it '
+            raise PrintedCodeError('The test printed no C or Rust code, so it '
                                    "shouldn't use @check_printed_code.")
         if problems:
             raise PrintedCodeError('\n\n'.join(problems))
         return result
+    if pytest is not None:
+        wrapper = pytest.mark.thread_unsafe(
+            reason='replaces CodePrinter.doprint while it runs')(wrapper)
     return wrapper
 
 
@@ -287,14 +303,22 @@ def declarations(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
     types = dict(parameters.values())
     if name in types:
         return parameters, (name, types[name])
-    return parameters, declare(printer, symbol, is_boolean_valued(expr))
+    if not (symbol.is_integer or symbol.is_real):
+        if is_boolean_valued(expr):
+            return parameters, (name, 'bool')
+        if expr.is_integer:
+            return parameters, (name, 'int')
+        if expr.is_real:
+            return parameters, (name, 'real')
+    return parameters, declare(printer, symbol, False)
 
 
 def is_boolean_valued(expr: Basic) -> bool:
     """Return whether the value of expr, which isn't a symbol, is a bool. An
     ITE is a Boolean, but its value is a number if its branches are."""
     if isinstance(expr, ITE):
-        return not any(branch.is_extended_real for branch in expr.args[1:])
+        return all(is_boolean_valued(branch) if not isinstance(branch, Symbol)
+                   else not branch.is_extended_real for branch in expr.args[1:])
     return isinstance(expr, Boolean) and not isinstance(expr, Symbol)
 
 
@@ -357,7 +381,7 @@ def wrap_in_function(printer_class: type[CodePrinter], code: str, parameters: li
 
 def wrap_in_c_function(code: str, parameters: list[tuple[str, str]],
                        assigned: tuple[str, str] | None) -> str:
-    """Return a C or C++ function that declares the parameters and the
+    """Return a C function that declares the parameters and the
     assigned variable, given with C type names, and runs the code.
 
     Examples
@@ -437,12 +461,6 @@ TARGETS = {
                            wrap_in_c_function),
     C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
                            wrap_in_c_function),
-    CXX98CodePrinter: Target(['g++', '-std=c++98', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
-                             wrap_in_c_function),
-    CXX11CodePrinter: Target(['g++', '-std=c++11', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
-                             wrap_in_c_function),
-    CXX17CodePrinter: Target(['g++', '-std=c++17', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
-                             wrap_in_c_function),
     RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
                              '--emit=metadata', '--error-format=short'], '.rs',
                             RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'},
