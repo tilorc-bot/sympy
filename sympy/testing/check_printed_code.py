@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
@@ -47,6 +47,9 @@ from sympy.printing.cxx import CXX11CodePrinter, CXX17CodePrinter, CXX98CodePrin
 from sympy.printing.rust import RustCodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 # The printed name of a variable and its type, 'int', 'real' or 'bool',
 # e.g. ('x', 'real')
 Declaration = tuple[str, str]
@@ -54,8 +57,11 @@ Declaration = tuple[str, str]
 
 class Target(NamedTuple):
     command: list[str]
+    suffix: str
     header: str
     type_names: dict[str, str]
+    # wrap_in_c_function() or wrap_in_rust_function()
+    wrap: Callable[[str, list[tuple[str, str]], tuple[str, str] | None], str]
 
 
 C_HEADER = """\
@@ -75,19 +81,6 @@ GCC = ['-fsyntax-only', '-pedantic-errors']
 # C89 allows calls to undeclared functions
 C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
-
-TARGETS = {
-    C89CodePrinter: Target(['gcc', '-std=c89', *C_FLAGS], C_HEADER,
-                           {'int': 'int', 'real': 'double', 'bool': 'int'}),
-    C99CodePrinter: Target(['gcc', '-std=c99', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
-    C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], C99_HEADER, C_TYPE_NAMES),
-    CXX98CodePrinter: Target(['g++', '-std=c++98', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    CXX11CodePrinter: Target(['g++', '-std=c++11', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    CXX17CodePrinter: Target(['g++', '-std=c++17', *GCC], CXX_HEADER, C_TYPE_NAMES),
-    RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
-                             '--emit=metadata', '--error-format=short'],
-                            RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'}),
-}
 
 # Settings that change how the code is written, but not what it needs declared
 HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
@@ -317,15 +310,11 @@ def wrap_in_function(printer_class: type[CodePrinter], code: str, parameters: li
     }
     <BLANKLINE>
     """
-    _, header, type_names = TARGETS[printer_class]
-    parameters = [(name, type_names[type_name]) for name, type_name in parameters]
+    target = TARGETS[printer_class]
+    parameters = [(name, target.type_names[type_name]) for name, type_name in parameters]
     if assigned is not None:
-        assigned = (assigned[0], type_names[assigned[1]])
-    if printer_class is RustCodePrinter:
-        function = wrap_in_rust_function(code, parameters, assigned)
-    else:
-        function = wrap_in_c_function(code, parameters, assigned)
-    return '%s\n%s' % (header, function)
+        assigned = (assigned[0], target.type_names[assigned[1]])
+    return '%s\n%s' % (target.header, target.wrap(code, parameters, assigned))
 
 
 def wrap_in_c_function(code: str, parameters: list[tuple[str, str]],
@@ -402,15 +391,36 @@ def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
     return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
+TARGETS = {
+    C89CodePrinter: Target(['gcc', '-std=c89', *C_FLAGS], '.c', C_HEADER,
+                           {'int': 'int', 'real': 'double', 'bool': 'int'},
+                           wrap_in_c_function),
+    C99CodePrinter: Target(['gcc', '-std=c99', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
+                           wrap_in_c_function),
+    C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
+                           wrap_in_c_function),
+    CXX98CodePrinter: Target(['g++', '-std=c++98', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
+                             wrap_in_c_function),
+    CXX11CodePrinter: Target(['g++', '-std=c++11', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
+                             wrap_in_c_function),
+    CXX17CodePrinter: Target(['g++', '-std=c++17', *GCC], '.cpp', CXX_HEADER, C_TYPE_NAMES,
+                             wrap_in_c_function),
+    RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
+                             '--emit=metadata', '--error-format=short'], '.rs',
+                            RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'},
+                            wrap_in_rust_function),
+}
+
+
 def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
     """Compile source, such as wrap_in_function() returns, with the compiler
     for printer_class, and raise PrintedCodeError with what the compiler says
     if it doesn't compile."""
-    command = TARGETS[printer_class].command
+    target = TARGETS[printer_class]
+    command, suffix = target.command, target.suffix
     if shutil.which(command[0]) is None:
         raise RuntimeError('%s is needed to check printed code, since '
                            'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
-    suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, 'code' + suffix)
         with open(path, 'w') as file:
