@@ -18,8 +18,8 @@ from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
-                                              check_printed_code, compiler_problem,
-                                              compiling_enabled,
+                                              check_printed_code, compiled_function,
+                                              compiler_problem, compiling_enabled,
                                               declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
@@ -207,3 +207,14 @@ def test_check_compiles_rust():
     e = raises(PrintedCodeError, lambda: _wrap_and_compile(RustCodePrinter, 'x + 42'))
     assert str(e.value).startswith("This doesn't compile.")
     _wrap_and_compile(RustCodePrinter, 'x + 42.0')
+
+
+def test_compiled_function():
+    raises(ValueError, lambda: compiled_function(C99CodePrinter(), [x], x - n))
+    if compiling_enabled(C99CodePrinter):
+        assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
+    if compiling_enabled(RustCodePrinter):
+        assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
+        # n.powi(2), but n is an i32
+        e = raises(PrintedCodeError, lambda: compiled_function(RustCodePrinter(), [n], n**2))
+        assert str(e.value).startswith("This doesn't compile.")

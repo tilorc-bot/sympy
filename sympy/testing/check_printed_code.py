@@ -31,9 +31,13 @@ named like a constant of std::f64::consts, such as E or PI, can't be a
 parameter, and a tuple, which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a
 C expression. Assigning a Piecewise whose value is a bool to a variable
 isn't supported, since a Piecewise isn't a Boolean.
+
+To test what printed code computes, compiled_function() compiles it into a
+function that Python can call, like lambdify().
 """
 from __future__ import annotations
 
+import ctypes
 import functools
 import os
 import shutil
@@ -73,7 +77,7 @@ class Target(NamedTuple):
     header: str
     type_names: dict[str, str]
     # wrap_in_c_function() or wrap_in_rust_function()
-    wrap: Callable[[str, list[tuple[str, str]], tuple[str, str] | None], str]
+    wrap: Callable[..., str]
 
 
 C_HEADER = """\
@@ -91,6 +95,10 @@ use std::f64::{INFINITY, NAN, NEG_INFINITY};
 # C89 allows calls to undeclared functions
 C_FLAGS = ['-fsyntax-only', '-pedantic-errors', '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
+# What replaces the flags of TARGETS that only check the code, to compile it
+# into a shared library
+LIBRARY_FLAGS = {'-fsyntax-only': ['-shared', '-fPIC'], '--crate-type=lib': ['--crate-type=cdylib'],
+                 '--emit=metadata': []}
 
 # Settings that change how the code is written, but not what it needs declared
 HARMLESS_SETTINGS = {'order', 'full_prec', 'precision', 'contract',
@@ -127,6 +135,9 @@ def compiler_problem(printer_class: type[CodePrinter]) -> str | None:
         return '%s is needed to check printed code, but it is not found' % compiler
     try:
         check_compiles(printer_class, wrap_in_function(printer_class, '0', [], None))
+        function = _compile_and_load(printer_class, '0', ())
+        if isinstance(function, str):
+            raise PrintedCodeError(function)
     except OSError as error:
         return '%s is needed to check printed code, but it can\'t be run: %s' % (
             compiler, error)
@@ -344,10 +355,11 @@ def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaratio
 
 
 def wrap_in_function(printer_class: type[CodePrinter], code: str, parameters: list[Declaration],
-                     assigned: Declaration | None) -> str:
+                     assigned: Declaration | None, returns: bool = False) -> str:
     """Return the source of a function that declares the parameters and the
     assigned variable and runs the code, so that it compiles if the code is
-    valid.
+    valid. If returns is True, the code is an expression, and the function
+    returns its value as a double and can be called from C.
 
     Examples
     ========
@@ -372,11 +384,11 @@ def wrap_in_function(printer_class: type[CodePrinter], code: str, parameters: li
     parameters = [(name, target.type_names[type_name]) for name, type_name in parameters]
     if assigned is not None:
         assigned = (assigned[0], target.type_names[assigned[1]])
-    return '%s\n%s' % (target.header, target.wrap(code, parameters, assigned))
+    return '%s\n%s' % (target.header, target.wrap(code, parameters, assigned, returns))
 
 
 def wrap_in_c_function(code: str, parameters: list[tuple[str, str]],
-                       assigned: tuple[str, str] | None) -> str:
+                       assigned: tuple[str, str] | None, returns: bool = False) -> str:
     """Return a C function that declares the parameters and the
     assigned variable, given with C type names, and runs the code.
 
@@ -406,18 +418,19 @@ def wrap_in_c_function(code: str, parameters: list[tuple[str, str]],
                 or lines[declarations_end].startswith(('//', '/*'))):
             declarations_end += 1
         body = lines[:declarations_end] + [
-            '(void)(', *['    ' + line for line in lines[declarations_end:]], ');']
+            'return (double)(' if returns else '(void)(',
+            *['    ' + line for line in lines[declarations_end:]], ');']
     elif assigned[0] in dict(parameters):
         body = lines
     else:
         body = ['%s %s;' % (assigned[1], assigned[0]), *lines]
-    signature = 'void f(%s)' % (', '.join(
+    signature = '%s f(%s)' % ('double' if returns else 'void', ', '.join(
         '%s %s' % (type_name, name) for name, type_name in parameters) or 'void')
     return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
 def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
-                          assigned: tuple[str, str] | None) -> str:
+                          assigned: tuple[str, str] | None, returns: bool = False) -> str:
     """Return a Rust function that declares the parameters and the assigned
     variable, given with Rust type names, and runs the code.
 
@@ -438,14 +451,22 @@ def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
     if assigned is None:
         # A block, since an expression can follow declarations of
         # number constants such as GoldenRatio
-        body = ['let _ = {', *['    ' + line for line in lines], '};']
+        block = ['    ' + line for line in lines]
+        if returns:
+            body = ['let value = {', *block, '};', 'value as f64']
+        else:
+            body = ['let _ = {', *block, '};']
     elif assigned[0] in dict(parameters):
         body = lines
     else:
         body = ['let mut %s: %s;' % assigned, *lines]
-    signature = 'pub fn f(%s)' % ', '.join(
+    arguments = ', '.join(
         '%s%s: %s' % ('mut ' if assigned and name == assigned[0] else '', name, type_name)
         for name, type_name in parameters)
+    if returns:
+        signature = '#[no_mangle]\npub extern "C" fn f(%s) -> f64' % arguments
+    else:
+        signature = 'pub fn f(%s)' % arguments
     return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
@@ -469,13 +490,75 @@ def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
     for printer_class, and raise PrintedCodeError with what the compiler says
     if it doesn't compile."""
     target = TARGETS[printer_class]
-    command, suffix = target.command, target.suffix
     with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, 'code' + suffix)
-        with open(path, 'w', encoding='utf-8') as file:
-            file.write(source)
-        result = subprocess.run(command + [path], cwd=directory, capture_output=True,
-                                encoding='utf-8', errors='replace')
+        run_compiler(target.command, target.suffix, source, directory)
+
+
+def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
+    """Return a Python function of args, like lambdify(args, expr), that runs
+    the code that printer prints for expr, compiled into a shared library, and
+    returns its value as a float.
+
+    The args must be the symbols of expr, each with integer=True or real=True.
+    A test that uses this should be skipped if compiling_enabled() is False.
+
+    Examples
+    ========
+
+    >>> from sympy import Mod, Symbol
+    >>> from sympy.printing.c import C99CodePrinter
+    >>> from sympy.testing.check_printed_code import compiled_function
+    >>> x = Symbol('x', real=True)
+    >>> f = compiled_function(C99CodePrinter(), [x], Mod(x, 2))  # doctest: +SKIP
+    >>> f(5.5)  # doctest: +SKIP
+    1.5
+    """
+    parameters, _ = declarations(printer, expr, None)
+    if sorted(args, key=str) != list(parameters):
+        raise ValueError('args must be the symbols of %s' % expr)
+    function = _compile_and_load(type(printer), printer.doprint(expr),  # type: ignore[arg-type]
+                                 tuple(parameters[arg] for arg in args))
+    if isinstance(function, str):
+        raise PrintedCodeError(function)
+    return function
+
+
+# Cached, also if the code doesn't compile, since a Hypothesis test can print
+# the same code many times while it shrinks an example
+@functools.cache
+def _compile_and_load(printer_class: type[CodePrinter], code: str,
+                      parameters: tuple[Declaration, ...]):
+    """Compile code, an expression, into a shared library, and return its
+    function of the parameters, or what the compiler says if it doesn't
+    compile."""
+    target = TARGETS[printer_class]
+    command = [new_part for part in target.command
+               for new_part in LIBRARY_FLAGS.get(part, [part])]
+    source = wrap_in_function(printer_class, code, list(parameters), None, returns=True)
+    # Windows can't delete the library while it's loaded, so it's left there
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+        library = os.path.join(directory, 'code.so')
+        try:
+            run_compiler(command, target.suffix, source, directory, ('-o', library, '-lm'))
+        except PrintedCodeError as error:
+            return str(error)
+        function = ctypes.CDLL(library).f
+    function.restype = ctypes.c_double
+    function.argtypes = [{'int': ctypes.c_int, 'real': ctypes.c_double}[type_name]
+                         for _, type_name in parameters]
+    return function
+
+
+def run_compiler(command: list[str], suffix: str, source: str, directory: str,
+                 arguments: tuple[str, ...] = ()) -> None:
+    """Compile source with command (and arguments after the source file) in
+    directory, and raise PrintedCodeError with what the compiler says if it
+    doesn't compile."""
+    path = os.path.join(directory, 'code' + suffix)
+    with open(path, 'w', encoding='utf-8') as file:
+        file.write(source)
+    result = subprocess.run(command + [path, *arguments], cwd=directory, capture_output=True,
+                            encoding='utf-8', errors='replace')
     if result.returncode:
         # Not the notes and the code around the error, which the source shows
         errors = ''.join(line.replace(path, 'code' + suffix) + '\n'
@@ -483,5 +566,6 @@ def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
         numbered_source = ''.join('%4d | %s\n' % (number, line)
                                   for number, line in enumerate(source.splitlines(), 1))
         raise PrintedCodeError("This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
-            ' '.join(command), textwrap.indent(errors, '    '),
+            ' '.join([*command, *arguments]).replace(directory + os.sep, ''),
+            textwrap.indent(errors, '    '),
             textwrap.indent(numbered_source, '    ')))
