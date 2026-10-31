@@ -127,7 +127,7 @@ def _environment(value):
 
 
 def test_check_compiles():
-    # Compiling is slow, so only in the printed code CI job
+    # Compiling is slow, so only with SYMPY_CHECK_PRINTED_CODE, as in CI
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
     def wrap_and_compile(printer_class, code):
