@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from sympy.codegen.ast import CodegenAST
 from sympy.core.basic import Basic
 from sympy.core.symbol import Symbol
+from sympy.core.sympify import sympify
 from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
@@ -82,13 +83,13 @@ C_FLAGS = [*GCC, '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
 
 # Settings that change how the code is written, but not what it needs declared
-HARMLESS_SETTINGS = {'order', 'full_prec', 'human', 'precision', 'contract',
+HARMLESS_SETTINGS = {'order', 'full_prec', 'precision', 'contract',
                      'strict', 'error_on_reserved', 'reserved_word_suffix', 'inline'}
 # type_aliases and the other type settings of the C printers, which they
 # keep as attributes instead of in _settings
 C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('type_')]
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
-LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
+LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent)
 
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     """Return whether the code that printer_class prints is compiled: if its
@@ -150,7 +151,7 @@ def check_printed_code(test_func):
     """
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
-        printed, problems = set(), []
+        printed, problems = [], []
         original_doprint = CodePrinter.doprint
 
         # The printers inherit doprint and none calls it recursively, so this
@@ -158,14 +159,13 @@ def check_printed_code(test_func):
         def doprint(self, expr, assign_to=None):
             code = original_doprint(self, expr, assign_to)
             # Only the classes in TARGETS, not subclasses defined by tests
-            if (type(self) in TARGETS and isinstance(code, str)
-                    and (type(self), code, expr, assign_to) not in printed):
-                printed.add((type(self), code, expr, assign_to))
+            if type(self) in TARGETS:
+                printed.append(code)
                 try:
                     check_code(self, expr, assign_to, code)
                 except PrintedCodeError as problem:
                     problems.append('%s printed\n\n%s\n\n%s' % (
-                        type(self).__name__, textwrap.indent(code, '    '), problem))
+                        type(self).__name__, textwrap.indent(str(code), '    '), problem))
             return code
 
         CodePrinter.doprint = doprint  # type: ignore[method-assign]
@@ -218,6 +218,7 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
     if changed_settings:
         raise unsupported("it's printed with the setting %s, which can need other "
                           "declarations" % changed_settings[0])
+    expr = sympify(expr)
     if isinstance(expr, CodegenAST) or not isinstance(expr, Basic):
         raise unsupported("it's a %s, not an expression" % type(expr).__name__)
     if (expr.is_Matrix or expr.atoms(Indexed, Idx, MatrixSymbol, MatrixElement)
@@ -256,6 +257,10 @@ def declarations(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
     for node in preorder_traversal(expr):
         if isinstance(node, LOGIC_FUNCTIONS):
             booleans.update(node.args)
+        elif isinstance(node, ITE):
+            booleans.add(node.args[0])
+            if is_boolean_valued(node):
+                booleans.update(node.args[1:])
         elif isinstance(node, ExprCondPair):
             booleans.add(node.cond)
     parameters = {symbol: declare(printer, symbol, symbol in booleans)
@@ -267,8 +272,15 @@ def declarations(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
     types = dict(parameters.values())
     if name in types:
         return parameters, (name, types[name])
-    is_boolean = isinstance(expr, Boolean) and not isinstance(expr, Symbol)
-    return parameters, declare(printer, symbol, is_boolean)
+    return parameters, declare(printer, symbol, is_boolean_valued(expr))
+
+
+def is_boolean_valued(expr: Basic) -> bool:
+    """Return whether the value of expr, which isn't a symbol, is a bool. An
+    ITE is a Boolean, but its value is a number if its branches are."""
+    if isinstance(expr, ITE):
+        return not any(branch.is_extended_real for branch in expr.args[1:])
+    return isinstance(expr, Boolean) and not isinstance(expr, Symbol)
 
 
 def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaration:
