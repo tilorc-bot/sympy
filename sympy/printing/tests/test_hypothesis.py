@@ -58,20 +58,37 @@ def check_values(printer_name, code, expr, data):
     function = compile_function(printer_name, code, tuple(zip(map(str, symbols), types)))
     for _ in range(10):
         values = [data.draw(INTEGERS if type_name == 'int' else REALS) for type_name in types]
-        try:
-            expected = expr.xreplace({
-                symbol: Integer(value) if type_name == 'int' else Float(value, 30)
-                for symbol, type_name, value in zip(symbols, types, values)}).evalf(30)
-        except (ArithmeticError, ValueError):  # e.g. Mod(x, 0)
-            continue
+        expected = sympy_value(expr, symbols, values)
+        nearby = [sympy_value(expr, symbols, [value*(1 + nudge) for value in values])
+                  for nudge in (1e-12, -1e-12)]
         # Not where SymPy's value isn't a real number, where the code could
-        # crash (e.g. dividing an integer by 0)
-        if not expected.is_Number or expected is S.NaN or expected is S.ComplexInfinity:
+        # crash (e.g. dividing an integer by 0), or next to a jump (e.g. of
+        # floor or Mod), where rounding can give the value on either side
+        if expected is None or not all(value is not None and close(value, expected)
+                                       for value in nearby):
             continue
         value = function(*values)
-        assert math.isclose(value, float(expected), rel_tol=1e-6, abs_tol=1e-6), (
+        assert close(value, expected), (
             '%s printed %s, which gives %r for %s, but SymPy gives %r'
-            % (printer_name, code, value, dict(zip(symbols, values)), float(expected)))
+            % (printer_name, code, value, dict(zip(symbols, values)), expected))
+
+
+def sympy_value(expr, symbols, values):
+    """SymPy's value of expr for the values of its symbols, or None if it
+    isn't a real number."""
+    try:
+        value = expr.xreplace({
+            symbol: Integer(value) if isinstance(value, int) else Float(value, 30)
+            for symbol, value in zip(symbols, values)}).evalf(30)
+    except (ArithmeticError, ValueError):  # e.g. Mod(x, 0)
+        return None
+    if not value.is_Number or value is S.NaN or value is S.ComplexInfinity:
+        return None
+    return float(value)
+
+
+def close(value, expected):
+    return math.isclose(value, expected, rel_tol=1e-6, abs_tol=1e-6)
 
 
 # The printers must not raise, and what they print must compute SymPy's
@@ -96,7 +113,7 @@ def test_cxxcode(expr, data):
     check_values('CXX11CodePrinter', cxxcode(expr), expr, data)
 
 
-@XFAIL  # rust_code(Mod(x, i)) calls recip on an i32
+@XFAIL  # rust_code(i**2) calls powi on an i32
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
 @given(random_expressions(), st.data())
 def test_rust_code(expr, data):
