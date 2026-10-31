@@ -15,7 +15,7 @@ from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
                                               check_printed_code, compiling_enabled,
-                                              declare, wrap_in_function)
+                                              declarations, declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -29,6 +29,16 @@ def test_declare():
     assert declare(C99CodePrinter(), b, True) == ('b', 'bool')
     e = raises(PrintedCodeError, lambda: declare(C99CodePrinter(), z, False))
     assert str(e.value).startswith('The type of z is unknown')
+
+
+def test_declarations():
+    assert declarations(C99CodePrinter(), sin(x) + n, None) == (
+        {n: ('n', 'int'), x: ('x', 'real')}, None)
+    assert declarations(C99CodePrinter(), x + n, 'x') == (
+        {n: ('n', 'int'), x: ('x', 'real')}, ('x', 'real'))
+    assert declarations(C99CodePrinter(), And(b, Gt(x, 0)), Symbol('c')) == (
+        {b: ('b', 'bool'), x: ('x', 'real')}, ('c', 'bool'))
+    raises(PrintedCodeError, lambda: declarations(C99CodePrinter(), x, 'z'))
 
 
 def _problem(printer, expr, assign_to=None):
@@ -116,11 +126,11 @@ def test_check_compiles():
     # Compiling is slow, so only in the printed code CI job
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    e = raises(PrintedCodeError, lambda: check_compiles('RustCodePrinter', 'x + 42',
-                                                        [('x', 'real')], None))
+    def wrap_and_compile(printer_name, code):
+        check_compiles(printer_name, wrap_in_function(printer_name, code, [('x', 'real')], None))
+    e = raises(PrintedCodeError, lambda: wrap_and_compile('RustCodePrinter', 'x + 42'))
     assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)
-    check_compiles('RustCodePrinter', 'x + 42.0', [('x', 'real')], None)
-    e = raises(PrintedCodeError, lambda: check_compiles('C99CodePrinter', 'x % x',
-                                                        [('x', 'real')], None))
+    wrap_and_compile('RustCodePrinter', 'x + 42.0')
+    e = raises(PrintedCodeError, lambda: wrap_and_compile('C99CodePrinter', 'x % x'))
     assert 'invalid operands' in str(e.value)
-    check_compiles('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None)
+    wrap_and_compile('C99CodePrinter', 'fmod(x, x)')
