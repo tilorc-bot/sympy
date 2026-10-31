@@ -143,13 +143,7 @@ class PrintedCodeError(AssertionError):
 
 
 def check_printed_code(test_func):
-    """Make the test fail if C or Rust code that it prints is wrong.
-
-    Explanation
-    ===========
-
-    The test checks that a printer prints the code it expects. This checks
-    that the code compiles.
+    """Make the test fail if C or Rust code that it prints doesn't compile.
 
     While the test runs, CodePrinter.doprint is replaced by a wrapper that
     checks what these printers print (see check_code()). The problems are

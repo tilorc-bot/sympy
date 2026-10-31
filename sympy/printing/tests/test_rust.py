@@ -6,7 +6,7 @@ from sympy.functions import (Piecewise, sin, cos, Abs, exp, ceiling, sqrt,
                              sign, floor, log)
 from sympy.logic import ITE
 from sympy.testing.check_printed_code import check_printed_code
-from sympy.testing.pytest import raises
+from sympy.testing.pytest import XFAIL, raises
 from sympy.utilities.lambdify import implemented_function
 from sympy.tensor import IndexedBase, Idx
 from sympy.matrices import MatrixSymbol, SparseMatrix, Matrix
@@ -378,3 +378,13 @@ def test_parenthesize_typecast():
     modulus = Symbol("modulus")
     exp = (2 ** (2.0 * ceiling(-y + log(x) / log(2.0) + 4)) + 0.5) / (3 * modulus**2)
     assert(rust_code(exp) == '(1_f64/3.0)*(0.5 + (2.0*(-y + 1.44269504088896*x.ln()).ceil() + 8.0).exp2())*modulus.powi(-2)')
+
+
+# https://github.com/sympy/sympy/issues/28418: the string is what the printer
+# prints, but rustc rejects it, so only @check_printed_code fails
+@XFAIL
+@check_printed_code
+def test_typecast_compiles():
+    i, j = symbols('i j', integer=True)
+    w = Symbol('w', real=True)
+    assert rust_code(Lt(i + j, w)) == 'i + j as f64 < w'
