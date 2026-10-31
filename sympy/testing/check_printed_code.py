@@ -10,7 +10,9 @@ code with a decorator::
         x, y = symbols('x y', real=True)
         assert rust_code(sign(x + y)) == "..."
 
-The code is only compiled if SYMPY_CHECK_PRINTED_CODE is set, as in CI::
+The code is compiled with gcc, g++ or rustc if it is found.
+SYMPY_CHECK_PRINTED_CODE=0 turns compiling off, and
+SYMPY_CHECK_PRINTED_CODE=1 makes a compiler that isn't found an error::
 
     SYMPY_CHECK_PRINTED_CODE=1 pytest sympy/printing/tests/test_rust.py
 
@@ -91,9 +93,21 @@ C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('typ
 # Their arguments are booleans (unlike those of isnan and other BooleanFunctions)
 LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent, ITE)
 
-def compiling_enabled() -> bool:
-    """Return whether SYMPY_CHECK_PRINTED_CODE is set (and not to 0)."""
-    return os.environ.get('SYMPY_CHECK_PRINTED_CODE', '') not in ('', '0')
+def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
+    """Return whether the code that printer_class prints is compiled: if its
+    compiler is found, unless SYMPY_CHECK_PRINTED_CODE is 0. Raise
+    RuntimeError if it isn't found and SYMPY_CHECK_PRINTED_CODE is set to
+    something else."""
+    setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
+    if setting == '0':
+        return False
+    compiler = TARGETS[printer_class].command[0]
+    if shutil.which(compiler) is not None:
+        return True
+    if setting:
+        raise RuntimeError('%s is needed to check printed code, since '
+                           'SYMPY_CHECK_PRINTED_CODE is set' % compiler)
+    return False
 
 
 class PrintedCodeError(AssertionError):
@@ -134,8 +148,8 @@ def check_printed_code(test_func):
     The type of x is unknown, so this can't be compiled. Create x with
     real=True or integer=True, e.g. Symbol('x', real=True).
 
-    With Symbol('x', real=True), it passes. If SYMPY_CHECK_PRINTED_CODE is
-    set, it then also compiles sin(x), and fails if gcc can't compile it.
+    With Symbol('x', real=True), it passes. If gcc is found, it then also
+    compiles sin(x), and fails if gcc can't compile it.
     """
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
@@ -176,9 +190,9 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
     """Raise PrintedCodeError if code, which printer printed for expr (assigned
     to assign_to, if it isn't None), is wrong.
 
-    If SYMPY_CHECK_PRINTED_CODE is set, this compiles the code (see
-    check_compiles()). Before that, and otherwise only, it checks that the code
-    can be compiled: that nothing in it is unsupported, such as an array, and
+    If the compiler is found, this compiles the code (see compiling_enabled()
+    and check_compiles()). Before that, and otherwise only, it checks that the
+    code can be compiled: that nothing in it is unsupported, such as an array, and
     that each of its symbols has a type (see declarations()).
 
     Examples
@@ -217,7 +231,7 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
     for name, _ in [*parameters.values(), *([assigned] if assigned else [])]:
         if not name.isidentifier():
             raise unsupported("%s isn't a name" % name)
-    if compiling_enabled():
+    if compiling_enabled(type(printer)):
         check_compiles(type(printer), wrap_in_function(
             type(printer), code, list(parameters.values()), assigned))
 
@@ -418,9 +432,6 @@ def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
     if it doesn't compile."""
     target = TARGETS[printer_class]
     command, suffix = target.command, target.suffix
-    if shutil.which(command[0]) is None:
-        raise RuntimeError('%s is needed to check printed code, since '
-                           'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, 'code' + suffix)
         with open(path, 'w') as file:

@@ -178,16 +178,6 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -n auto --timeout 10 --durations=50 --durations-min=5
 
-      # gcc, g++ and rustc are preinstalled on the runner
-      - name: Compile the code printed by the tests that use @check_printed_code
-        env:
-          SYMPY_CHECK_PRINTED_CODE: 1
-        run: |
-          # shellcheck disable=SC2046 # split the file names
-          pytest sympy/testing/tests/test_check_printed_code.py \
-            sympy/printing/tests/test_hypothesis.py \
-            $(git grep -l '@check_printed_code' -- '*/tests/test_*.py')
-
   # -------------------- Optional dependency tests ----------------- #
 
   optional-dependencies:
