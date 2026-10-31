@@ -14,10 +14,9 @@ from sympy.printing.c import C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (PrintedCodeError, check_printed_code,
-                                              compiling_enabled, find_compile_problem,
-                                              find_problem, symbol_type,
-                                              unsupported_reason, wrap_in_function)
+from sympy.testing.check_printed_code import (PrintedCodeError, check_code, check_compiles,
+                                              check_printed_code, compiling_enabled,
+                                              declare, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -25,34 +24,36 @@ n = Symbol('n', integer=True)
 b, z = symbols('b z')
 
 
-def test_symbol_type():
-    assert symbol_type(x, False) == 'real'
-    assert symbol_type(n, False) == 'int'
-    assert symbol_type(b, True) == 'bool'
-    assert symbol_type(z, False) is None
+def test_declare():
+    assert declare(C99CodePrinter(), x, False) == ('x', 'real')
+    assert declare(C99CodePrinter(), n, False) == ('n', 'int')
+    assert declare(C99CodePrinter(), b, True) == ('b', 'bool')
+    e = raises(PrintedCodeError, lambda: declare(C99CodePrinter(), z, False))
+    assert str(e.value).startswith('The type of z is unknown')
 
 
-def _find_problem(printer, expr, assign_to=None):
-    return find_problem(printer, expr, assign_to, printer.doprint(expr, assign_to))
+def _problem(printer, expr, assign_to=None):
+    """The message of the PrintedCodeError that check_code() raises, or None."""
+    try:
+        check_code(printer, expr, assign_to, printer.doprint(expr, assign_to))
+    except PrintedCodeError as problem:
+        return str(problem)
+    return None
 
 
-def test_find_problem():
+def test_check_code():
     with _environment('0'):
-        assert _find_problem(C99CodePrinter(), sin(x) + n) is None
-        assert _find_problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
-        assert _find_problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
-        assert _find_problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
-        assert _find_problem(C99CodePrinter(), z + b).startswith('The types of b and z are unknown')
-        assert 'since it uses arrays' in _find_problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
-
-
-def test_unsupported_reason():
-    assert unsupported_reason(C99CodePrinter(), x, None) is None
-    assert 'setting user_functions' in unsupported_reason(
-        C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x), None)
-    assert 'setting type_aliases' in unsupported_reason(
-        C99CodePrinter({'type_aliases': {real: float80}}), x, None)
-    assert 'arrays' in unsupported_reason(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+        assert _problem(C99CodePrinter(), sin(x) + n) is None
+        assert _problem(RustCodePrinter(), And(b, Gt(x, 0)), Symbol('y')) is None
+        assert _problem(C99CodePrinter(), x, 'x') is None
+        assert _problem(C99CodePrinter(), z + x).startswith('The type of z is unknown')
+        assert _problem(C99CodePrinter(), x, 'z').startswith('The type of z is unknown')
+        assert 'since it uses arrays' in _problem(C99CodePrinter(), MatrixSymbol('A', 2, 2)[0, 1])
+        assert 'since it uses arrays' in _problem(C99CodePrinter(), x, MatrixSymbol('A', 1, 1)[0, 0])
+        assert 'setting user_functions' in _problem(
+            C99CodePrinter({'user_functions': {'sin': 'mysin'}}), sin(x)).replace('\n', ' ')
+        assert 'setting type_aliases' in _problem(
+            C99CodePrinter({'type_aliases': {real: float80}}), x).replace('\n', ' ')
 
 
 def test_wrap_in_function():
@@ -112,11 +113,14 @@ def _environment(value):
             os.environ['SYMPY_CHECK_PRINTED_CODE'] = old
 
 
-def test_find_compile_problem():
+def test_check_compiles():
     if shutil.which('rustc') is None or shutil.which('gcc') is None:
         skip('rustc and gcc are needed')
-    error = find_compile_problem('RustCodePrinter', 'x + 42', [('x', 'real')], None)
-    assert error.startswith("This doesn't compile.") and 'cannot add' in error
-    assert find_compile_problem('RustCodePrinter', 'x + 42.0', [('x', 'real')], None) is None
-    assert 'invalid operands' in find_compile_problem('C99CodePrinter', 'x % x', [('x', 'real')], None)
-    assert find_compile_problem('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None) is None
+    e = raises(PrintedCodeError, lambda: check_compiles('RustCodePrinter', 'x + 42',
+                                                        [('x', 'real')], None))
+    assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)
+    check_compiles('RustCodePrinter', 'x + 42.0', [('x', 'real')], None)
+    e = raises(PrintedCodeError, lambda: check_compiles('C99CodePrinter', 'x % x',
+                                                        [('x', 'real')], None))
+    assert 'invalid operands' in str(e.value)
+    check_compiles('C99CodePrinter', 'fmod(x, x)', [('x', 'real')], None)
