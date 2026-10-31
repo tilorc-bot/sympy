@@ -26,8 +26,11 @@ fails if it prints no C or Rust code, or code that can't be checked yet
 
 The code is compiled on its own, so some valid code fails as if the
 printer were wrong: in Rust an integer literal is an i32, so one that
-doesn't fit in an i32, as in rust_code(2**40), doesn't compile, and a tuple,
-which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a C expression.
+doesn't fit in an i32, as in rust_code(2**40), doesn't compile, a symbol
+named like a constant of std::f64::consts, such as E or PI, can't be a
+parameter, and a tuple, which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a
+C expression. A variable that is assigned a Piecewise whose value is a bool
+needs a type, since a Piecewise isn't a Boolean.
 """
 from __future__ import annotations
 
@@ -103,8 +106,8 @@ COMPILER_PROBLEMS: dict[type[CodePrinter], str | None] = {}
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     """Return whether the code that printer_class prints is compiled, which it
     is if its compiler is found and compiles a trivial function, unless
-    SYMPY_CHECK_PRINTED_CODE is 0. If SYMPY_CHECK_PRINTED_CODE is set to
-    something else, raise RuntimeError instead of returning False."""
+    SYMPY_CHECK_PRINTED_CODE is 0. If SYMPY_CHECK_PRINTED_CODE is 1, raise
+    RuntimeError instead of returning False."""
     setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
     if setting == '0':
         return False
@@ -113,7 +116,7 @@ def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     problem = COMPILER_PROBLEMS[printer_class]
     if problem is None:
         return True
-    if setting:
+    if setting == '1':
         raise RuntimeError(problem)
     return False
 
@@ -314,8 +317,9 @@ def declarations(printer: CodePrinter, expr: Basic, assign_to: str | Basic | Non
 
 
 def is_boolean_valued(expr: Basic) -> bool:
-    """Return whether the value of expr, which isn't a symbol, is a bool. An
-    ITE is a Boolean, but its value is a number if its branches are."""
+    """Return whether the value of expr is a bool. A symbol's isn't, since
+    its type comes from its assumptions or from where it's used. An ITE is a
+    Boolean, but its value is a number if its branches are."""
     if isinstance(expr, ITE):
         return all(is_boolean_valued(branch) if not isinstance(branch, Symbol)
                    else not branch.is_extended_real for branch in expr.args[1:])
@@ -476,10 +480,10 @@ def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
     command, suffix = target.command, target.suffix
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, 'code' + suffix)
-        with open(path, 'w') as file:
+        with open(path, 'w', encoding='utf-8') as file:
             file.write(source)
         result = subprocess.run(command + [path], cwd=directory, capture_output=True,
-                                text=True)
+                                encoding='utf-8', errors='replace')
     if result.returncode:
         # Not the notes and the code around the error, which the source shows
         errors = ''.join(line.replace(path, 'code' + suffix) + '\n'
