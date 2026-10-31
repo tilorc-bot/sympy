@@ -25,6 +25,7 @@ shrinks an expression whose code is wrong.
 """
 from __future__ import annotations
 
+import ctypes
 import functools
 import os
 import shutil
@@ -331,18 +332,68 @@ def check_compiles(printer_name: str, code: str, parameters: list[Declaration],
                    assigned: Declaration | None) -> None:
     """Compile the code as wrap_in_function() wraps it, and raise
     PrintedCodeError with what the compiler says if it doesn't compile."""
-    command = TARGETS[printer_name].command
+    with tempfile.TemporaryDirectory() as directory:
+        compile_source(TARGETS[printer_name].command,
+                       wrap_in_function(printer_name, code, parameters, assigned), directory)
+
+
+@functools.cache
+def compile_function(printer_name: str, code: str, parameters: tuple[Declaration, ...]):
+    """Compile code, an expression that the printer called printer_name
+    printed, into a shared library, and return it as a Python function of the
+    parameters that returns the expression's value as a float. The functions
+    are cached, since a Hypothesis test can print the same code many times.
+
+    Examples
+    ========
+
+    >>> from sympy.testing.check_printed_code import compile_function
+    >>> f = compile_function('C99CodePrinter', 'fmod(x, 2)', (('x', 'real'),))  # doctest: +SKIP
+    >>> f(5.5)  # doctest: +SKIP
+    1.5
+    """
+    _, header, type_names = TARGETS[printer_name]
+    arguments = [(name, type_names[type_name]) for name, type_name in parameters]
+    if printer_name == 'RustCodePrinter':
+        command = ['rustc', '--edition=2021', '--crate-type=cdylib', '--error-format=short']
+        source = ('%s\n#[no_mangle]\npub extern "C" fn f(%s) -> f64\n{\n    let value = {\n%s\n'
+                  '    };\n    value as f64\n}\n' % (
+                      header, ', '.join('%s: %s' % argument for argument in arguments),
+                      textwrap.indent(code, '        ')))
+        libraries = []
+    else:
+        command = [*[part for part in TARGETS[printer_name].command
+                     if part != '-fsyntax-only'], '-shared', '-fPIC']
+        # C++ would otherwise give f a mangled name
+        extern = 'extern "C" ' if printer_name.startswith('CXX') else ''
+        source = '%s\n%sdouble f(%s)\n{\n    return (double)(\n%s\n    );\n}\n' % (
+            header, extern, ', '.join('%s %s' % (type_name, name) for name, type_name in arguments)
+            or 'void', textwrap.indent(code, '        '))
+        libraries = ['-lm']
+    with tempfile.TemporaryDirectory() as directory:
+        library = os.path.join(directory, 'code.so')
+        compile_source(command, source, directory, ('-o', library, *libraries))
+        function = ctypes.CDLL(library).f
+    function.restype = ctypes.c_double
+    function.argtypes = [ctypes.c_int if type_name == 'int' else ctypes.c_double
+                         for _, type_name in parameters]
+    return function
+
+
+def compile_source(command: list[str], source: str, directory: str,
+                   arguments: tuple[str, ...] = ()) -> None:
+    """Compile source with command (and arguments after the source file) in
+    directory, and raise PrintedCodeError with what the compiler says if it
+    doesn't compile."""
     if shutil.which(command[0]) is None:
         raise RuntimeError('%s is needed to check printed code, since '
                            'SYMPY_CHECK_PRINTED_CODE is set' % command[0])
-    source = wrap_in_function(printer_name, code, parameters, assigned)
     suffix = {'gcc': '.c', 'g++': '.cpp', 'rustc': '.rs'}[command[0]]
-    with tempfile.TemporaryDirectory() as directory:
-        path = os.path.join(directory, 'code' + suffix)
-        with open(path, 'w') as file:
-            file.write(source)
-        result = subprocess.run(command + [path], cwd=directory, capture_output=True,
-                                text=True)
+    path = os.path.join(directory, 'code' + suffix)
+    with open(path, 'w') as file:
+        file.write(source)
+    result = subprocess.run(command + [path, *arguments], cwd=directory,
+                            capture_output=True, text=True)
     if result.returncode:
         # Not the notes and the code around the error, which the source shows
         errors = ''.join(line.replace(path, 'code' + suffix) + '\n'
@@ -350,5 +401,6 @@ def check_compiles(printer_name: str, code: str, parameters: list[Declaration],
         numbered_source = ''.join('%4d | %s\n' % (number, line)
                                   for number, line in enumerate(source.splitlines(), 1))
         raise PrintedCodeError("This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
-            ' '.join(command), textwrap.indent(errors, '    '),
+            ' '.join([*command, *arguments]).replace(directory + os.sep, ''),
+            textwrap.indent(errors, '    '),
             textwrap.indent(numbered_source, '    ')))

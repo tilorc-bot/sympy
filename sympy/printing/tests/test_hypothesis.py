@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
+
 from hypothesis import given, settings, strategies as st
 
 from sympy.core.add import Add
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
-from sympy.core.numbers import Float, I, Rational, nan, oo, zoo
+from sympy.core.numbers import Float, I, Integer, Rational, nan, oo, zoo
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
@@ -17,7 +19,7 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.printing.c import ccode
 from sympy.printing.codeprinter import rust_code
 from sympy.printing.cxx import cxxcode
-from sympy.testing.check_printed_code import check_printed_code, compiling_enabled
+from sympy.testing.check_printed_code import compile_function, compiling_enabled
 from sympy.testing.pytest import XFAIL, skip
 
 
@@ -43,34 +45,61 @@ def random_expressions():
     ).filter(lambda e: e.free_symbols and not e.has(nan, zoo, oo, -oo, I))
 
 
-# The printers must not raise, and @check_printed_code checks that what they
-# print compiles. Compiling needs SYMPY_CHECK_PRINTED_CODE, and without it
-# the tests are skipped.
+# Integers, and reals that are 0 or not tiny, so that products don't underflow
+INTEGERS = st.integers(-10, 10)
+REALS = st.one_of(st.just(0.0), st.floats(-10, -1e-3), st.floats(1e-3, 10))
 
+
+def check_values(printer_name, code, expr, data):
+    """Compile code, which the printer printed for expr, and check that it
+    computes SymPy's value of expr for 10 values of its symbols from data."""
+    symbols = sorted(expr.free_symbols, key=str)
+    types = ['int' if symbol.is_integer else 'real' for symbol in symbols]
+    function = compile_function(printer_name, code, tuple(zip(map(str, symbols), types)))
+    for _ in range(10):
+        values = [data.draw(INTEGERS if type_name == 'int' else REALS) for type_name in types]
+        try:
+            expected = expr.xreplace({
+                symbol: Integer(value) if type_name == 'int' else Float(value, 30)
+                for symbol, type_name, value in zip(symbols, types, values)}).evalf(30)
+        except (ArithmeticError, ValueError):  # e.g. Mod(x, 0)
+            continue
+        # Not where SymPy's value isn't a real number, where the code could
+        # crash (e.g. dividing an integer by 0)
+        if not expected.is_Number or expected is S.NaN or expected is S.ComplexInfinity:
+            continue
+        value = function(*values)
+        assert math.isclose(value, float(expected), rel_tol=1e-6, abs_tol=1e-6), (
+            '%s printed %s, which gives %r for %s, but SymPy gives %r'
+            % (printer_name, code, value, dict(zip(symbols, values)), float(expected)))
+
+
+# The printers must not raise, and what they print must compute SymPy's
+# values. Compiling needs SYMPY_CHECK_PRINTED_CODE, and without it the tests
+# are skipped.
+
+@XFAIL  # ccode(Mod(x, y)) prints fmod(x, y), which has the sign of x, not y
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
-@check_printed_code
-def test_ccode(expr):
+@given(random_expressions(), st.data())
+def test_ccode(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    ccode(expr)
+    check_values('C99CodePrinter', ccode(expr), expr, data)
 
 
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
-@check_printed_code
-def test_cxxcode(expr):
+@given(random_expressions(), st.data())
+def test_cxxcode(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    cxxcode(expr)
+    check_values('CXX11CodePrinter', cxxcode(expr), expr, data)
 
 
 @XFAIL  # rust_code(Mod(x, i)) calls recip on an i32
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
-@check_printed_code
-def test_rust_code(expr):
+@given(random_expressions(), st.data())
+def test_rust_code(expr, data):
     if not compiling_enabled():
         skip('SYMPY_CHECK_PRINTED_CODE is not set')
-    rust_code(expr)
+    check_values('RustCodePrinter', rust_code(expr), expr, data)
