@@ -218,6 +218,7 @@ def test_compiled_function():
         assert compiled_function(C99CodePrinter(), [x, n], x - n)(2.5, 1) == 1.5
     if compiling_enabled(RustCodePrinter):
         assert compiled_function(RustCodePrinter(), [n, x], x - n)(1, 2.5) == 1.5
+        assert compiled_function(RustCodePrinter(), [x], Gt(x, 0))(2.5) == 1.0
         printer = RustCodePrinter({'user_functions': {'sin': 'no_such_function'}})
         e = raises(PrintedCodeError, lambda: compiled_function(printer, [x], sin(x)))
         assert str(e.value).startswith("This doesn't compile.")

@@ -86,9 +86,9 @@ def _check_values(printer, expr, points):
 def _expected_value(expr, symbols, point):
     """SymPy's value of expr at point, or None if the code may give any value
     there: where the value of a part of expr isn't a real number (C has no
-    complex numbers, so log(i)**2 is NaN at i = -1), where the code could crash
-    (e.g. dividing an integer by 0), or where a tiny change of a symbol changes
-    the value, so that rounding can: next to a jump, as of floor(sqrt(i)*sqrt(j))
+    complex numbers, so log(i)**2 is NaN at i = -1) or isn't held well by a
+    double (see _sympy_value()), or where a tiny change of a symbol changes the
+    value, so that rounding can: next to a jump, as of floor(sqrt(i)*sqrt(j))
     at i = j = 3, or where the value grows fast, as sin(exp(i**2)) does."""
     if any(_sympy_value(part, symbols, point) is None
            for part in preorder_traversal(expr) if part.free_symbols):
@@ -98,21 +98,26 @@ def _expected_value(expr, symbols, point):
                                            *point[k + 1:]])
               for k, value in enumerate(point)
               for nudge in (1e-12, -1e-12)]
-    if not all(value is not None and _close(value, expected) for value in nearby):
+    # A neighbour that isn't real, e.g. of (-3)**i, says nothing about rounding
+    if not all(value is None or _close(value, expected) for value in nearby):
         return None
     return expected
 
 
 def _sympy_value(expr, symbols, values):
     """SymPy's value of expr for the values of its symbols, or None if it
-    isn't a real number."""
+    isn't a real number, or if it isn't 0 and is too large or too small for a
+    double to hold it well: above 2**53, a double can't hold every integer,
+    and exp(x**y) at x = y = 10 is inf."""
     try:
         value = expr.xreplace({
             symbol: Integer(value) if isinstance(value, int) else Float(value, 30)
             for symbol, value in zip(symbols, values)}).evalf(30)
-    except (ArithmeticError, ValueError):  # e.g. Mod(x, 0)
+    except (ArithmeticError, ValueError):
         return None
     if not value.is_Number or value is S.NaN or value is S.ComplexInfinity:
+        return None
+    if value and not 1e-300 < abs(value) < 2**53:
         return None
     return float(value)
 
@@ -122,7 +127,7 @@ def _close(value, expected):
 
 
 # The printer must not raise, and what it prints must compute SymPy's values.
-# The test is skipped if gcc isn't found or doesn't work (see
+# The test is skipped if gcc isn't found or can't compile (see
 # compiling_enabled()), and slow, since it compiles many expressions.
 
 @slow

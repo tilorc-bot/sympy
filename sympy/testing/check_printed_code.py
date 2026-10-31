@@ -450,7 +450,7 @@ def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
         # number constants such as GoldenRatio
         block = ['    ' + line for line in lines]
         if returns:
-            body = ['let value = {', *block, '};', 'value as f64']
+            body = ['let value = {', *block, '};', 'f64::from(value)']
         else:
             body = ['let _ = {', *block, '};']
     elif assigned[0] in dict(parameters):
@@ -497,10 +497,14 @@ def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
     returns its value as a float.
 
     The args must be the symbols of expr, each with integer=True or real=True,
-    and the function's integer arguments must fit in a C int.
-    The code is what printer.doprint() prints, as in codegen; rust_code()
-    rewrites some functions, such as Mod, before printing. A test that uses
-    this should be skipped if compiling_enabled() is False.
+    and the function's integer arguments must fit in a C int. The code is
+    what printer.doprint() prints, as in codegen; rust_code() rewrites some
+    functions, such as Mod, before printing.
+
+    A test that uses this should be skipped if compiling_enabled() is False.
+    The compiler must also be able to link a shared library. Code that
+    crashes, such as an integer division by 0 in C or an i32 overflow in
+    Rust, ends the Python process.
 
     Examples
     ========
