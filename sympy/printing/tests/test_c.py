@@ -198,6 +198,7 @@ def test_ccode_user_functions():
     assert out.count('muladd') == 100
 
 
+@check_printed_code
 def test_ccode_boolean():
     assert ccode(True) == "true"
     assert ccode(S.true) == "true"

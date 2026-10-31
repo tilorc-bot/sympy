@@ -123,6 +123,7 @@ def test_constants_other():
     assert rust_code(2*EulerGamma) == "const EulerGamma: f64 = %s;\n2.0*EulerGamma" % EulerGamma.evalf(17)
 
 
+@check_printed_code
 def test_boolean():
     assert rust_code(True) == "true"
     assert rust_code(S.true) == "true"
@@ -137,6 +138,7 @@ def test_boolean():
     assert rust_code((k | m) & n) == "n && (k || m)"
 
 
+@check_printed_code
 def test_Piecewise():
     expr = Piecewise((x, x < 1), (x + 2, True))
     assert rust_code(expr) == (

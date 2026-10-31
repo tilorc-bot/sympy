@@ -118,8 +118,9 @@ def test_check_printed_code():
 
     @check_printed_code
     def test_fails():
-        assert ccode(z + 1) == 'wrong'
-    raises(AssertionError, test_fails)
+        assert ccode(x + 1) == 'wrong'
+    e = raises(AssertionError, test_fails)
+    assert type(e.value) is AssertionError
 
     @check_printed_code
     def test_prints_nothing():
@@ -146,6 +147,8 @@ def test_compiling_enabled():
     try:
         with _environment('PATH', ''):
             with _environment('SYMPY_CHECK_PRINTED_CODE', ''):
+                assert not compiling_enabled(C99CodePrinter)
+            with _environment('SYMPY_CHECK_PRINTED_CODE', 'yes'):
                 assert not compiling_enabled(C99CodePrinter)
             with _environment('SYMPY_CHECK_PRINTED_CODE', '1'):
                 e = raises(RuntimeError, lambda: compiling_enabled(C99CodePrinter))
@@ -181,14 +184,22 @@ def _environment(name, value):
             os.environ[name] = old
 
 
-def test_check_compiles():
-    if not (compiling_enabled(C99CodePrinter) and compiling_enabled(RustCodePrinter)):
-        skip("gcc or rustc isn't found or doesn't work")
-    def wrap_and_compile(printer_class, code):
-        check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
-    e = raises(PrintedCodeError, lambda: wrap_and_compile(RustCodePrinter, 'x + 42'))
-    assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)
-    wrap_and_compile(RustCodePrinter, 'x + 42.0')
-    e = raises(PrintedCodeError, lambda: wrap_and_compile(C99CodePrinter, 'x % x'))
-    assert 'invalid operands' in str(e.value)
-    wrap_and_compile(C99CodePrinter, 'fmod(x, x)')
+def _wrap_and_compile(printer_class, code):
+    check_compiles(printer_class, wrap_in_function(printer_class, code, [('x', 'real')], None))
+
+
+def test_check_compiles_c():
+    if not compiling_enabled(C99CodePrinter):
+        skip("gcc isn't found or doesn't work")
+    e = raises(PrintedCodeError, lambda: _wrap_and_compile(C99CodePrinter, 'x % x'))
+    assert str(e.value).startswith("This doesn't compile.") and 'code.c:' in str(e.value)
+    _wrap_and_compile(C99CodePrinter, 'fmod(x, x)')
+    _wrap_and_compile(C99CodePrinter, 'x + 0*1.0  /* λ */')
+
+
+def test_check_compiles_rust():
+    if not compiling_enabled(RustCodePrinter):
+        skip("rustc isn't found or doesn't work")
+    e = raises(PrintedCodeError, lambda: _wrap_and_compile(RustCodePrinter, 'x + 42'))
+    assert str(e.value).startswith("This doesn't compile.") and 'code.rs:' in str(e.value)
+    _wrap_and_compile(RustCodePrinter, 'x + 42.0')
