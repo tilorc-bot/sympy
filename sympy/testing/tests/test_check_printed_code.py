@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from contextlib import contextmanager
 
 from sympy.codegen.ast import float80, real
@@ -114,8 +113,9 @@ def _environment(value):
 
 
 def test_check_compiles():
-    if shutil.which('rustc') is None or shutil.which('gcc') is None:
-        skip('rustc and gcc are needed')
+    # Compiling is slow, so only in the printed code CI job
+    if not compiling_enabled():
+        skip('SYMPY_CHECK_PRINTED_CODE is not set')
     e = raises(PrintedCodeError, lambda: check_compiles('RustCodePrinter', 'x + 42',
                                                         [('x', 'real')], None))
     assert str(e.value).startswith("This doesn't compile.") and 'cannot add' in str(e.value)

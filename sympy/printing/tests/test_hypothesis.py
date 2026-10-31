@@ -21,7 +21,7 @@ from sympy.testing.check_printed_code import check_printed_code, compiling_enabl
 from sympy.testing.pytest import XFAIL, skip
 
 
-def random_expressions():
+def _random_expressions():
     """A strategy for expressions in real x, y and integer i, j, such as
     Max(i, y) or sin(x)**2 + floor(j/2)."""
     x, y = symbols('x y', real=True)
@@ -48,7 +48,7 @@ def random_expressions():
 # the tests are skipped.
 
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
+@given(_random_expressions())
 @check_printed_code
 def test_ccode(expr):
     if not compiling_enabled():
@@ -58,7 +58,7 @@ def test_ccode(expr):
 
 @XFAIL  # cxxcode(Min(i, x)) calls std::min with an int and a double
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
+@given(_random_expressions())
 @check_printed_code
 def test_cxxcode(expr):
     if not compiling_enabled():
@@ -68,7 +68,7 @@ def test_cxxcode(expr):
 
 @XFAIL  # rust_code(Mod(x, i)) calls recip on an i32
 @settings(derandomize=True, database=None, report_multiple_bugs=False)
-@given(random_expressions())
+@given(_random_expressions())
 @check_printed_code
 def test_rust_code(expr):
     if not compiling_enabled():
