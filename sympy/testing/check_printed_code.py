@@ -102,17 +102,17 @@ C_TYPE_SETTINGS = [name for name in vars(C89CodePrinter) if name.startswith('typ
 LOGIC_FUNCTIONS = (And, Or, Not, Xor, Xnor, Nand, Nor, Implies, Equivalent)
 
 def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
-    """Return whether the code that printer_class prints is compiled, which it
-    is if its compiler is found and compiles a trivial function, unless
-    SYMPY_CHECK_PRINTED_CODE is 0. If SYMPY_CHECK_PRINTED_CODE is 1, raise
-    RuntimeError instead of returning False."""
+    """Return whether to compile the code that printer_class prints."""
     setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
     if setting == '0':
         return False
-    # mypy doesn't consider printer classes hashable, since Printer defines __hash__
+    # None if the compiler is found and compiles a trivial function. mypy
+    # doesn't consider printer classes hashable, since Printer defines __hash__
     problem = compiler_problem(printer_class)  # type: ignore[arg-type]
     if problem is None:
         return True
+    # With SYMPY_CHECK_PRINTED_CODE=1, as in CI, a missing or broken
+    # compiler is an error instead of a reason not to compile
     if setting == '1':
         raise RuntimeError(problem)
     return False
