@@ -226,7 +226,7 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
             or not isinstance(assign_to, (str, Symbol, type(None)))):
         raise unsupported("it uses arrays or matrices, whose sizes can't be declared")
 
-    parameters = declare_symbols(printer, expr)
+    parameters = list(declare_symbols(printer, expr).values())
     assigned = None
     if assign_to is not None:
         symbol = Symbol(assign_to) if isinstance(assign_to, str) else assign_to
@@ -243,7 +243,7 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
         check_compiles(type(printer).__name__, code, parameters, assigned)
 
 
-def declare_symbols(printer: CodePrinter, expr: Basic) -> list[Declaration]:
+def declare_symbols(printer: CodePrinter, expr: Basic) -> dict[Basic, Declaration]:
     """Return the declarations of the symbols in expr, sorted by name, or raise
     PrintedCodeError if the type of one is unknown (see declare()).
 
@@ -255,7 +255,7 @@ def declare_symbols(printer: CodePrinter, expr: Basic) -> list[Declaration]:
     >>> from sympy.testing.check_printed_code import declare_symbols
     >>> b, x = Symbol('b'), Symbol('x', real=True)
     >>> declare_symbols(C99CodePrinter(), And(b, x > 0))
-    [('b', 'bool'), ('x', 'real')]
+    {b: ('b', 'bool'), x: ('x', 'real')}
     """
     booleans: set[Basic] = set()
     for node in preorder_traversal(expr):
@@ -263,8 +263,8 @@ def declare_symbols(printer: CodePrinter, expr: Basic) -> list[Declaration]:
             booleans.update(node.args)
         elif isinstance(node, ExprCondPair):
             booleans.add(node.cond)
-    return [declare(printer, symbol, symbol in booleans)
-            for symbol in sorted(expr.free_symbols, key=str)]
+    return {symbol: declare(printer, symbol, symbol in booleans)
+            for symbol in sorted(expr.free_symbols, key=str)}
 
 
 def declare(printer: CodePrinter, symbol: Basic, is_boolean: bool) -> Declaration:
@@ -370,31 +370,46 @@ def check_compiles(printer_name: str, code: str, parameters: list[Declaration],
     """Compile the code as wrap_in_function() wraps it, and raise
     PrintedCodeError with what the compiler says if it doesn't compile."""
     with tempfile.TemporaryDirectory() as directory:
-        compile_source(TARGETS[printer_name].command,
-                       wrap_in_function(printer_name, code, parameters, assigned), directory)
+        run_compiler(TARGETS[printer_name].command,
+                     wrap_in_function(printer_name, code, parameters, assigned), directory)
 
 
-@functools.cache
-def compile_function(printer_name: str, code: str, parameters: tuple[Declaration, ...]):
-    """Compile code, an expression that the printer called printer_name
-    printed, into a shared library, and return it as a Python function of the
-    parameters that returns the expression's value as a float. The functions
-    are cached, since a Hypothesis test can print the same code many times.
+def compiled_function(printer: CodePrinter, args: list[Symbol], expr: Basic):
+    """Return a Python function of args, like lambdify(args, expr), that runs
+    the code that printer prints for expr, compiled into a shared library, and
+    returns its value as a float.
+
+    The args must be the symbols of expr, each with integer=True or real=True.
 
     Examples
     ========
 
-    >>> from sympy.testing.check_printed_code import compile_function
-    >>> f = compile_function('C99CodePrinter', 'fmod(x, 2)', (('x', 'real'),))  # doctest: +SKIP
+    >>> from sympy import Mod, Symbol
+    >>> from sympy.printing.c import C99CodePrinter
+    >>> from sympy.testing.check_printed_code import compiled_function
+    >>> x = Symbol('x', real=True)
+    >>> f = compiled_function(C99CodePrinter(), [x], Mod(x, 2))  # doctest: +SKIP
     >>> f(5.5)  # doctest: +SKIP
     1.5
     """
+    declarations = declare_symbols(printer, expr)
+    if sorted(args, key=str) != list(declarations):
+        raise ValueError('args must be the symbols of %s' % expr)
+    return _compile_and_load(type(printer).__name__, printer.doprint(expr),
+                             tuple(declarations[arg] for arg in args))
+
+
+# Cached, since a Hypothesis test can print the same code many times
+@functools.cache
+def _compile_and_load(printer_name: str, code: str, parameters: tuple[Declaration, ...]):
+    """Compile code, an expression, into a shared library, and return its
+    function of the parameters."""
     command = [new_part for part in TARGETS[printer_name].command
                for new_part in LIBRARY_FLAGS.get(part, [part])]
     source = wrap_in_function(printer_name, code, list(parameters), None, returns=True)
     with tempfile.TemporaryDirectory() as directory:
         library = os.path.join(directory, 'code.so')
-        compile_source(command, source, directory, ('-o', library, '-lm'))
+        run_compiler(command, source, directory, ('-o', library, '-lm'))
         function = ctypes.CDLL(library).f
     function.restype = ctypes.c_double
     function.argtypes = [{'int': ctypes.c_int, 'real': ctypes.c_double}[type_name]
@@ -402,8 +417,8 @@ def compile_function(printer_name: str, code: str, parameters: tuple[Declaration
     return function
 
 
-def compile_source(command: list[str], source: str, directory: str,
-                   arguments: tuple[str, ...] = ()) -> None:
+def run_compiler(command: list[str], source: str, directory: str,
+                 arguments: tuple[str, ...] = ()) -> None:
     """Compile source with command (and arguments after the source file) in
     directory, and raise PrintedCodeError with what the compiler says if it
     doesn't compile."""

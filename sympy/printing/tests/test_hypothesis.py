@@ -19,8 +19,7 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.printing.c import C99CodePrinter
 from sympy.printing.cxx import CXX11CodePrinter
 from sympy.printing.rust import RustCodePrinter
-from sympy.testing.check_printed_code import (compile_function, compiling_enabled,
-                                              declare_symbols)
+from sympy.testing.check_printed_code import compiled_function, compiling_enabled
 from sympy.testing.pytest import XFAIL, skip
 
 
@@ -54,13 +53,10 @@ REALS = st.one_of(st.just(0.0), st.floats(-10, -1e-3), st.floats(1e-3, 10))
 def _check_values(printer, expr, data):
     """Compile the code that printer prints for expr, and check that it
     computes SymPy's value of expr for 10 values of its symbols from data."""
-    code = printer.doprint(expr)
-    parameters = declare_symbols(printer, expr)
-    function = compile_function(type(printer).__name__, code, tuple(parameters))
     symbols = sorted(expr.free_symbols, key=str)
+    function = compiled_function(printer, symbols, expr)
     for _ in range(10):
-        values = [data.draw({'int': INTEGERS, 'real': REALS}[type_name])
-                  for _, type_name in parameters]
+        values = [data.draw(INTEGERS if symbol.is_integer else REALS) for symbol in symbols]
         expected = _sympy_value(expr, symbols, values)
         nearby = [_sympy_value(expr, symbols, [value*(1 + nudge) for value in values])
                   for nudge in (1e-12, -1e-12)]
@@ -73,7 +69,8 @@ def _check_values(printer, expr, data):
         value = function(*values)
         assert _close(value, expected), (
             '%s printed %s, which gives %r for %s, but SymPy gives %r'
-            % (type(printer).__name__, code, value, dict(zip(symbols, values)), expected))
+            % (type(printer).__name__, printer.doprint(expr), value,
+               dict(zip(symbols, values)), expected))
 
 
 def _sympy_value(expr, symbols, values):
