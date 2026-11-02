@@ -10,10 +10,10 @@ The terms are meant to be used in Lean statements, e.g. ``theorem t (x : ℝ) :
 <printed term> := ...``. Lean's functions are total: ``x / 0 = 0``,
 ``Real.log 0 = 0`` and ``Real.sqrt (-1) = 0``, whereas SymPy gives ``zoo``,
 ``-oo`` and ``I``. The printed term has the same value as the SymPy expression
-wherever the SymPy expression is defined and has a value of the printed type
-(real numbers by default), but a statement about it may hold in Lean for a
-reason that has nothing to do with SymPy, e.g. ``1/x * x = 1`` is false in
-Lean at ``x = 0``.
+wherever the SymPy expression and each of its parts are defined and have
+values of the printed type (real numbers by default), but a statement about
+it may hold in Lean for a reason that has nothing to do with SymPy, e.g.
+``1/x * x = 1`` is false in Lean at ``x = 0``.
 """
 
 from __future__ import annotations
@@ -89,6 +89,9 @@ PREC_NEG_NUMBER = 74
 PREC_POW = 75
 PREC_APP = 1023  # a function application, e.g. Real.sin x
 PREC_ATOM = 1024  # a name, a nonnegative numeral or a term in brackets
+# What the body of a ∑ or ∏, and of an integral, is parsed at
+PREC_BIG_OPERATOR_BODY = 67
+PREC_INTEGRAL_BODY = 60
 
 
 class LeanPrinter(CodePrinter):
@@ -197,6 +200,7 @@ class LeanPrinter(CodePrinter):
         from sympy.core.function import Function, Derivative, Subs, Lambda
         from sympy.functions.elementary.complexes import Abs
         from sympy.functions.elementary.integers import floor, ceiling
+        from sympy.functions.elementary.miscellaneous import MinMaxBase
         from sympy.functions.elementary.piecewise import Piecewise
         from sympy.logic.boolalg import (And, Or, Not, Implies, Equivalent,
                                          ITE)
@@ -228,7 +232,8 @@ class LeanPrinter(CodePrinter):
             return PREC_POW
         if isinstance(expr, (Abs, floor, ceiling)):
             return PREC_ATOM
-        if isinstance(expr, (Function, Derivative, Subs, MatrixElement)):
+        if isinstance(expr, (Function, Derivative, Subs, MatrixElement,
+                             MinMaxBase)):
             return PREC_APP
         if expr is S.Exp1:
             return PREC_APP
@@ -258,6 +263,13 @@ class LeanPrinter(CodePrinter):
 
     def _binder_type(self, symbol):
         return 'ℤ' if symbol.is_integer else self._type
+
+    def _body(self, expr, level, text):
+        """Put text, the body of a ∑, ∏ or integral, in parentheses if Lean,
+        which parses the body at level, would otherwise end it early."""
+        if PREC_BINDER < self._precedence(expr) < level:
+            return '(%s)' % text
+        return text
 
     def _binder_like(self, expr, text):
         """Give a term that extends as far as possible (if-then-else, a sum)
@@ -535,7 +547,8 @@ class LeanPrinter(CodePrinter):
                 b.is_infinite is not True for b in limit[1:])
                 for limit in expr.limits):
             return self._print_not_supported(expr)
-        text = self._print(expr.function)
+        text = self._body(expr.function, PREC_INTEGRAL_BODY,
+                          self._print(expr.function))
         for variable, lower, upper in expr.limits:
             lower_text = self._print(lower)
             if not self._is_typed(lower):
@@ -565,7 +578,8 @@ class LeanPrinter(CodePrinter):
         saved = self._integer_variables
         self._integer_variables = saved | variables
         try:
-            text = self._in_number_context(expr.function)
+            text = self._body(expr.function, PREC_BIG_OPERATOR_BODY,
+                              self._in_number_context(expr.function))
             for variable, lower, upper in expr.limits:
                 lower_text = self._in_number_context(lower, integer=True)
                 if lower.is_Number:
@@ -812,8 +826,9 @@ def lean_code(expr, **settings):
     'Complex.exp (Complex.I * z) + Complex.log z'
 
     Lean's functions are defined everywhere, while SymPy's need not be, so a
-    printed term has the value of the SymPy expression only where that is
-    defined and of the printed type:
+    printed term has the value of the SymPy expression only where it and each
+    of its parts are defined and of the printed type; ``sqrt(x)**2`` is ``x``
+    in SymPy for a negative ``x`` but ``0`` in Lean:
 
     - Division by zero is 0, and so are ``Real.log 0`` and ``Real.sqrt x``
       for a negative ``x``; ``Real.log x`` is ``Real.log |x|``.
