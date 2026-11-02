@@ -7,20 +7,23 @@ from contextlib import contextmanager
 import pytest
 
 from sympy.codegen.ast import float80, real
-from sympy.core.numbers import I
+from sympy.core.function import Function, Lambda
+from sympy.core.numbers import I, Rational
 from sympy.core.relational import Gt
 from sympy.core.symbol import Symbol, symbols
+from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import sin
 from sympy.logic.boolalg import And, ITE
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.printing.c import C89CodePrinter, C99CodePrinter, ccode
 from sympy.printing.codeprinter import CodePrinter, rust_code
+from sympy.printing.lean import LeanPrinter, lean_code
 from sympy.printing.octave import octave_code
 from sympy.printing.rust import RustCodePrinter
 from sympy.printing.tests.check_printed_code import (
-    PrintedCodeError, check_code, check_compiles, check_printed_code,
-    compiler_problem, compiling_enabled, declarations, declare,
-    wrap_in_function)
+    PrintedCodeError, check_code, check_compiles, check_lean_examples,
+    check_printed_code, compiler_problem, compiling_enabled, declarations,
+    declare, lean_declarations, lean_example, lean_type, wrap_in_function)
 from sympy.testing.pytest import raises, skip
 
 x = Symbol('x', real=True)
@@ -215,3 +218,70 @@ def test_check_compiles_rust():
         RustCodePrinter, '(i + j) as f64 < w', parameters, None)))
     check_compiles(RustCodePrinter, wrap_in_function(
         RustCodePrinter, '((i + j) as f64) < w', parameters, None))
+
+
+def test_lean_declarations():
+    f = Function('f')
+    assert lean_declarations(LeanPrinter(), f(z, z) + n) == [
+        ('f', 'ℝ → ℝ → ℝ'), ('n', 'ℤ'), ('z', 'ℝ')]
+    assert lean_declarations(LeanPrinter({'number_type': 'complex'}), x*z) == [
+        ('x', 'ℝ'), ('z', 'ℂ')]
+    assert lean_declarations(LeanPrinter(), And(b, Gt(x, 0))) == [
+        ('b', 'Prop'), ('x', 'ℝ')]
+    assert lean_declarations(LeanPrinter(), Symbol('fun') + 1) == [('«fun»', 'ℝ')]
+    A = MatrixSymbol('A', 2, 3)
+    assert lean_declarations(LeanPrinter(), A[0, 1]) == [
+        ('A', 'Matrix (Fin 2) (Fin 3) ℝ')]
+    raises(PrintedCodeError, lambda: lean_declarations(LeanPrinter(), A[n, 0]))
+    raises(PrintedCodeError, lambda: lean_declarations(LeanPrinter(), f(z) + f(z, z)))
+
+
+def test_lean_type():
+    assert lean_type(LeanPrinter(), z + 1) == 'ℝ'
+    assert lean_type(LeanPrinter({'number_type': 'complex'}), z) == 'ℂ'
+    assert lean_type(LeanPrinter(), Gt(z, 0)) == 'Prop'
+    assert lean_type(LeanPrinter(), Lambda((z, n), z)) == 'ℝ → ℤ → ℝ'
+    assert lean_type(LeanPrinter(), MatrixSymbol('A', 2, 3)) == \
+        'Matrix (Fin 2) (Fin 3) ℝ'
+    assert lean_type(LeanPrinter(), [z, z]) is None
+
+
+def test_lean_example():
+    printer = LeanPrinter({'user_functions': {'sin': 'mysin'}})
+    e = raises(PrintedCodeError, lambda: lean_example(printer, sin(z), 'mysin z'))
+    assert 'setting user_functions' in str(e.value).replace('\n', ' ')
+    assert lean_example(LeanPrinter({'number_type': 'complex'}), z, 'z') == (
+        'example (z : ℂ) : True := by\n  let printed := (z)\n'
+        '  check_printed printed : ℂ\n  trivial\n')
+
+
+@pytest.mark.thread_unsafe(reason='changes SYMPY_LEAN_PROJECT')
+def test_compiling_enabled_lean():
+    with _environment('SYMPY_LEAN_PROJECT', ''):
+        # Without a project, Lean isn't used, even if compiling is required
+        with _environment('SYMPY_CHECK_PRINTED_CODE', '1'):
+            assert not compiling_enabled(LeanPrinter)
+
+
+def test_check_lean_examples():
+    if not compiling_enabled(LeanPrinter):
+        skip("SYMPY_LEAN_PROJECT isn't a Lake project with Mathlib")
+    printer = LeanPrinter()
+
+    def example(expr, code=None):
+        code = lean_code(expr) if code is None else code
+        return ('LeanPrinter', code, lean_example(printer, expr, code))
+    assert check_lean_examples([example(z + Rational(1, 2)), example(sqrt(z)),
+                                example(sin(z) > 1)]) == []
+    # What would be wrong: z ^ (1 / 2) is z ^ 0, since 1 / 2 is the natural
+    # number 0, 1 / 2 alone is a natural number and sin isn't Real.sin
+    problems = check_lean_examples([
+        example(z**Rational(1, 2), 'z ^ (1 / 2)'),
+        example(Rational(1, 2), '1 / 2'),
+        example(sin(z), 'sin z'),
+        example(sin(z))])
+    assert len(problems) == 3
+    assert 'divides or subtracts natural numbers' in problems[0]
+    assert 'has the type ℕ, not ℝ' in problems[1]
+    assert 'Unknown identifier' in problems[2]
+

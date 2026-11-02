@@ -1,4 +1,4 @@
-"""Check that the C and Rust code printed by a test compiles.
+"""Check that the C, Rust and Lean code printed by a test compiles.
 
 Code printer tests only compare strings. A test opts in to checking the
 code with a decorator::
@@ -31,6 +31,22 @@ named like a constant of std::f64::consts, such as E or PI, can't be a
 parameter, and a tuple, which ccode((2, 3, 4)) prints as {2, 3, 4}, is not a
 C expression. Assigning a Piecewise whose value is a bool to a variable
 isn't supported, since a Piecewise isn't a Boolean.
+
+Lean terms are only checked if SYMPY_LEAN_PROJECT is a Lake project that
+depends on Mathlib, since Lean can't check them without it::
+
+    SYMPY_LEAN_PROJECT=~/my-mathlib-project pytest sympy/printing/tests/test_lean.py
+
+A Lean term is checked in an example that declares its variables: integer=True
+gives ℤ, a symbol used in logic Prop, an undefined function f(x) ℝ → ℝ, a
+MatrixSymbol a matrix and any other symbol ℝ (or ℂ, for
+number_type='complex'). The term fails if it doesn't elaborate, if its type
+isn't ℝ (ℂ, Prop or the matrix type), or if part of it divides or subtracts
+natural numbers, which is what Lean makes of numerals that have no type, so
+that 1/2 is 0, or if Lean reads it differently from the term printed with
+parentheses around every part that isn't a name or a numeral, e.g. if
+`if x < 0 then x else 0 + 1` were printed for Piecewise(...) + 1. Since importing Mathlib takes seconds and gigabytes, the terms
+of a test are checked together when it returns, in one Lean file.
 """
 from __future__ import annotations
 
@@ -51,9 +67,14 @@ from sympy.core.traversal import preorder_traversal
 from sympy.functions.elementary.piecewise import ExprCondPair
 from sympy.logic.boolalg import (And, Boolean, Equivalent, ITE, Implies, Nand,
                                  Nor, Not, Or, Xnor, Xor)
-from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
+from sympy.core.containers import Tuple
+from sympy.core.function import AppliedUndef, Lambda
+from sympy.matrices.expressions.matexpr import (MatrixElement, MatrixExpr,
+                                                MatrixSymbol)
+from sympy.matrices.matrixbase import MatrixBase
 from sympy.printing.c import C11CodePrinter, C89CodePrinter, C99CodePrinter
 from sympy.printing.codeprinter import CodePrinter
+from sympy.printing.lean import LeanPrinter, _bracket
 from sympy.printing.rust import RustCodePrinter
 from sympy.tensor.indexed import Idx, Indexed
 
@@ -88,6 +109,41 @@ use std::f64::consts::*;
 use std::f64::{INFINITY, NAN, NEG_INFINITY};
 """
 
+LEAN_HEADER = """\
+import Mathlib
+
+open Lean Elab Tactic Meta in
+/-- Check that the local definition `h` has the type `T` and doesn't divide
+or subtract natural numbers, which numerals without a type become -/
+elab "check_printed " h:ident " : " T:term : tactic => withMainContext do
+  let some d := (← getLCtx).findFromUserName? h.getId | throwError "unknown {h}"
+  let some v := d.value? | throwError "{h} has no value"
+  let T ← Term.elabType T
+  unless ← isDefEq d.type T do
+    throwError "The term has the type {d.type}, not {T}."
+  let v ← instantiateMVars v
+  if (v.find? fun e => (e.isAppOfArity ``HDiv.hDiv 6 || e.isAppOfArity ``HSub.hSub 6) &&
+      e.getArg! 0 == mkConst ``Nat).isSome then
+    throwError "Part of the term divides or subtracts natural numbers, since its numerals have no type."
+
+open Lean Elab Tactic Meta in
+/-- Check that the local definitions `h` and `r` have the same value -/
+elab "check_parsed " h:ident r:ident : tactic => withMainContext do
+  let some d := (← getLCtx).findFromUserName? h.getId | throwError "unknown {h}"
+  let some e := (← getLCtx).findFromUserName? r.getId | throwError "unknown {r}"
+  let some v := d.value? | throwError "{h} has no value"
+  let some w := e.value? | throwError "{r} has no value"
+  let v ← instantiateMVars v
+  let w ← instantiateMVars w
+  unless v == w do
+    throwError "The term isn't read as with parentheses around every part:{indentExpr v}\nisn't{indentExpr w}"
+
+set_option linter.unusedTactic false
+set_option linter.unusedVariables false
+noncomputable section
+open Classical
+"""
+
 # C89 allows calls to undeclared functions
 C_FLAGS = ['-fsyntax-only', '-pedantic-errors', '-Werror=implicit-function-declaration']
 C_TYPE_NAMES = {'int': 'int', 'real': 'double', 'bool': 'bool'}
@@ -105,6 +161,10 @@ def compiling_enabled(printer_class: type[CodePrinter]) -> bool:
     """Return whether to compile the code that printer_class prints."""
     setting = os.environ.get('SYMPY_CHECK_PRINTED_CODE', '')
     if setting == '0':
+        return False
+    # Lean needs a project with Mathlib, so it is only used if one is given,
+    # also with SYMPY_CHECK_PRINTED_CODE=1
+    if printer_class is LeanPrinter and not os.environ.get('SYMPY_LEAN_PROJECT'):
         return False
     # None if the compiler is found and compiles a trivial function. mypy
     # doesn't consider printer classes hashable, since Printer defines __hash__
@@ -175,6 +235,8 @@ def check_printed_code(test_func):
     @functools.wraps(test_func)
     def wrapper(*args, **kwargs):
         printed, problems = [], []
+        # (name of the printer, term, Lean example), checked when the test returns
+        lean_examples: list[tuple[str, str, str]] = []
         original_doprint = CodePrinter.doprint
 
         # The printers inherit doprint and none calls it recursively, so this
@@ -185,7 +247,11 @@ def check_printed_code(test_func):
             if type(self) in TARGETS:
                 printed.append(code)
                 try:
-                    check_code(self, expr, assign_to, code)
+                    if isinstance(self, LeanPrinter):
+                        lean_examples.append((type(self).__name__, code,
+                                              lean_example(self, expr, code)))
+                    else:
+                        check_code(self, expr, assign_to, code)
                 except PrintedCodeError as problem:
                     problems.append('%s printed\n\n%s\n\n%s' % (
                         type(self).__name__, textwrap.indent(str(code), '    '), problem))
@@ -197,8 +263,10 @@ def check_printed_code(test_func):
         finally:
             CodePrinter.doprint = original_doprint  # type: ignore[method-assign]
         if not printed:
-            raise PrintedCodeError('The test printed no C or Rust code, so it '
-                                   "shouldn't use @check_printed_code.")
+            raise PrintedCodeError('The test printed no C, Rust or Lean code, so '
+                                   "it shouldn't use @check_printed_code.")
+        if lean_examples and compiling_enabled(LeanPrinter):
+            problems.extend(check_lean_examples(lean_examples))
         if problems:
             raise PrintedCodeError('\n\n'.join(problems))
         return result
@@ -206,6 +274,12 @@ def check_printed_code(test_func):
         wrapper = pytest.mark.thread_unsafe(
             reason='replaces CodePrinter.doprint while it runs')(wrapper)
     return wrapper
+
+
+def unsupported(reason: str) -> PrintedCodeError:
+    return PrintedCodeError(textwrap.fill(
+        "This can't be checked, since %s, so the test can't use "
+        "@check_printed_code." % reason, 72))
 
 
 def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
@@ -230,11 +304,6 @@ def check_code(printer: CodePrinter, expr: Basic, assign_to: str | Basic | None,
     sympy.printing.tests.check_printed_code.PrintedCodeError: This can't be checked, since it uses arrays or matrices, whose sizes
     can't be declared, so the test can't use @check_printed_code.
     """
-    def unsupported(reason):
-        return PrintedCodeError(textwrap.fill(
-            "This can't be checked, since %s, so the test can't use "
-            "@check_printed_code." % reason, 72))
-
     changed_settings = [
         name for name, value in printer._settings.items()
         if name not in HARMLESS_SETTINGS and value != printer._default_settings.get(name)]
@@ -449,19 +518,6 @@ def wrap_in_rust_function(code: str, parameters: list[tuple[str, str]],
     return '%s\n{\n%s\n}\n' % (signature, textwrap.indent('\n'.join(body), '    '))
 
 
-TARGETS = {
-    C89CodePrinter: Target(['gcc', '-std=c89', *C_FLAGS], '.c', C_HEADER,
-                           {'int': 'int', 'real': 'double', 'bool': 'int'},
-                           wrap_in_c_function),
-    C99CodePrinter: Target(['gcc', '-std=c99', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
-                           wrap_in_c_function),
-    C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
-                           wrap_in_c_function),
-    RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
-                             '--emit=metadata', '--error-format=short'], '.rs',
-                            RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'},
-                            wrap_in_rust_function),
-}
 
 
 def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
@@ -474,14 +530,257 @@ def check_compiles(printer_class: type[CodePrinter], source: str) -> None:
         path = os.path.join(directory, 'code' + suffix)
         with open(path, 'w', encoding='utf-8') as file:
             file.write(source)
-        result = subprocess.run(command + [path], cwd=directory, capture_output=True,
-                                encoding='utf-8', errors='replace')
+        result = run_compiler(printer_class, path, directory)
     if result.returncode:
         # Not the notes and the code around the error, which the source shows
         errors = ''.join(line.replace(path, 'code' + suffix) + '\n'
-                         for line in result.stderr.splitlines() if 'error' in line)
+                         for line in (result.stderr + result.stdout).splitlines()
+                         if 'error' in line)
         numbered_source = ''.join('%4d | %s\n' % (number, line)
                                   for number, line in enumerate(source.splitlines(), 1))
         raise PrintedCodeError("This doesn't compile. %s says\n\n%s\nabout\n\n%s" % (
             ' '.join(command), textwrap.indent(errors, '    '),
             textwrap.indent(numbered_source, '    ')))
+
+
+def run_compiler(printer_class: type[CodePrinter], path: str, directory: str
+                 ) -> subprocess.CompletedProcess:
+    """Run the compiler for printer_class on the file path."""
+    # lake finds Mathlib in the project it runs in
+    cwd = os.environ['SYMPY_LEAN_PROJECT'] if printer_class is LeanPrinter else directory
+    return subprocess.run(TARGETS[printer_class].command + [path], cwd=cwd,
+                          capture_output=True, encoding='utf-8', errors='replace')
+
+
+def lean_example(printer: LeanPrinter, expr: Basic, code: str) -> str:
+    """Return a Lean example that declares the variables of expr and checks
+    code, which printer printed for expr, or raise PrintedCodeError if it
+    can't be checked.
+
+    Examples
+    ========
+
+    >>> from sympy import Symbol, Function, sin
+    >>> from sympy.printing.lean import LeanPrinter
+    >>> from sympy.printing.tests.check_printed_code import lean_example
+    >>> x, n, f = Symbol('x'), Symbol('n', integer=True), Function('f')
+    >>> printer = LeanPrinter()
+    >>> print(lean_example(printer, f(x) + n, printer.doprint(f(x) + n)))
+    example (f : ℝ → ℝ) (n : ℤ) (x : ℝ) : True := by
+      let printed := ((n : ℝ) + f x)
+      let bracketed := ((n : ℝ) + (f x))
+      check_printed printed : ℝ
+      check_parsed printed bracketed
+      trivial
+    <BLANKLINE>
+    """
+    changed_settings = [
+        name for name, value in printer._settings.items()
+        if name not in HARMLESS_SETTINGS | {'number_type'}
+        and value != printer._default_settings.get(name)]
+    if changed_settings:
+        raise unsupported("it's printed with the setting %s, which can need other "
+                          "declarations" % changed_settings[0])
+    expr = sympify(expr)
+    bracketed = BracketingLeanPrinter(printer._settings).doprint(expr)
+    return wrap_in_lean_example(code, lean_declarations(printer, expr),
+                                lean_type(printer, expr),
+                                bracketed if bracketed != code else None)
+
+
+class BracketingLeanPrinter(LeanPrinter):
+    """A LeanPrinter that puts parentheses around every part of a term that
+    isn't a name or a numeral, whatever the precedence, so its terms show how
+    LeanPrinter's are meant to be read.
+
+    Examples
+    ========
+
+    >>> from sympy import Symbol, sin
+    >>> from sympy.printing.tests.check_printed_code import BracketingLeanPrinter
+    >>> x = Symbol('x')
+    >>> BracketingLeanPrinter().doprint(2*sin(x)**2 + 1)
+    '(2 * ((Real.sin x) ^ 2)) + 1'
+    """
+    def parenthesize(self, item, level, strict=False):
+        text = self._print(item)
+        if isinstance(item, (Symbol, MatrixSymbol)) or (
+                item.is_Number and not item.is_negative and item.is_Integer):
+            return text
+        return _bracket(text)
+
+
+
+def lean_declarations(printer: LeanPrinter, expr) -> list[tuple[str, str]]:
+    """Return the names and Lean types of the variables and undefined
+    functions in expr, sorted by name.
+
+    Examples
+    ========
+
+    >>> from sympy import Symbol, MatrixSymbol, And
+    >>> from sympy.printing.lean import LeanPrinter
+    >>> from sympy.printing.tests.check_printed_code import lean_declarations
+    >>> b, x = Symbol('b'), Symbol('x', real=True)
+    >>> lean_declarations(LeanPrinter({'number_type': 'complex'}),
+    ...                   And(b, x > 0, Symbol('z') > 0))
+    [('b', 'Prop'), ('x', 'ℝ'), ('z', 'ℂ')]
+    >>> lean_declarations(LeanPrinter(), MatrixSymbol('A', 2, 3))
+    [('A', 'Matrix (Fin 2) (Fin 3) ℝ')]
+    """
+    number_type = printer._type
+    parts = list(expr) if isinstance(expr, (list, tuple, Tuple)) else [expr]
+    booleans: set[Basic] = set()
+    symbols: set[Basic] = set()
+    functions: dict[str, int] = {}
+    for part in parts:
+        for node in preorder_traversal(part):
+            if isinstance(node, LOGIC_FUNCTIONS):
+                booleans.update(node.args)
+            elif isinstance(node, ITE):
+                booleans.add(node.args[0])
+            elif isinstance(node, ExprCondPair):
+                booleans.add(node.cond)
+            elif isinstance(node, MatrixElement) and not all(
+                    index.is_Integer for index in node.indices):
+                raise unsupported("it indexes a matrix with a variable")
+            elif isinstance(node, AppliedUndef) and \
+                    node.func.__name__ not in printer.known_functions:
+                arity = functions.setdefault(node.func.__name__, len(node.args))
+                if arity != len(node.args):
+                    raise unsupported("%s is applied to different numbers of "
+                                      "arguments" % node.func.__name__)
+        symbols |= part.free_symbols
+    declared = []
+    for symbol in symbols:
+        name = printer._lean_name(symbol.name)
+        if isinstance(symbol, MatrixSymbol):
+            if not all(d.is_Integer for d in symbol.shape):
+                raise unsupported("the size of %s isn't a number" % symbol.name)
+            declared.append((name, 'Matrix (Fin %s) (Fin %s) %s' % (
+                *symbol.shape, number_type)))
+        elif symbol in booleans:
+            declared.append((name, 'Prop'))
+        elif symbol.is_integer:
+            declared.append((name, 'ℤ'))
+        elif number_type == 'ℂ' and symbol.is_extended_real:
+            declared.append((name, 'ℝ'))
+        else:
+            declared.append((name, number_type))
+    for function, arity in functions.items():
+        declared.append((printer._lean_name(function),
+                         ' → '.join([number_type]*(arity + 1))))
+    return sorted(declared)
+
+
+def lean_type(printer: LeanPrinter, expr) -> str | None:
+    """Return the Lean type of the term that printer prints for expr, or None
+    if it isn't checked (a tuple or a list)."""
+    if isinstance(expr, (list, tuple, Tuple)):
+        return None
+    if isinstance(expr, (MatrixBase, MatrixExpr)):
+        return 'Matrix (Fin %s) (Fin %s) %s' % (*expr.shape, printer._type)
+    if is_boolean_valued(expr):
+        return 'Prop'
+    if isinstance(expr, Lambda):
+        return ' → '.join([printer._binder_type(v) for v in expr.variables]
+                          + [printer._type])
+    return printer._type
+
+
+def wrap_in_lean_example(code: str, parameters: list[tuple[str, str]],
+                         assigned: str | None, bracketed: str | None = None
+                         ) -> str:
+    """Return a Lean example that declares the parameters, given with Lean
+    types, and elaborates the term code. For Lean, assigned is the type the
+    term must have, or None. If bracketed isn't None, the term must have the
+    same value as bracketed, the term with parentheses around every part.
+
+    Examples
+    ========
+
+    >>> from sympy.printing.tests.check_printed_code import wrap_in_lean_example
+    >>> print(wrap_in_lean_example('x ^ 2', [('x', 'ℝ')], 'ℝ'))
+    example (x : ℝ) : True := by
+      let printed := (x ^ 2)
+      check_printed printed : ℝ
+      trivial
+    <BLANKLINE>
+    """
+    binders = ''.join(' (%s : %s)' % parameter for parameter in parameters)
+    lines = ['example%s : True := by' % binders,
+             '  let printed := (%s)' % code]
+    if bracketed is not None:
+        lines.append('  let bracketed := (%s)' % bracketed)
+    if assigned is not None:
+        lines.append('  check_printed printed : %s' % assigned)
+    if bracketed is not None:
+        lines.append('  check_parsed printed bracketed')
+    lines.append('  trivial')
+    return '\n'.join(lines) + '\n'
+
+
+def check_lean_examples(examples: list[tuple[str, str, str]]) -> list[str]:
+    """Elaborate the Lean examples of the terms that printers printed, given
+    as (printer name, term, example), in one file, and return a problem for
+    each term that fails, in the form that check_printed_code raises."""
+    source = LEAN_HEADER
+    first_lines = []
+    for _, _, example in examples:
+        source += '\n'
+        first_lines.append(source.count('\n') + 1)
+        source += example
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'printed.lean')
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write(source)
+        result = run_compiler(LeanPrinter, path, directory)
+    # Lean's messages start with path:line:column: error...
+    errors: dict[int, list[str]] = {}
+    current = None
+    for line in (result.stdout + result.stderr).splitlines():
+        if line.startswith(path + ':'):
+            number, rest = line[len(path) + 1:].split(':', 1)
+            rest = rest.split(':', 1)[1].strip()
+            current = errors.setdefault(int(number), []) \
+                if rest.startswith('error') else None
+            if current is not None:
+                current.append(rest)
+        elif current is not None:
+            current.append(line)
+    if result.returncode and not errors:
+        raise RuntimeError('Lean failed:\n' + result.stdout + result.stderr)
+    problems = []
+    for k, (printer_name, code, example) in enumerate(examples):
+        end = first_lines[k + 1] if k + 1 < len(examples) else source.count('\n') + 2
+        messages = [m for number, ms in sorted(errors.items())
+                    if first_lines[k] <= number < end for m in ms]
+        if messages:
+            problems.append('%s printed\n\n%s\n\nThis doesn\'t elaborate in Lean:\n\n%s'
+                            '\nin\n\n%s' % (
+                printer_name, textwrap.indent(code, '    '),
+                textwrap.indent('\n'.join(messages), '    '),
+                textwrap.indent(example, '    ')))
+    header_errors = [m for number, ms in errors.items()
+                     if number < first_lines[0] for m in ms]
+    if header_errors:
+        raise RuntimeError('The Lean header fails:\n' + '\n'.join(header_errors))
+    return problems
+
+
+TARGETS = {
+    C89CodePrinter: Target(['gcc', '-std=c89', *C_FLAGS], '.c', C_HEADER,
+                           {'int': 'int', 'real': 'double', 'bool': 'int'},
+                           wrap_in_c_function),
+    C99CodePrinter: Target(['gcc', '-std=c99', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
+                           wrap_in_c_function),
+    C11CodePrinter: Target(['gcc', '-std=c11', *C_FLAGS], '.c', C99_HEADER, C_TYPE_NAMES,
+                           wrap_in_c_function),
+    RustCodePrinter: Target(['rustc', '--edition=2021', '--crate-type=lib',
+                             '--emit=metadata', '--error-format=short'], '.rs',
+                            RUST_HEADER, {'int': 'i32', 'real': 'f64', 'bool': 'bool'},
+                            wrap_in_rust_function),
+    LeanPrinter: Target(['lake', 'env', 'lean'], '.lean', LEAN_HEADER,
+                        {'int': 'ℤ', 'real': 'ℝ', 'bool': 'Prop'},
+                        wrap_in_lean_example),  # type: ignore[arg-type]
+}
