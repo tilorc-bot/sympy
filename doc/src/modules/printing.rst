@@ -312,6 +312,22 @@ SMT-Lib printing
 
 .. autofunction:: sympy.printing.smtlib.smtlib_code
 
+Lean code printing
+------------------
+
+.. module:: sympy.printing.lean
+
+.. autodata:: sympy.printing.lean.known_functions_real
+
+.. autodata:: sympy.printing.lean.known_functions_complex
+
+.. autoclass:: sympy.printing.lean.LeanPrinter
+   :members:
+
+   .. autoattribute:: LeanPrinter.printmethod
+
+.. autofunction:: sympy.printing.lean.lean_code
+
 Mathematica code printing
 -------------------------
 

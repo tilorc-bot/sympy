@@ -248,7 +248,7 @@ from .printing import (pager_print, pretty, pretty_print, pprint,
         print_fcode, rcode, print_rcode, jscode, print_jscode, julia_code,
         mathematica_code, octave_code, rust_code, print_gtk, preview, srepr,
         print_tree, StrPrinter, sstr, sstrrepr, TableForm, dotprint,
-        maple_code, print_maple_code)
+        maple_code, print_maple_code, lean_code)
 
 test = lazy_function('sympy.testing.runtests_pytest', 'test')
 doctest = lazy_function('sympy.testing.runtests', 'doctest')
@@ -498,7 +498,7 @@ __all__ = [
     'print_fcode', 'rcode', 'print_rcode', 'jscode', 'print_jscode',
     'julia_code', 'mathematica_code', 'octave_code', 'rust_code', 'print_gtk',
     'preview', 'srepr', 'print_tree', 'StrPrinter', 'sstr', 'sstrrepr',
-    'TableForm', 'dotprint', 'maple_code', 'print_maple_code',
+    'TableForm', 'dotprint', 'maple_code', 'print_maple_code', 'lean_code',
 
     # sympy.plotting
     'plot', 'textplot', 'plot_backends', 'plot_implicit', 'plot_parametric',
