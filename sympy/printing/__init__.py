@@ -27,6 +27,8 @@ from .julia import julia_code
 
 from .mathematica import mathematica_code
 
+from .lean import lean_code
+
 from .octave import octave_code
 
 from .gtk import print_gtk
@@ -82,6 +84,9 @@ __all__ = [
 
     # sympy.printing.mathematica
     'mathematica_code',
+
+    # sympy.printing.lean
+    'lean_code',
 
     # sympy.printing.octave
     'octave_code',
