@@ -198,6 +198,8 @@ def test_Abs_floor_ceiling_sign():
 def test_Max_Min():
     assert lean_code(Max(x, y)) == "max x y"
     assert lean_code(Max(x, y, z)) == "max x (max y z)"
+    assert lean_code(sin(Max(x, y))) == "Real.sin (max x y)"
+    assert lean_code(Max(x, Min(y, z))) == "max x (min y z)"
     assert lean_code(Min(x + 1, y)) == "min y (x + 1)"
     raises(PrintMethodNotImplementedError, lambda: complex_code(Max(z, w)))
 
@@ -333,6 +335,8 @@ def test_Integral():
     assert lean_code(Eq(Integral(x**2, (x, 0, 1)), Rational(1, 3))) == \
         "(∫ x in (0 : ℝ)..1, x ^ 2) = 1 / 3"
     assert lean_code(Integral(1, (x, 0, 1))) == "(∫ x in (0 : ℝ)..1, 1 : ℝ)"
+    assert lean_code(Integral(x + 1, (x, 0, 1))) == \
+        "∫ x in (0 : ℝ)..1, x + 1"
     raises(PrintMethodNotImplementedError, lambda: lean_code(Integral(x, x)))
     raises(PrintMethodNotImplementedError,
            lambda: lean_code(Integral(exp(-x), (x, 0, oo))))
@@ -346,6 +350,11 @@ def test_Sum_Product():
         "∑ i ∈ Finset.Icc (0 : ℤ) n, x ^ i"
     assert lean_code(Product(i, (i, 1, n))) == \
         "∏ i ∈ Finset.Icc (1 : ℤ) n, (i : ℝ)"
+    # The body of ∏ is read at precedence 67, so a sum in it needs brackets
+    assert lean_code(Product(i + x, (i, 1, 3))) == \
+        "∏ i ∈ Finset.Icc (1 : ℤ) 3, ((i : ℝ) + x)"
+    assert lean_code(Sum(i**2, (i, 1, n)) + 1) == \
+        "(∑ i ∈ Finset.Icc (1 : ℤ) n, (i : ℝ) ^ 2) + 1"
     # A variable that isn't an integer becomes one
     assert lean_code(Sum(1/x, (x, 1, 3))) == \
         "∑ x ∈ Finset.Icc (1 : ℤ) 3, 1 / (x : ℝ)"

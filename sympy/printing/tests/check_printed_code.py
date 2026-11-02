@@ -51,7 +51,9 @@ of a test are checked together when it returns, in one Lean file.
 from __future__ import annotations
 
 import functools
+import json
 import os
+import struct
 import shutil
 import subprocess
 import tempfile
@@ -766,6 +768,77 @@ def check_lean_examples(examples: list[tuple[str, str, str]]) -> list[str]:
     if header_errors:
         raise RuntimeError('The Lean header fails:\n' + '\n'.join(header_errors))
     return problems
+
+
+
+def lean_values(printer: LeanPrinter, functions: list[tuple[list[Symbol], Basic, list[list[float]]]]
+                ) -> list[list[float | str]]:
+    """Return the values in Lean of the terms that printer prints for
+    expressions, as functions of their arguments, at points, all evaluated in
+    one Lean run.
+
+    Each item of functions is (args, expr, points), where args are the
+    symbols of expr, each point gives a value for each of them, and a symbol
+    that is an integer gets an integer. The result has, for each point, the
+    value as a float (nan where Lean's is NaN or infinite) or a string that
+    says why it can't be evaluated.
+
+    Lean's real numbers can't be computed, so the elaborated term is
+    evaluated with floats by PrintedValues.lean, which knows Mathlib's
+    functions, including their values outside their domains (x/0 = 0,
+    Real.log x = log |x|, Real.sqrt x = 0 for x < 0, ...), and approximates
+    deriv and integrals numerically. Needs SYMPY_LEAN_PROJECT (see
+    compiling_enabled()).
+    """
+    header = 'import Mathlib\n\n' + _read_lean_file('PrintedValues.lean') + \
+        '\nset_option linter.unusedVariables false\nnoncomputable section\nopen Classical\n\n'
+    lines = []
+    for args, expr, points in functions:
+        if not expr.free_symbols <= set(args):
+            raise ValueError('%s has symbols that are not in %s' % (expr, args))
+        binders = ' '.join('(%s : %s)' % (printer._lean_name(a.name),
+                                          'ℤ' if a.is_integer else 'ℝ') for a in args)
+        values = ', '.join('[%s]' % ', '.join('%.17g' % float(v) for v in point)
+                           for point in points)
+        lines.append('#printed_values (fun %s ↦ %s) at [%s]' % (
+            binders, printer.doprint(expr), values))
+    source = header + '\n'.join(lines) + '\n'
+    first = header.count('\n') + 1
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, 'values.lean')
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write(source)
+        result = subprocess.run(TARGETS[LeanPrinter].command + ['--json', path],
+                                cwd=os.environ['SYMPY_LEAN_PROJECT'], capture_output=True,
+                                encoding='utf-8', errors='replace')
+    messages: dict[int, list[dict]] = {}
+    for line in result.stdout.splitlines():
+        if line.startswith('{'):
+            message = json.loads(line)
+            messages.setdefault(message['pos']['line'], []).append(message)
+    if any(m['severity'] == 'error' for line in messages if line < first
+           for m in messages[line]):
+        raise RuntimeError('PrintedValues.lean fails:\n' + result.stdout)
+    values: list[list[float | str]] = []
+    for k, (_, _, points) in enumerate(functions):
+        found = messages.get(first + k, [])
+        errors = [m['data'] for m in found if m['severity'] == 'error']
+        infos = [m['data'] for m in found if m['severity'] == 'information']
+        if errors or not infos:
+            values.append(['Lean: ' + ' '.join(errors or ['no output'])]*len(points))
+            continue
+        values.append([_float_from_bits(v) if isinstance(v, int) else
+                       float('nan') if v is None else v for v in json.loads(infos[0])])
+    return values
+
+
+def _float_from_bits(bits: int) -> float:
+    return struct.unpack('<d', struct.pack('<Q', bits))[0]
+
+
+def _read_lean_file(name: str) -> str:
+    with open(os.path.join(os.path.dirname(__file__), name), encoding='utf-8') as file:
+        return file.read()
 
 
 TARGETS = {

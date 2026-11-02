@@ -342,6 +342,7 @@ if __name__ == '__main__':
               'sympy.parsing.latex': ['*.txt', '*.g4', 'lark/grammar/*.lark'],
               'sympy.parsing.smtlib': ['lark/grammar/*.lark'],
               'sympy.plotting.tests': ['test_region_*.png'],
+              'sympy.printing.tests': ['*.lean'],
               'sympy': ['py.typed']
               },
           data_files=[('share/man/man1', ['doc/man/isympy.1'])],
