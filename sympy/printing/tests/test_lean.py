@@ -16,6 +16,7 @@ from sympy.matrices import (Determinant, Identity, Inverse, Matrix,
                             MatrixSymbol, Trace, Transpose, ZeroMatrix)
 from sympy.printing.codeprinter import PrintMethodNotImplementedError
 from sympy.printing.lean import lean_code
+from sympy.printing.tests.check_printed_code import check_printed_code
 from sympy.testing.pytest import raises
 
 x, y, z, w = symbols('x y z w')
@@ -29,12 +30,14 @@ def complex_code(expr):
     return lean_code(expr, number_type='complex')
 
 
+@check_printed_code
 def test_Integer():
     assert lean_code(x + 67) == "x + 67"
     assert lean_code(x - 1) == "x - 1"
     assert lean_code(-x) == "-x"
 
 
+@check_printed_code
 def test_numbers_are_given_a_type():
     # Without a type Lean would make 3 / 7 a natural number, which is 0
     assert lean_code(S(67)) == "(67 : ℝ)"
@@ -47,6 +50,7 @@ def test_numbers_are_given_a_type():
         "(if x < 0 then 1 else 2 : ℝ)"
 
 
+@check_printed_code
 def test_Rational():
     assert lean_code(x + Rational(3, 7)) == "x + 3 / 7"
     assert lean_code(Rational(3, 7)*x) == "3 * x / 7"
@@ -54,12 +58,14 @@ def test_Rational():
     assert lean_code(x/2) == "x / 2"
 
 
+@check_printed_code
 def test_Float():
     assert lean_code(Float(0.5)*x) == "0.5 * x"
     assert lean_code(Float('1.0e-20')*x) == "1.0e-20 * x"
     raises(PrintMethodNotImplementedError, lambda: lean_code(Float('inf')*x))
 
 
+@check_printed_code
 def test_Mul():
     assert lean_code(x*y*z) == "x * y * z"
     assert lean_code(x/(y*z)) == "x / (y * z)"
@@ -69,6 +75,7 @@ def test_Mul():
     assert lean_code(x - 2*(y + z)) == "x - 2 * y - 2 * z"
 
 
+@check_printed_code
 def test_Pow():
     assert lean_code(x**2) == "x ^ 2"
     # -x ^ 2 is -(x ^ 2) in Lean
@@ -88,6 +95,7 @@ def test_Pow():
     assert lean_code((-2)**x) == "(-2 : ℝ) ^ x"
 
 
+@check_printed_code
 def test_Pow_integer_exponent():
     # An exponent that is an integer is printed as an integer, so the power
     # is x ^ n for an integer n, also for a negative x
@@ -98,6 +106,7 @@ def test_Pow_integer_exponent():
     assert lean_code(x**floor(r)) == "x ^ ⌊r⌋"
 
 
+@check_printed_code
 def test_sqrt():
     assert lean_code(sqrt(x)) == "Real.sqrt x"
     assert lean_code(sqrt(x + 1)) == "Real.sqrt (x + 1)"
@@ -106,6 +115,7 @@ def test_sqrt():
     assert complex_code(sqrt(z)) == "z ^ (1 / 2 : ℂ)"
 
 
+@check_printed_code
 def test_integer_variables():
     # Declared as ℤ, so they are cast
     assert lean_code(n) == "(n : ℝ)"
@@ -117,6 +127,7 @@ def test_integer_variables():
     assert complex_code(r*z) == "(r : ℂ) * z"
 
 
+@check_printed_code
 def test_names():
     assert lean_code(Symbol('alpha_1')) == "alpha_1"
     assert lean_code(Symbol('fun') + 1) == "«fun» + 1"
@@ -124,6 +135,7 @@ def test_names():
     assert lean_code(Symbol('in')*x) == "«in» * x"
 
 
+@check_printed_code
 def test_constants():
     assert lean_code(pi*x) == "Real.pi * x"
     assert lean_code(E*x) == "Real.exp 1 * x"
@@ -139,6 +151,7 @@ def test_constants():
         raises(PrintMethodNotImplementedError, lambda: lean_code(value))
 
 
+@check_printed_code
 def test_functions():
     assert lean_code(sin(x) + cos(x) + tan(x) + cot(x)) == \
         "Real.sin x + Real.cos x + Real.tan x + Real.cot x"
@@ -157,6 +170,7 @@ def test_functions():
     assert lean_code(exp(2*x)) == "Real.exp (2 * x)"
 
 
+@check_printed_code
 def test_functions_rewritten():
     assert lean_code(sec(x)) == "(1 / Real.cos x)"
     assert lean_code(y/sec(x)) == "y / (1 / Real.cos x)"
@@ -169,6 +183,7 @@ def test_functions_rewritten():
     raises(PrintMethodNotImplementedError, lambda: lean_code(erf(x)))
 
 
+@check_printed_code
 def test_Abs_floor_ceiling_sign():
     assert lean_code(Abs(x)) == "|x|"
     assert lean_code(Abs(x + y)) == "|x + y|"
@@ -179,6 +194,7 @@ def test_Abs_floor_ceiling_sign():
     raises(PrintMethodNotImplementedError, lambda: complex_code(floor(z)))
 
 
+@check_printed_code
 def test_Max_Min():
     assert lean_code(Max(x, y)) == "max x y"
     assert lean_code(Max(x, y, z)) == "max x (max y z)"
@@ -186,11 +202,13 @@ def test_Max_Min():
     raises(PrintMethodNotImplementedError, lambda: complex_code(Max(z, w)))
 
 
+@check_printed_code
 def test_atan2():
     # The argument of x + i y
     assert lean_code(atan2(y, x)) == "Complex.arg ⟨x, y⟩"
 
 
+@check_printed_code
 def test_complex_functions():
     assert complex_code(exp(I*z) + log(z)) == \
         "Complex.exp (Complex.I * z) + Complex.log z"
@@ -205,6 +223,7 @@ def test_complex_functions():
     raises(PrintMethodNotImplementedError, lambda: lean_code(re(x)))
 
 
+@check_printed_code
 def test_undefined_functions():
     assert lean_code(f(x)) == "f x"
     assert lean_code(f(x, y + 1)) == "f x (y + 1)"
@@ -220,6 +239,7 @@ def test_user_functions():
         ) == "fany x"
 
 
+@check_printed_code
 def test_Relational():
     assert lean_code(Eq(x, y)) == "x = y"
     assert lean_code(Ne(x, y)) == "x ≠ y"
@@ -230,6 +250,7 @@ def test_Relational():
     assert lean_code(Eq(x + 1, 2*y)) == "x + 1 = 2 * y"
 
 
+@check_printed_code
 def test_logic():
     assert lean_code(true) == "True"
     assert lean_code(false) == "False"
@@ -253,6 +274,7 @@ def test_logic():
     assert lean_code(ITE(p, x > 1, y > 1)) == "if p then x > 1 else y > 1"
 
 
+@check_printed_code
 def test_Piecewise():
     assert lean_code(Piecewise((x, x < 0), (0, True))) == \
         "if x < 0 then x else 0"
@@ -267,12 +289,14 @@ def test_Piecewise():
            lambda: lean_code(Piecewise((x, x < 0))))
 
 
+@check_printed_code
 def test_Lambda():
     assert lean_code(Lambda(x, x**2)) == "fun x : ℝ ↦ x ^ 2"
     assert lean_code(Lambda((x, y), x*y)) == "fun (x : ℝ) (y : ℝ) ↦ x * y"
     assert lean_code(Lambda((x, n), x**n)) == "fun (x : ℝ) (n : ℤ) ↦ x ^ n"
 
 
+@check_printed_code
 def test_Derivative():
     assert lean_code(Derivative(f(x), x)) == "deriv (fun x : ℝ ↦ f x) x"
     assert lean_code(Derivative(x**3, (x, 2))) == \
@@ -289,6 +313,7 @@ def test_Derivative():
            lambda: lean_code(Derivative(f(x)**2, f(x))))
 
 
+@check_printed_code
 def test_Subs():
     assert lean_code(Subs(x**2, x, y + 1)) == "(fun x : ℝ ↦ x ^ 2) (y + 1)"
     assert lean_code(Subs(Derivative(f(x), x), x, 0)) == \
@@ -297,6 +322,7 @@ def test_Subs():
         "(fun (x : ℝ) (y : ℝ) ↦ x * y) 1 2"
 
 
+@check_printed_code
 def test_Integral():
     assert lean_code(Integral(x**2, (x, 0, 1))) == \
         "∫ x in (0 : ℝ)..1, x ^ 2"
@@ -312,6 +338,7 @@ def test_Integral():
            lambda: lean_code(Integral(exp(-x), (x, 0, oo))))
 
 
+@check_printed_code
 def test_Sum_Product():
     assert lean_code(Sum(i**2, (i, 1, n))) == \
         "∑ i ∈ Finset.Icc (1 : ℤ) n, (i : ℝ) ^ 2"
@@ -333,6 +360,7 @@ def test_Sum_Product():
            lambda: lean_code(Sum(1/i**2, (i, 1, oo))))
 
 
+@check_printed_code
 def test_matrices():
     assert lean_code(Matrix([[x, 1], [2, 3]])) == "!![x, 1; 2, 3]"
     assert lean_code(Matrix([[1, 2], [3, 4]])) == \
@@ -354,6 +382,7 @@ def test_matrices():
     assert lean_code(ZeroMatrix(2, 2)) == "(0 : Matrix (Fin 2) (Fin 2) ℝ)"
 
 
+@check_printed_code
 def test_containers():
     assert lean_code((x, y + 1)) == "(x, y + 1)"
     assert lean_code([x, y]) == "[x, y]"
