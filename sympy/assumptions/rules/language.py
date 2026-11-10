@@ -26,6 +26,18 @@ for ``f(x, y)``, where ``x`` is its first argument and ``y`` is the sum or
 the product of the others. A row about a power is written for
 ``f(base, exponent)``.
 
+A row can also be about one expression alone. It is then written with ``x``
+and without ``f``, and holds for every instance ``x`` of the classes::
+
+    # A real number which is not rational is irrational
+    for_all((Expr,),
+        (Q.real(x) & ~Q.rational(x)) >> Q.irrational(x)),
+
+A row for every expression (``Expr`` or ``Basic``) says nothing new: it must
+follow from the facts between the predicates in
+:mod:`sympy.assumptions.facts`. It tells how the truth value of one
+predicate is found from other predicates of the same expression.
+
 Above each statement is a comment with the name of the property and, under
 it and indented, the reason for which it is true.
 
@@ -105,6 +117,8 @@ def node(row):
     >>> from sympy.assumptions.rules.language import f, node, x
     >>> node(Q.zero(x) >> Q.zero(f(x)))
     f(x)
+    >>> node(Q.zero(x) >> Q.real(x))
+    x
 
     """
     if not isinstance(row, Boolean):
@@ -114,8 +128,10 @@ def node(row):
             f"the row {row} is a conjunction: put the conditions in "
             "parentheses, because >> binds tighter than &")
     nodes = [e for e in row.atoms(AppliedUndef) if e.func == f]
+    if not nodes:
+        nodes = list(row.free_symbols)
     if len(nodes) != 1:
-        raise ValueError(f"the row {row} must be about one expression f(...)")
+        raise ValueError(f"the row {row} must be about one expression")
     expr, = nodes
     args = expr.args
     if not all(isinstance(arg, Symbol) for arg in args) or len(set(args)) != len(args):
