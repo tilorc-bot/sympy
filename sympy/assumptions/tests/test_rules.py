@@ -27,7 +27,8 @@ from sympy.core.mul import Mul
 from sympy.core.numbers import I, ImaginaryUnit, Integer, Rational, nan, oo, pi, zoo
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.trigonometric import cos, sin
+from sympy.functions.elementary.exponential import log
+from sympy.functions.elementary.trigonometric import acos, cos, sin
 from sympy.logic.boolalg import And, Equivalent
 from sympy.logic.inference import satisfiable
 from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
@@ -845,6 +846,53 @@ def test_block_diagonal_matrix():
                 if len(blocks) > 1:
                     assert satask(matrix, predicate(blocks[0])) is None
 
+
+def test_compiled_rules_of_classes():
+    assert ((Q.even, 0, False), (Q.even, -1, True)) in sat_rules(Abs, 1)
+    assert sat_rules(Abs, 2) == ()
+    assert set(sat_rules(Mul, 2)) < set(sat_rules(MatMul, 2))
+    assert (True, ((Q.even, 0, True),)) in ask_rules(Abs, 1, Q.even)
+    # an odd number is not even, and zero is even
+    assert (False, ((Q.odd, 0, True),)) in ask_rules(Abs, 1, Q.even)
+    assert (True, ((Q.zero, 0, True),)) in ask_rules(Abs, 1, Q.even)
+    # a number which is not an integer is not even
+    assert (False, ((Q.integer, 0, False), (Q.integer, 1, True))) in ask_rules(Add, 2, Q.even)
+    assert set(ask_rules(Mul, 2, Q.zero)) <= set(ask_rules(MatMul, 2, Q.zero))
+    assert (True, ((Q.positive_definite, 0, True), (Q.eq, (1, 2), True))
+            ) in ask_rules(MatrixElement, 3, Q.positive)
+
+
+def test_rules_with_relations_in_use():
+    X = MatrixSymbol('X', 4, 4)
+    for engine in (satask, _ask_recursive):
+        assert engine(Q.positive(X[a, a]), Q.positive_definite(X)) is True
+        assert engine(Q.positive(X[a, b]), Q.positive_definite(X) & Q.eq(a, b)) is True
+        assert engine(Q.positive(X[a, b]), Q.positive_definite(X)) is None
+        assert engine(Q.finite(a**b), Q.lt(1, a) & Q.extended_negative(b)) is True
+        assert engine(Q.finite(a**b), Q.ge(a, 1) & Q.extended_negative(b)) is None
+        assert engine(Q.positive(acos(a)), Q.le(-1, a) & Q.gt(1, a)) is True
+        assert engine(Q.rational(a**b), Q.rational(b) & Q.eq(a, 1)) is True
+        assert engine(Q.prime(a**b), Q.integer(a) & Q.integer(b) & Q.ne(b, 1)) is False
+        assert engine(Q.positive(log(a)), Q.real(a) & Q.positive(a - 1)) is True
+        assert engine(Q.positive(log(a)), Q.real(a) & Q.negative(a - 1)) is False
+        assert engine(Q.positive(acos(a)), Q.negative(a - 1) & Q.nonnegative(a + 1)) is True
+        assert engine(Q.positive(acos(a)), Q.nonpositive(a - 1) & Q.nonnegative(a + 1)) is None
+        assert engine(Q.rational(log(a)), Q.rational(a) & Q.nonzero(a - 1)) is False
+        assert engine(Q.finite(b**a), Q.positive(b - 1) & Q.extended_negative(a)) is True
+    assert satask(Q.lt(a, 1), Q.positive(log(a))) is False
+    assert _ask_recursive(Q.odd((-1)**Symbol('n')), Q.integer(Symbol('n'))) is True
+
+
+def test_block_diagonal_matrix_in_use():
+    A, B, C = (MatrixSymbol(name, 3, 3) for name in 'ABC')
+    for predicate in (Q.invertible, Q.integer_elements):
+        for blocks in ((A,), (A, B), (A, B, C)):
+            matrix = predicate(BlockDiagMatrix(*blocks))
+            every = And(*[predicate(block) for block in blocks])
+            for engine in (satask, _ask_recursive):
+                assert engine(matrix, every) is True
+                assert engine(matrix, ~predicate(blocks[-1])) is False
+                assert engine(matrix, True) is None
 
 
 def test_values_of_entries_and_slices():

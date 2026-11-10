@@ -42,7 +42,18 @@ FIRST_AND_REST = (Add, Mul, BlockDiagMatrix)
 
 # The predicates which :func:`evaluate` uses the compiled rules for. The
 # others have hand-written handlers for the classes of the rules.
-RULE_PREDICATES: frozenset = frozenset()
+RULE_PREDICATES: frozenset = frozenset({
+    Q.positive, Q.negative, Q.zero, Q.nonzero, Q.nonpositive, Q.nonnegative,
+    Q.extended_positive, Q.extended_negative, Q.extended_nonzero,
+    Q.extended_nonpositive, Q.extended_nonnegative, Q.integer, Q.rational,
+    Q.irrational, Q.real, Q.extended_real, Q.hermitian, Q.complex,
+    Q.imaginary, Q.antihermitian, Q.algebraic, Q.transcendental, Q.prime,
+    Q.composite, Q.even, Q.odd, Q.finite, Q.infinite, Q.positive_infinite,
+    Q.negative_infinite, Q.square, Q.symmetric, Q.invertible, Q.orthogonal,
+    Q.unitary, Q.fullrank, Q.positive_definite, Q.upper_triangular,
+    Q.lower_triangular, Q.diagonal, Q.integer_elements, Q.real_elements,
+    Q.complex_elements,
+})
 
 _sat_rules: dict = {}
 _ask_rules: dict = {}
@@ -312,7 +323,7 @@ def sat_rules(cls, nargs):
 
     >>> from sympy import Abs, Q
     >>> from sympy.assumptions.rule_engine import sat_rules
-    >>> ((Q.even, 0, False), (Q.even, -1, True)) in sat_rules(Abs, 1)  # doctest: +SKIP
+    >>> ((Q.even, 0, False), (Q.even, -1, True)) in sat_rules(Abs, 1)
     True
 
     """
@@ -374,9 +385,9 @@ def ask_rules(cls, nargs, predicate):
     >>> from sympy import Abs, Q
     >>> from sympy.assumptions.rule_engine import ask_rules
     >>> ways = ask_rules(Abs, 1, Q.even)
-    >>> (True, ((Q.even, 0, True),)) in ways  # doctest: +SKIP
+    >>> (True, ((Q.even, 0, True),)) in ways
     True
-    >>> (False, ((Q.odd, 0, True),)) in ways  # doctest: +SKIP
+    >>> (False, ((Q.odd, 0, True),)) in ways
     True
 
     """
