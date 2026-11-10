@@ -101,6 +101,16 @@ RULES = (
         (Q.odd(base) & Q.integer(exponent) & ~Q.negative(exponent))
         >> Q.odd(f(base, exponent))),
 
+    # A power of -1 is odd
+    #     it is 1 or -1
+    for_all((Pow,),
+        (Q.eq(base, -1) & Q.integer(exponent)) >> Q.odd(f(base, exponent))),
+
+    # One to a finite power is odd
+    #     it is 1, and 1**oo is nan
+    for_all((Pow,),
+        (Q.eq(base, 1) & Q.finite(exponent)) >> Q.odd(f(base, exponent))),
+
     # A prime to the power 1 is prime
     #     1 is the positive integer which is neither prime nor composite
     for_all((Pow,),
@@ -121,5 +131,7 @@ RULES = (
         >> ~Q.prime(f(base, exponent)),
         (Q.integer(base) & Q.prime(exponent)) >> ~Q.prime(f(base, exponent)),
         (Q.integer(base) & Q.composite(exponent))
+        >> ~Q.prime(f(base, exponent)),
+        (Q.integer(base) & Q.integer(exponent) & Q.ne(exponent, 1))
         >> ~Q.prime(f(base, exponent))),
 )

@@ -9,10 +9,11 @@ from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.functions.elementary.complexes import Abs, im, re
 from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.trigonometric import (acot, asin, atan, cos,
-    cot, sin, tan)
+from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
+    cos, cot, sin, tan)
 from sympy.logic.boolalg import Equivalent
 from sympy.matrices.expressions.determinant import Determinant
 from sympy.matrices.expressions.matexpr import MatrixElement
@@ -217,6 +218,13 @@ RULES = (
         (Q.real(x) & Q.imaginary(y)) >> Equivalent(Q.real(f(x, y)), Q.zero(f(x, y))),
         (Q.imaginary(x) & Q.real(y)) >> Equivalent(Q.real(f(x, y)), Q.zero(f(x, y)))),
 
+    # Half an even number is an integer, half an odd number is not
+    #     an even number is twice an integer, and a number factor of a
+    #     product is its first argument
+    for_all((Mul,),
+        (Q.eq(x, S.Half) & Q.even(y)) >> Q.integer(f(x, y)),
+        (Q.eq(x, S.Half) & Q.odd(y)) >> ~Q.integer(f(x, y))),
+
     # A product of nonzero extended real numbers is extended real
     #     0*oo is nan
     for_all((Mul,),
@@ -269,6 +277,19 @@ RULES = (
         >> Q.hermitian(f(base, exponent)),
         (Q.hermitian(base) & Q.integer(exponent) & ~Q.negative(exponent))
         >> Q.hermitian(f(base, exponent))),
+
+    # A negative integer power of an integer other than 1 and -1 is not an
+    # integer
+    #     it is a fraction with a numerator of 1 or -1, and 0**-1 is zoo
+    for_all((Pow,),
+        (Q.integer(base) & Q.ne(base, 1) & Q.ne(base, -1) & Q.integer(exponent)
+         & Q.negative(exponent))
+        >> ~Q.integer(f(base, exponent))),
+
+    # The inverse of an irrational number is irrational
+    #     the inverse of a rational number is rational
+    for_all((Pow,),
+        (Q.irrational(base) & Q.eq(exponent, -1)) >> Q.irrational(f(base, exponent))),
 
     # A rational power of an algebraic number is algebraic
     #     0**-1 is zoo
@@ -388,6 +409,14 @@ RULES = (
     #     log(0) is zoo
     for_all((log,),
         (Q.complex(x) & ~Q.zero(x)) >> Q.complex(f(x))),
+
+    # --- acos, log ---
+
+    # acos and log of an algebraic number other than 1 are not algebraic
+    #     Lindemann: cos(b) and exp(b) are transcendental for an algebraic b
+    #     other than 0, and acos and log are 0 only at 1; log(0) is zoo
+    for_all((acos, log),
+        (Q.algebraic(x) & Q.ne(x, 1)) >> ~Q.algebraic(f(x))),
 
     # --- sin, cos, tan, cot ---
 

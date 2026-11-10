@@ -39,7 +39,8 @@ is equal to a rational number, with ``Q.eq``::
         (Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j))),
 
 Two arguments are equal when they are the same number or the same range.
-No other predicate of two arguments may be used.
+``Q.ne(a, b)`` is written for ``~Q.eq(a, b)``. No other predicate of two
+arguments may be used.
 
 A row can also be about one expression alone. It is then written with ``x``
 and without ``f``, and holds for every instance ``x`` of the classes::
@@ -82,6 +83,10 @@ f = Function('f')
 
 # The predicates of two arguments which a row can use as a condition
 RELATIONS = frozenset({Q.eq})
+
+# The predicates of two arguments which a row can write for the negation of
+# one of RELATIONS
+NEGATIONS = {Q.ne: Q.eq}
 
 
 class ForAll(NamedTuple):
@@ -171,10 +176,11 @@ def node(row):
 
 
 def _check_relation(literal, row, args):
-    if literal.function not in RELATIONS:
+    if literal.function not in RELATIONS and literal.function not in NEGATIONS:
+        names = ', '.join(map(str, (*RELATIONS, *NEGATIONS)))
         raise ValueError(
             f"{literal} in the row {row}: the predicates of two arguments "
-            f"which a row can use are {', '.join(map(str, RELATIONS))}")
+            f"which a row can use are {names}")
     a, b = literal.arguments
     numbers = [isinstance(arg, Rational) for arg in (a, b)]
     if all(numbers) or a == b or not all(

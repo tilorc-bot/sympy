@@ -14,7 +14,7 @@ from importlib import import_module
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.facts import get_known_facts
-from sympy.assumptions.rules.language import node
+from sympy.assumptions.rules.language import NEGATIONS, node
 from sympy.core.numbers import Integer, Rational
 from sympy.logic.boolalg import Implies
 from sympy.logic.inference import satisfiable
@@ -97,17 +97,28 @@ def clauses(row):
     >>> clauses((Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j)))
     [((Q.positive_definite, 0, False), (Q.eq, (1, 2), False), (Q.positive, -1, True))]
 
+    ``Q.ne`` is compiled as the negation of ``Q.eq``:
+
+    >>> clauses((Q.positive_definite(x) & Q.ne(i, j)) >> Q.positive(f(x, i, j)))
+    [((Q.positive_definite, 0, False), (Q.eq, (1, 2), True), (Q.positive, -1, True))]
+
     """
     expr = node(row)
     slots = {arg: i for i, arg in enumerate(expr.args)}
     slots[expr] = EXPR
     result = set()
     for clause in CNF.to_CNF(row).clauses:
-        literals = {(lit.lit.function, _slot(lit.lit.arguments, slots), not lit.is_Not)
-                    for lit in clause}
+        literals = {_literal(lit.lit, slots, not lit.is_Not) for lit in clause}
         if not any((p, slot, not value) in literals for p, slot, value in literals):
             result.add(tuple(sorted(literals, key=_literal_key)))
     return sorted(result, key=lambda clause: [_literal_key(lit) for lit in clause])
+
+
+def _literal(atom, slots, value):
+    predicate = atom.function
+    if predicate in NEGATIONS:
+        predicate, value = NEGATIONS[predicate], not value
+    return (predicate, _slot(atom.arguments, slots), value)
 
 
 def _slot(arguments, slots):

@@ -170,16 +170,18 @@ def find_symbols(pred):
     return pred.atoms(Symbol)
 
 
-def get_relevant_clsfacts(exprs, relevant_facts=None):
+def get_relevant_clsfacts(exprs, relevant_facts=None, relations=frozenset()):
     """
     Extract relevant facts from the items in *exprs*. Facts come from the
     rules in ``assumptions.rules`` package, in their compiled form, and from
     the numbers among *exprs* themselves.
 
     A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
-    decided from the form of the arguments if it can be. Otherwise it is
-    kept as a predicate of the two, which is linked to the predicates which
-    decide it in another way, such as ``Q.eq(j, i)`` and ``Q.ne(i, j)``.
+    decided from the form of the arguments if it can be. Otherwise the rule
+    is kept only if one of the predicates which decide the condition, such
+    as ``Q.eq(i, j)``, ``Q.eq(j, i)`` and ``Q.ne(i, j)``, is in *relations*.
+    The condition is then kept as a predicate of the two, which is linked to
+    the others.
 
     This function is recursively called by ``get_all_relevant_facts()``.
 
@@ -191,6 +193,10 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
 
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
         Pre-discovered relevant facts. They are updated in place.
+
+    relations : set, optional.
+        The predicates of two expressions which the query is about, as
+        triples ``(predicate, a, b)``.
 
     Returns
     =======
@@ -250,7 +256,8 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
                           for predicate, slot, value in clause)
                 for clause in rules)
             if related:
-                relevant_facts.clauses.update(_related_clauses(related, targets))
+                relevant_facts.clauses.update(
+                    _related_clauses(related, targets, relations))
             newexprs.update(args)
         if isinstance(expr, (Number, NumberSymbol, ImaginaryUnit)):
             for predicate, name in _number_properties.items():
@@ -262,7 +269,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     return newexprs - exprs, relevant_facts
 
 
-def _related_clauses(clauses, targets):
+def _related_clauses(clauses, targets, relations):
     found = set()
     for clause in clauses:
         literals = []
@@ -276,6 +283,9 @@ def _related_clauses(clauses, targets):
             if known is value:
                 break
             if known is None:
+                if not any(((assumed, b, a) if swapped else (assumed, a, b)) in relations
+                           for assumed, swapped, _ in deciders):
+                    break
                 atom = predicate(a, b)
                 literals.append(Literal(atom, not value))
                 for assumed, swapped, same in deciders:
@@ -339,11 +349,14 @@ def get_all_relevant_facts(proposition, assumptions,
     i = 0
     relevant_facts = CNF()
     all_exprs = set()
+    relations = {(atom.function, *atom.arguments)
+                 for atom in proposition.all_predicates() | assumptions.all_predicates()
+                 if isinstance(atom, AppliedPredicate) and len(atom.arguments) == 2}
     while True:
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)
         all_exprs |= exprs
-        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts, relations)
         i += 1
         if i >= iterations:
             break

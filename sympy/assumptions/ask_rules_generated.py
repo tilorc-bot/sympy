@@ -8,6 +8,8 @@ from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
+from sympy.core.numbers import Integer
+from sympy.core.numbers import Rational
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import factorial
@@ -598,6 +600,8 @@ ASK_RULES = {
         ),
         Q.integer: (
             (True, ((Q.integer, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.eq, (0, Rational(1, 2)), True), (Q.even, 1, True))),
+            (False, ((Q.eq, (0, Rational(1, 2)), True), (Q.odd, 1, True))),
         ),
         Q.irrational: (
             (True, ((Q.irrational, 0, True), (Q.rational, 1, True), (Q.zero, 1, False))),
@@ -702,8 +706,10 @@ ASK_RULES = {
         Q.integer: (
             (True, ((Q.zero, 1, True),)),
             (True, ((Q.integer, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+            (False, ((Q.integer, 0, True), (Q.eq, (0, Integer(-1)), False), (Q.eq, (0, Integer(1)), False), (Q.integer, 1, True), (Q.negative, 1, True))),
         ),
         Q.irrational: (
+            (True, ((Q.irrational, 0, True), (Q.eq, (1, Integer(-1)), True))),
             (True, ((Q.prime, 0, True), (Q.integer, 1, False), (Q.rational, 1, True))),
         ),
         Q.negative: (
@@ -719,12 +725,15 @@ ASK_RULES = {
             (True, ((Q.nonpositive, 0, True), (Q.nonnegative, 1, True), (Q.odd, 1, True))),
         ),
         Q.odd: (
+            (True, ((Q.eq, (0, Integer(-1)), True), (Q.integer, 1, True))),
+            (True, ((Q.eq, (0, Integer(1)), True), (Q.finite, 1, True))),
             (True, ((Q.odd, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
         ),
         Q.positive: (
             (True, ((Q.zero, 1, True),)),
             (True, ((Q.nonzero, 0, True), (Q.even, 1, True))),
             (True, ((Q.positive, 0, True), (Q.real, 1, True))),
+            (True, ((Q.eq, (0, Integer(1)), True), (Q.finite, 1, True))),
         ),
         Q.prime: (
             (True, ((Q.prime, 0, True), (Q.composite, 1, False), (Q.integer, 1, True), (Q.positive, 1, True), (Q.prime, 1, False))),
@@ -732,6 +741,7 @@ ASK_RULES = {
             (False, ((Q.integer, 0, True), (Q.prime, 1, True))),
             (False, ((Q.integer, 0, True), (Q.prime, 0, False), (Q.integer, 1, True))),
             (False, ((Q.integer, 0, True), (Q.integer, 1, True), (Q.positive, 1, False))),
+            (False, ((Q.integer, 0, True), (Q.integer, 1, True), (Q.eq, (1, Integer(1)), False))),
         ),
         Q.rational: (
             (True, ((Q.rational, 0, True), (Q.zero, 0, False), (Q.integer, 1, True))),
@@ -834,6 +844,9 @@ ASK_RULES = {
         ),
     },
     (acos, 1): {
+        Q.algebraic: (
+            (False, ((Q.algebraic, 0, True), (Q.eq, (0, Integer(1)), False))),
+        ),
         Q.negative: (
             (False, ()),
         ),
@@ -964,6 +977,9 @@ ASK_RULES = {
         ),
     },
     (log, 1): {
+        Q.algebraic: (
+            (False, ((Q.algebraic, 0, True), (Q.eq, (0, Integer(1)), False))),
+        ),
         Q.complex: (
             (True, ((Q.complex, 0, True), (Q.zero, 0, False))),
         ),
