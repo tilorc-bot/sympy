@@ -159,7 +159,7 @@ class ZeroPredicate(Predicate):
     None
     >>> ask(Q.zero(1))
     False
-    >>> ask(Q.zero(x*y), Q.zero(x) | Q.zero(y))
+    >>> ask(Q.zero(x*y), (Q.zero(x) | Q.zero(y)) & Q.finite(x) & Q.finite(y))
     True
 
     """

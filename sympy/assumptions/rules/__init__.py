@@ -12,4 +12,4 @@ This package is imported only by ``bin/ask_update.py`` and by the tests.
 """
 from __future__ import annotations
 
-MODULES: tuple[str, ...] = ()
+MODULES: tuple[str, ...] = ('calculus', 'common', 'matrices', 'ntheory', 'order', 'sets')
