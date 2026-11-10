@@ -54,7 +54,7 @@ class SymmetricPredicate(Predicate):
     >>> X = MatrixSymbol('X', 2, 2)
     >>> Y = MatrixSymbol('Y', 2, 3)
     >>> Z = MatrixSymbol('Z', 2, 2)
-    >>> ask(Q.symmetric(X*Z), Q.symmetric(X) & Q.symmetric(Z))
+    >>> ask(Q.symmetric(2*X), Q.symmetric(X))
     True
     >>> ask(Q.symmetric(X + Z), Q.symmetric(X) & Q.symmetric(Z))
     True

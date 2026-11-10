@@ -6,16 +6,29 @@ from __future__ import annotations
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
+from sympy.core.numbers import ImaginaryUnit, Number, NumberSymbol
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.rule_engine import (Comparisons, WRITTEN, canonical,
     rule_arguments, split_sat_rules, unit_literals)
-from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
 from sympy.assumptions.reasoning_engine import ReasoningEngine
+
+_number_properties = {
+    Q.positive: 'is_positive',
+    Q.zero: 'is_zero',
+    Q.negative: 'is_negative',
+    Q.rational: 'is_rational',
+    Q.irrational: 'is_irrational',
+    Q.even: 'is_even',
+    Q.odd: 'is_odd',
+    Q.imaginary: 'is_imaginary',
+    Q.prime: 'is_prime',
+    Q.composite: 'is_composite',
+}
 
 
 def satask(proposition, assumptions=True, use_known_facts=True, iterations=oo,
@@ -163,7 +176,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None, compared=None,
     """
     Extract relevant facts from the items in *exprs*. Facts come from the
     rules in ``assumptions.rules`` package, in their compiled form, and from
-    ``assumptions.sathandlers`` module.
+    the numbers among *exprs* themselves.
 
     A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
     decided by *compared* if it can be. Otherwise the rule is kept only if
@@ -257,12 +270,12 @@ def get_relevant_clsfacts(exprs, relevant_facts=None, compared=None,
                 relevant_facts.clauses.update(
                     _related_clauses(related, targets, compared, relations))
             newexprs.update(args)
-        for fact in class_fact_registry(expr):
-            newfact = CNF.to_CNF(fact)
-            relevant_facts = relevant_facts._and(newfact)
-            for key in newfact.all_predicates():
-                if isinstance(key, AppliedPredicate):
-                    newexprs |= set(key.arguments)
+        if isinstance(expr, (Number, NumberSymbol, ImaginaryUnit)):
+            for predicate, name in _number_properties.items():
+                value = getattr(expr, name)
+                if value is not None:
+                    relevant_facts.clauses.add(
+                        frozenset((Literal(predicate(expr), not value),)))
 
     return newexprs - exprs, relevant_facts
 
