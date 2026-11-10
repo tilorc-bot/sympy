@@ -8,9 +8,10 @@ from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
+from sympy.assumptions.rule_engine import rule_arguments, sat_rules
 from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
 from sympy.assumptions.reasoning_engine import ReasoningEngine
 
@@ -157,7 +158,8 @@ def find_symbols(pred):
 
 def get_relevant_clsfacts(exprs, relevant_facts=None):
     """
-    Extract relevant facts from the items in *exprs*. Facts are defined in
+    Extract relevant facts from the items in *exprs*. Facts come from the
+    rules in ``assumptions.rules`` package, in their compiled form, and from
     ``assumptions.sathandlers`` module.
 
     This function is recursively called by ``get_all_relevant_facts()``.
@@ -169,7 +171,7 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
         Expressions whose relevant facts are searched.
 
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
-        Pre-discovered relevant facts.
+        Pre-discovered relevant facts. They are updated in place.
 
     Returns
     =======
@@ -189,26 +191,16 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     candidates for next run, and ``CNF()`` instance containing facts
     which are relevant to ``Abs`` and its argument.
 
-    >>> from sympy import Abs
+    >>> from sympy import Abs, Q
+    >>> from sympy.assumptions.cnf import Literal
     >>> from sympy.assumptions.satask import get_relevant_clsfacts
     >>> from sympy.abc import x, y
     >>> exprs = {Abs(x*y)}
     >>> exprs, facts = get_relevant_clsfacts(exprs)
     >>> exprs
     {x*y}
-    >>> facts.clauses #doctest: +SKIP
-    {frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), False), Literal(Q.zero(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), True), Literal(Q.zero(x*y), False)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.odd(Abs(x*y)), False),
-                Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.even(x*y), True),
-                Literal(Q.odd(Abs(x*y)), False)}),
-    frozenset({Literal(Q.positive(Abs(x*y)), False),
-                Literal(Q.zero(Abs(x*y)), False)})}
+    >>> frozenset({Literal(Q.even(x*y), True), Literal(Q.even(Abs(x*y)), False)}) in facts.clauses
+    True
 
     We pass the first run's results to the second run, and get the expressions
     for next run and updated facts.
@@ -230,6 +222,15 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
 
     newexprs = set()
     for expr in exprs:
+        args = rule_arguments(expr)
+        rules = sat_rules(type(expr), len(args))
+        if rules:
+            targets = (*args, expr)
+            relevant_facts.clauses.update(
+                frozenset(Literal(predicate(targets[slot]), not value)
+                          for predicate, slot, value in clause)
+                for clause in rules)
+            newexprs.update(args)
         for fact in class_fact_registry(expr):
             newfact = CNF.to_CNF(fact)
             relevant_facts = relevant_facts._and(newfact)
