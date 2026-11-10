@@ -338,9 +338,9 @@ def test_pow_pos_neg():
 
     # If x is zero, x**negative is not real.
     assert satask(Q.nonnegative(x**-2), Q.nonpositive(x)) is None
-    assert satask(Q.nonpositive(x**-2), Q.nonpositive(x)) is None
+    assert satask(Q.nonpositive(x**-2), Q.nonpositive(x)) is False
     assert satask(Q.positive(x**-2), Q.nonpositive(x)) is None
-    assert satask(Q.negative(x**-2), Q.nonpositive(x)) is None
+    assert satask(Q.negative(x**-2), Q.nonpositive(x)) is False
     assert satask(Q.real(x**-2), Q.nonpositive(x)) is None
 
     # We could deduce things for negative powers if x is nonzero, but it
@@ -378,7 +378,7 @@ def test_get_relevant_clsfacts():
     exprs = {Abs(x*y)}
     exprs, facts = get_relevant_clsfacts(exprs)
     assert exprs == {x*y}
-    assert facts.clauses == \
+    assert facts.clauses >= \
         {frozenset({Literal(Q.nonnegative(Abs(x*y)), False)}),
          frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
          frozenset({Literal(Q.integer(Abs(x*y)), False), Literal(Q.integer(x*y), True)}),

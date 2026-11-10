@@ -3,12 +3,14 @@ Module to evaluate the proposition with assumptions using SAT algorithm.
 """
 from __future__ import annotations
 
+from sympy.core.cache import cacheit
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.sathandlers import class_fact_registry
+from sympy.assumptions.satfacts.common import default_fact_registry
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF
 from sympy.matrices.kind import MatrixKind
@@ -155,7 +157,7 @@ def find_symbols(pred):
     return pred.atoms(Symbol)
 
 
-def get_relevant_clsfacts(exprs, relevant_facts=None):
+def get_relevant_clsfacts(exprs, relevant_facts=None, assumptions=None):
     """
     Extract relevant facts from the items in *exprs*. Facts are defined in
     ``assumptions.sathandlers`` module.
@@ -170,6 +172,10 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
 
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
         Pre-discovered relevant facts.
+
+    assumptions : sympy.assumptions.cnf.CNF, optional.
+        Assumptions which can override the facts in
+        ``sympy.assumptions.satfacts.common.default_fact_registry``.
 
     Returns
     =======
@@ -225,19 +231,38 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     set()
 
     """
-    if not relevant_facts:
-        relevant_facts = CNF()
+    relevant_facts = relevant_facts.copy() if relevant_facts else CNF()
+
+    overridden = set()
+    if assumptions is not None:
+        overridden = {frozenset({~lit}) for clause in assumptions.clauses
+                      if len(clause) == 1 for lit in clause}
 
     newexprs = set()
     for expr in exprs:
-        for fact in class_fact_registry(expr):
-            newfact = CNF.to_CNF(fact)
-            relevant_facts = relevant_facts._and(newfact)
-            for key in newfact.all_predicates():
-                if isinstance(key, AppliedPredicate):
-                    newexprs |= set(key.arguments)
+        clauses, args = _class_facts(expr)
+        relevant_facts.add_clauses(clauses)
+        newexprs |= args
+        for fact in default_fact_registry(expr):
+            default = CNF.to_CNF(fact).clauses
+            if not default <= overridden:
+                relevant_facts.add_clauses(default)
 
     return newexprs - exprs, relevant_facts
+
+
+@cacheit
+def _class_facts(expr):
+    """
+    Return the clauses of the facts registered for *expr* and the arguments of
+    the predicates in them.
+    """
+    clauses = set()
+    for fact in class_fact_registry(expr):
+        clauses |= CNF.to_CNF(fact).clauses
+    args = {arg for clause in clauses for lit in clause
+            if isinstance(lit.arg, AppliedPredicate) for arg in lit.arg.arguments}
+    return frozenset(clauses), frozenset(args)
 
 
 def get_all_relevant_facts(proposition, assumptions,
@@ -295,7 +320,8 @@ def get_all_relevant_facts(proposition, assumptions,
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)
         all_exprs |= exprs
-        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts,
+                                                      assumptions)
         i += 1
         if i >= iterations:
             break
