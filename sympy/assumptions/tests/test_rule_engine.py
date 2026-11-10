@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sympy.abc import x, y
 from sympy.assumptions.ask import Q
-from sympy.assumptions.rule_engine import SELF, Condition, Rule, ask_by_rules
+from sympy.assumptions.rule_engine import SELF, Condition, ask_by_rules
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
@@ -11,25 +11,24 @@ from sympy.functions.elementary.exponential import exp
 
 RULES = {
     # The absolute value of an even number is even
-    (Abs, Q.even): (Rule(True, (Condition(Q.even, 0),)),),
+    (Abs, Q.even, True): [(Condition(Q.even, 0),)],
     # An absolute value is not negative
-    (Abs, Q.negative): (Rule(False),),
+    (Abs, Q.negative, False): [()],
     # An absolute value is zero exactly when its argument is
-    (Abs, Q.zero): (Rule(True, (Condition(Q.zero, 0),)),
-                    Rule(False, (Condition(Q.zero, 0, False),))),
+    (Abs, Q.zero, True): [(Condition(Q.zero, 0),)],
+    (Abs, Q.zero, False): [(Condition(Q.zero, 0, False),)],
     # exp is positive on the reals
-    (exp, Q.positive): (Rule(True, (Condition(Q.real, 0),)),),
+    (exp, Q.positive, True): [(Condition(Q.real, 0),)],
     # A positive number to a real power is positive
-    (Pow, Q.positive): (Rule(True, (Condition(Q.positive, 0),
-                                    Condition(Q.real, 1))),),
+    (Pow, Q.positive, True): [(Condition(Q.positive, 0), Condition(Q.real, 1))],
     # A positive number is real, and is not zero
-    (Expr, Q.real): (Rule(True, (Condition(Q.positive, SELF),)),),
-    (Expr, Q.zero): (Rule(False, (Condition(Q.positive, SELF),)),),
+    (Expr, Q.real, True): [(Condition(Q.positive, SELF),)],
+    (Expr, Q.zero, False): [(Condition(Q.positive, SELF),)],
     # A positive number is not negative, and a number which is not negative
     # and not zero is positive
-    (Expr, Q.nonnegative): (Rule(True, (Condition(Q.positive, SELF),)),),
-    (Expr, Q.positive): (Rule(True, (Condition(Q.nonnegative, SELF),
-                                     Condition(Q.zero, SELF, False))),),
+    (Expr, Q.nonnegative, True): [(Condition(Q.positive, SELF),)],
+    (Expr, Q.positive, True): [(Condition(Q.nonnegative, SELF),
+                                Condition(Q.zero, SELF, False))],
 }
 
 
@@ -95,11 +94,11 @@ def test_no_answer_below_a_cycle_is_not_kept():
     # to real: a cycle, so positive has no answer there. The second rule
     # then answers real, and positive has an answer after that.
     rules = {
-        (g, Q.real): (Rule(True, (Condition(Q.positive, SELF),)),
-                      Rule(True, (Condition(Q.integer, 0),))),
-        (g, Q.positive): (Rule(True, (Condition(Q.real, SELF),)),),
-        (g, Q.nonzero): (Rule(True, (Condition(Q.real, SELF),
-                                     Condition(Q.positive, SELF))),),
+        (g, Q.real, True): [(Condition(Q.positive, SELF),),
+                            (Condition(Q.integer, 0),)],
+        (g, Q.positive, True): [(Condition(Q.real, SELF),)],
+        (g, Q.nonzero, True): [(Condition(Q.real, SELF),
+                                Condition(Q.positive, SELF))],
     }
     assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
     assert ask_by_rules(Q.nonzero, g(x), True, rules) is None

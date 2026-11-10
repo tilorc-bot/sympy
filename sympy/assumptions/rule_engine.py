@@ -2,9 +2,11 @@
 Rules about expressions and their arguments, and a depth-first search which
 answers questions with them.
 
-A :class:`Rule` gives the truth value of a predicate for an expression when
-its conditions hold. A :class:`Condition` is a question about one argument of
-the expression, or about the expression itself.
+A rule is a sequence of conditions. It is stored under a class, a predicate
+and a truth value, and says that the predicate has that truth value for an
+expression of the class when all the conditions hold. A :class:`Condition`
+is a question about one argument of the expression, or about the expression
+itself.
 
 :func:`ask_by_rules` searches a graph. A node is a question: a predicate and
 an expression. Its edges go to the questions in the conditions of its rules.
@@ -32,7 +34,7 @@ SELF = -1
 class Condition(NamedTuple):
     """
     A question which a rule asks about the expression it is used for, and
-    the answer which it needs.
+    the answer which the rule needs.
 
     ``Condition(Q.even, 0)`` holds for ``expr`` if ``Q.even(expr.args[0])``
     is found to be true, and ``Condition(Q.zero, 0, False)`` if
@@ -45,27 +47,11 @@ class Condition(NamedTuple):
     value: bool = True
 
 
-class Rule(NamedTuple):
-    """
-    What follows for a predicate and an expression when all the
-    ``conditions`` hold: the predicate is true of the expression if
-    ``answer`` is ``True``, and false of it if ``answer`` is ``False``.
-
-    The predicate and the class of the expression are the key which the rule
-    is stored under. Under ``(Abs, Q.even)``, ``Rule(True,
-    (Condition(Q.even, 0),))`` says that ``Abs(x)`` is even if ``x`` is.
-    Under ``(Abs, Q.negative)``, ``Rule(False)`` says that ``Abs(x)`` is
-    never negative.
-    """
-    answer: bool
-    conditions: tuple[Condition, ...] = ()
-
-
 def ask_by_rules(
         predicate: Predicate,
         expr: Basic,
         assumptions: Boolean | bool,
-        rules: Mapping[tuple[type[Basic], Predicate], Sequence[Rule]],
+        rules: Mapping[tuple[type[Basic], Predicate, bool], Sequence[Sequence[Condition]]],
 ) -> bool | None:
     """
     The truth value of ``predicate(expr)`` under *assumptions*, or ``None``
@@ -74,10 +60,12 @@ def ask_by_rules(
     Explanation
     ===========
 
-    *rules* maps ``(class, predicate)`` to the rules for that predicate and
-    the expressions of that class. The rules of the classes which the class
-    of *expr* derives from are tried too. The first rule whose conditions all
-    hold gives the answer.
+    *rules* maps ``(class, predicate, truth value)`` to the rules which give
+    the predicate that truth value for the expressions of the class. A rule
+    is a sequence of conditions, and it applies when all of them hold. A
+    rule without conditions always applies. The rules of the classes which
+    the class of *expr* derives from are tried too, and the first rule which
+    applies gives the answer.
 
     A question is answered from the assumptions about its expression if they
     decide it, and from the rules otherwise. The questions in the conditions
@@ -86,11 +74,14 @@ def ask_by_rules(
     Examples
     ========
 
+    The absolute value of an even number is even, and an absolute value is
+    not negative:
+
     >>> from sympy import Abs, Q
     >>> from sympy.abc import x
-    >>> from sympy.assumptions.rule_engine import Condition, Rule, ask_by_rules
-    >>> rules = {(Abs, Q.even): (Rule(True, (Condition(Q.even, 0),)),),
-    ...          (Abs, Q.negative): (Rule(False),)}
+    >>> from sympy.assumptions.rule_engine import Condition, ask_by_rules
+    >>> rules = {(Abs, Q.even, True): [(Condition(Q.even, 0),)],
+    ...          (Abs, Q.negative, False): [()]}
     >>> ask_by_rules(Q.even, Abs(Abs(x)), Q.even(x), rules)
     True
     >>> ask_by_rules(Q.negative, Abs(x), True, rules)
@@ -147,13 +138,14 @@ class _Search:
         return _ask_single_fact(predicate, facts)
 
     def _from_rules(self, predicate, expr):
-        args = expr.args
         for cls in type(expr).__mro__:
-            for rule in self.rules.get((cls, predicate), ()):
-                for condition, argument, value in rule.conditions:
-                    target = expr if argument == SELF else args[argument]
-                    if self.visit(condition, target) is not value:
-                        break
-                else:
-                    return rule.answer
+            for answer in (True, False):
+                for conditions in self.rules.get((cls, predicate, answer), ()):
+                    if all(self._holds(condition, expr) for condition in conditions):
+                        return answer
         return None
+
+    def _holds(self, condition, expr):
+        predicate, argument, value = condition
+        target = expr if argument == SELF else expr.args[argument]
+        return self.visit(predicate, target) is value
