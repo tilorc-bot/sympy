@@ -35,10 +35,13 @@ FIRST_AND_REST = (Add, Mul)
 # The predicates which :func:`evaluate` uses the compiled rules for. The
 # others still have hand-written handlers for the classes of the rules.
 RULE_PREDICATES: frozenset = frozenset({
-    Q.integer, Q.rational, Q.irrational, Q.real, Q.extended_real, Q.hermitian,
-    Q.complex, Q.imaginary, Q.antihermitian, Q.algebraic, Q.transcendental,
-    Q.prime, Q.composite, Q.even, Q.odd, Q.finite, Q.infinite,
-    Q.positive_infinite, Q.negative_infinite,
+    Q.positive, Q.negative, Q.zero, Q.nonzero, Q.nonpositive, Q.nonnegative,
+    Q.extended_positive, Q.extended_negative, Q.extended_nonzero,
+    Q.extended_nonpositive, Q.extended_nonnegative, Q.integer, Q.rational,
+    Q.irrational, Q.real, Q.extended_real, Q.hermitian, Q.complex,
+    Q.imaginary, Q.antihermitian, Q.algebraic, Q.transcendental, Q.prime,
+    Q.composite, Q.even, Q.odd, Q.finite, Q.infinite, Q.positive_infinite,
+    Q.negative_infinite,
 })
 
 _sat_rules: dict = {}

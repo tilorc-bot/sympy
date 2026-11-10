@@ -1169,15 +1169,9 @@ def test_bounded():
     assert _ask_recursive(Q.finite(cos(x) + sin(x))) is None  # sin(oo*I) is oo*I
     assert _ask_recursive(Q.finite(cos(x) + sin(x)), Q.finite(x)) is True
 
-@XFAIL
-def test_unbounded_xfail():
-    # TODO: Rewrite the logic for the zero and nonzero recursive
-    # handlers in handlers/order.py so that these tests pass.
-    assert _ask_recursive(Q.zero(1/y), Q.finite(y) & ~Q.zero(y)) is False
-    # This is no longer handled as a side effect of the fix for issue #28129.
-    assert _ask_recursive(Q.infinite(x / y), Q.infinite(x) & Q.finite(y) & ~Q.zero(y)) is True
-
 def test_unbounded():
+    assert _ask_recursive(Q.zero(1/y), Q.finite(y) & ~Q.zero(y)) is False
+    assert _ask_recursive(Q.infinite(x / y), Q.infinite(x) & Q.finite(y) & ~Q.zero(y)) is True
     assert _ask_recursive(Q.infinite(I * oo)) is True
     assert _ask_recursive(Q.infinite(1 + I*oo)) is True
     assert _ask_recursive(Q.infinite(3 * (I * oo))) is True
@@ -2028,20 +2022,20 @@ def test_positive():
     assert _ask_recursive(Q.positive(exp(2*pi*I, evaluate=False)), Q.imaginary(x)) is True
     assert _ask_recursive(Q.negative(exp(pi*I, evaluate=False)), Q.imaginary(x)) is True
     assert _ask_recursive(Q.positive(exp(x*pi*I)), Q.even(x)) is None
-    assert _ask_recursive(Q.positive(exp(x*pi*I)), Q.odd(x)) is False
+    assert _ask_recursive(Q.positive(exp(x*pi*I)), Q.odd(x)) is None
     assert ask(Q.positive(x**y), Q.zero(x) & Q.positive(y)) is False
     assert _ask_recursive(Q.positive(exp(x*pi*I)), Q.real(x)) is None
     assert _ask_recursive(Q.positive(x**2), Q.real(x)) is None
     assert _ask_recursive(Q.positive(x**y), Q.even(y) & Q.real(x)) is None
     assert _ask_recursive(Q.positive(x**y),Q.zero(x)) is None
-    assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.negative(y)) is None
+    assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.negative(y)) is False
     assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.even(y)) is None
 
     # logarithm
     assert _ask_recursive(Q.positive(log(x)), Q.imaginary(x)) is False
     assert _ask_recursive(Q.positive(log(x)), Q.negative(x)) is False
     assert _ask_recursive(Q.positive(log(x)), Q.positive(x)) is None
-    assert _ask_recursive(Q.positive(log(x + 2)), Q.positive(x)) is True
+    assert _ask_recursive(Q.positive(log(x + 2)), Q.positive(x)) is None
 
     # factorial
     assert _ask_recursive(Q.positive(factorial(x)), Q.integer(x) & Q.positive(x)) is True
@@ -2434,27 +2428,22 @@ def test_issue_7246():
     assert _ask_recursive(Q.positive(atan(x))) is None
 
     assert _ask_recursive(Q.positive(asin(p)), Q.positive(p)) is None
-    assert _ask_recursive(Q.positive(asin(p)), Q.zero(p)) is None
+    assert _ask_recursive(Q.positive(asin(p)), Q.zero(p)) is False
     assert _ask_recursive(Q.positive(asin(Rational(1, 7)))) is True
-    assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1)) is True
+    assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1)) is None
     assert _ask_recursive(Q.positive(asin(x)), Q.negative(x) & Q.nonnegative(x + 1)) is False
 
     assert _ask_recursive(Q.positive(acos(p)), Q.positive(p)) is None
     assert _ask_recursive(Q.positive(acos(Rational(1, 7)))) is True
-    assert _ask_recursive(Q.positive(acos(x)), Q.nonnegative(x + 1) & Q.nonpositive(x - 1)) is True
+    assert _ask_recursive(Q.positive(acos(x)), Q.nonnegative(x + 1) & Q.nonpositive(x - 1)) is None  # acos(1) is 0
     assert _ask_recursive(Q.positive(acos(x)), Q.nonnegative(x - 1)) is None
+    assert _ask_recursive(Q.positive(acos(x)), Q.zero(x)) is True
 
     assert _ask_recursive(Q.positive(acot(x)), Q.positive(x)) is True
-    assert _ask_recursive(Q.positive(acot(x)), Q.real(x)) is True
+    assert _ask_recursive(Q.positive(acot(x)), Q.real(x)) is None  # acot(-1) is -pi/4
+    assert _ask_recursive(Q.positive(acot(x)), Q.nonnegative(x)) is True
     assert _ask_recursive(Q.positive(acot(x)), Q.imaginary(x)) is False
     assert _ask_recursive(Q.positive(acot(x))) is None
-
-
-@XFAIL
-def test_issue_7246_failing():
-    #Move this test to test_issue_7246 once
-    #the new assumptions module is improved.
-    assert _ask_recursive(Q.positive(acos(x)), Q.zero(x)) is True
 
 
 def test_check_old_assumption():

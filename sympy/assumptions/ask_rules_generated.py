@@ -10,12 +10,14 @@ from sympy.core.expr import Expr
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
+from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.complexes import im
 from sympy.functions.elementary.complexes import re
 from sympy.functions.elementary.complexes import sign
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.exponential import log
+from sympy.functions.elementary.trigonometric import acos
 from sympy.functions.elementary.trigonometric import acot
 from sympy.functions.elementary.trigonometric import asin
 from sympy.functions.elementary.trigonometric import atan
@@ -58,6 +60,9 @@ ASK_RULES = {
         Q.odd: (
             (True, ((Q.odd, 0, True),)),
         ),
+        Q.positive: (
+            (True, ((Q.finite, 0, True), (Q.zero, 0, False))),
+        ),
         Q.rational: (
             (True, ((Q.rational, 0, True),)),
         ),
@@ -89,13 +94,27 @@ ASK_RULES = {
             (True, ((Q.even, 0, True), (Q.even, 1, True))),
             (True, ((Q.odd, 0, True), (Q.odd, 1, True))),
         ),
+        Q.extended_negative: (
+            (True, ((Q.extended_negative, 0, True), (Q.extended_negative, 1, True))),
+        ),
+        Q.extended_nonnegative: (
+            (True, ((Q.extended_nonnegative, 0, True), (Q.extended_nonnegative, 1, True))),
+        ),
+        Q.extended_nonpositive: (
+            (True, ((Q.extended_nonpositive, 0, True), (Q.extended_nonpositive, 1, True))),
+        ),
+        Q.extended_positive: (
+            (True, ((Q.extended_positive, 0, True), (Q.extended_positive, 1, True))),
+        ),
         Q.extended_real: (
             (True, ((Q.extended_negative, 0, True), (Q.extended_negative, 1, True))),
             (True, ((Q.extended_positive, 0, True), (Q.extended_positive, 1, True))),
             (True, ((Q.extended_real, 0, True), (Q.real, 1, True))),
             (True, ((Q.real, 0, True), (Q.extended_real, 1, True))),
             (False, ((Q.extended_real, 0, False), (Q.real, 1, True))),
+            (False, ((Q.imaginary, 0, True), (Q.real, 1, True))),
             (False, ((Q.real, 0, True), (Q.extended_real, 1, False))),
+            (False, ((Q.real, 0, True), (Q.imaginary, 1, True))),
         ),
         Q.finite: (
             (True, ((Q.finite, 0, True), (Q.finite, 1, True))),
@@ -125,17 +144,27 @@ ASK_RULES = {
         ),
         Q.negative: (
             (True, ((Q.negative, 0, True), (Q.negative, 1, True))),
+            (True, ((Q.negative, 0, True), (Q.nonpositive, 1, True))),
+            (True, ((Q.nonpositive, 0, True), (Q.negative, 1, True))),
         ),
         Q.negative_infinite: (
             (True, ((Q.extended_real, 0, True), (Q.positive_infinite, 0, False), (Q.negative_infinite, 1, True))),
             (True, ((Q.negative_infinite, 0, True), (Q.extended_real, 1, True), (Q.positive_infinite, 1, False))),
             (False, ((Q.extended_real, 0, True), (Q.negative_infinite, 0, False), (Q.extended_real, 1, True), (Q.negative_infinite, 1, False))),
         ),
+        Q.nonnegative: (
+            (True, ((Q.nonnegative, 0, True), (Q.nonnegative, 1, True))),
+        ),
+        Q.nonpositive: (
+            (True, ((Q.nonpositive, 0, True), (Q.nonpositive, 1, True))),
+        ),
         Q.odd: (
             (True, ((Q.even, 0, True), (Q.odd, 1, True))),
             (True, ((Q.odd, 0, True), (Q.even, 1, True))),
         ),
         Q.positive: (
+            (True, ((Q.nonnegative, 0, True), (Q.positive, 1, True))),
+            (True, ((Q.positive, 0, True), (Q.nonnegative, 1, True))),
             (True, ((Q.positive, 0, True), (Q.positive, 1, True))),
         ),
         Q.positive_infinite: (
@@ -177,6 +206,9 @@ ASK_RULES = {
         Q.integer: (
             (True, ((Q.integer_elements, 0, True),)),
         ),
+        Q.positive: (
+            (True, ((Q.positive_definite, 0, True),)),
+        ),
         Q.real: (
             (True, ((Q.real_elements, 0, True),)),
         ),
@@ -203,12 +235,19 @@ ASK_RULES = {
             (True, ((Q.extended_negative, EXPR, True), (Q.finite, EXPR, False))),
             (False, ((Q.finite, EXPR, True),)),
         ),
+        Q.nonzero: (
+            (False, ((Q.real, EXPR, False),)),
+        ),
         Q.positive_infinite: (
             (True, ((Q.extended_positive, EXPR, True), (Q.finite, EXPR, False))),
             (False, ((Q.finite, EXPR, True),)),
         ),
         Q.transcendental: (
             (True, ((Q.algebraic, EXPR, False), (Q.complex, EXPR, True))),
+        ),
+        Q.zero: (
+            (True, ((Q.nonzero, EXPR, False), (Q.real, EXPR, True))),
+            (False, ((Q.real, EXPR, False),)),
         ),
     },
     (MatMul, 2): {
@@ -253,6 +292,18 @@ ASK_RULES = {
             (True, ((Q.integer, 0, True), (Q.even, 1, True), (Q.integer, 1, True))),
             (False, ((Q.even, 0, False), (Q.integer, 0, True), (Q.even, 1, False), (Q.integer, 1, True))),
         ),
+        Q.extended_negative: (
+            (True, ((Q.extended_negative, 0, True), (Q.extended_positive, 1, True))),
+            (True, ((Q.extended_positive, 0, True), (Q.extended_negative, 1, True))),
+        ),
+        Q.extended_nonzero: (
+            (False, ((Q.zero, 0, True),)),
+            (False, ((Q.zero, 1, True),)),
+        ),
+        Q.extended_positive: (
+            (True, ((Q.extended_negative, 0, True), (Q.extended_negative, 1, True))),
+            (True, ((Q.extended_positive, 0, True), (Q.extended_positive, 1, True))),
+        ),
         Q.extended_real: (
             (True, ((Q.extended_real, 0, True), (Q.zero, 0, False), (Q.extended_real, 1, True), (Q.zero, 1, False))),
         ),
@@ -282,10 +333,26 @@ ASK_RULES = {
             (True, ((Q.irrational, 0, True), (Q.rational, 1, True), (Q.zero, 1, False))),
             (True, ((Q.rational, 0, True), (Q.zero, 0, False), (Q.irrational, 1, True))),
         ),
+        Q.negative: (
+            (True, ((Q.negative, 0, True), (Q.positive, 1, True))),
+            (True, ((Q.positive, 0, True), (Q.negative, 1, True))),
+        ),
+        Q.nonnegative: (
+            (True, ((Q.nonnegative, 0, True), (Q.nonnegative, 1, True))),
+            (True, ((Q.nonpositive, 0, True), (Q.nonpositive, 1, True))),
+        ),
+        Q.nonpositive: (
+            (True, ((Q.nonnegative, 0, True), (Q.nonpositive, 1, True))),
+            (True, ((Q.nonpositive, 0, True), (Q.nonnegative, 1, True))),
+        ),
+        Q.nonzero: (
+            (True, ((Q.nonzero, 0, True), (Q.nonzero, 1, True))),
+        ),
         Q.odd: (
             (True, ((Q.odd, 0, True), (Q.odd, 1, True))),
         ),
         Q.positive: (
+            (True, ((Q.negative, 0, True), (Q.negative, 1, True))),
             (True, ((Q.positive, 0, True), (Q.positive, 1, True))),
         ),
         Q.prime: (
@@ -369,6 +436,11 @@ ASK_RULES = {
         Q.irrational: (
             (True, ((Q.prime, 0, True), (Q.integer, 1, False), (Q.rational, 1, True))),
         ),
+        Q.negative: (
+            (True, ((Q.negative, 0, True), (Q.odd, 1, True))),
+            (False, ((Q.nonnegative, 0, True), (Q.odd, 1, True))),
+            (False, ((Q.real, 0, True), (Q.even, 1, True))),
+        ),
         Q.nonnegative: (
             (True, ((Q.nonnegative, 0, True), (Q.nonnegative, 1, True), (Q.odd, 1, True))),
             (True, ((Q.real, 0, True), (Q.even, 1, True), (Q.nonnegative, 1, True))),
@@ -378,6 +450,11 @@ ASK_RULES = {
         ),
         Q.odd: (
             (True, ((Q.odd, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.positive: (
+            (True, ((Q.zero, 1, True),)),
+            (True, ((Q.nonzero, 0, True), (Q.even, 1, True))),
+            (True, ((Q.positive, 0, True), (Q.real, 1, True))),
         ),
         Q.prime: (
             (True, ((Q.prime, 0, True), (Q.composite, 1, False), (Q.integer, 1, True), (Q.positive, 1, True), (Q.prime, 1, False))),
@@ -420,19 +497,51 @@ ASK_RULES = {
         Q.integer: (
             (True, ((Q.integer_elements, 0, True),)),
         ),
+        Q.positive: (
+            (True, ((Q.positive_definite, 0, True),)),
+        ),
         Q.real: (
             (True, ((Q.real_elements, 0, True),)),
+        ),
+    },
+    (acos, 1): {
+        Q.negative: (
+            (False, ()),
+        ),
+        Q.positive: (
+            (True, ((Q.zero, 0, True),)),
         ),
     },
     (acot, 1): {
         Q.algebraic: (
             (False, ((Q.algebraic, 0, True),)),
         ),
+        Q.extended_nonnegative: (
+            (True, ((Q.extended_nonnegative, 0, True),)),
+        ),
+        Q.extended_real: (
+            (False, ((Q.finite, 0, True), (Q.real, 0, False))),
+        ),
+        Q.negative: (
+            (True, ((Q.negative, 0, True),)),
+        ),
+        Q.nonpositive: (
+            (True, ((Q.extended_negative, 0, True),)),
+        ),
+        Q.positive: (
+            (True, ((Q.nonnegative, 0, True),)),
+        ),
         Q.transcendental: (
             (True, ((Q.algebraic, 0, True), (Q.imaginary, 0, False))),
         ),
     },
     (asin, 1): {
+        Q.negative: (
+            (False, ((Q.extended_nonnegative, 0, True),)),
+        ),
+        Q.positive: (
+            (False, ((Q.extended_nonpositive, 0, True),)),
+        ),
         Q.transcendental: (
             (True, ((Q.algebraic, 0, True), (Q.zero, 0, False))),
         ),
@@ -443,6 +552,15 @@ ASK_RULES = {
     (atan, 1): {
         Q.algebraic: (
             (False, ((Q.algebraic, 0, True), (Q.zero, 0, False))),
+        ),
+        Q.extended_real: (
+            (False, ((Q.finite, 0, True), (Q.real, 0, False))),
+        ),
+        Q.negative: (
+            (True, ((Q.extended_negative, 0, True),)),
+        ),
+        Q.positive: (
+            (True, ((Q.extended_positive, 0, True),)),
         ),
         Q.transcendental: (
             (True, ((Q.algebraic, 0, True), (Q.imaginary, 0, False), (Q.zero, 0, False))),
@@ -477,11 +595,17 @@ ASK_RULES = {
         Q.complex: (
             (True, ((Q.complex, 0, True),)),
         ),
+        Q.extended_nonnegative: (
+            (True, ((Q.extended_real, 0, True),)),
+        ),
         Q.finite: (
             (True, ((Q.finite, 0, True),)),
         ),
         Q.integer: (
             (True, ((Q.zero, 0, True),)),
+        ),
+        Q.positive: (
+            (True, ((Q.real, 0, True),)),
         ),
         Q.positive_infinite: (
             (True, ((Q.positive_infinite, 0, True),)),
@@ -494,6 +618,12 @@ ASK_RULES = {
         ),
         Q.zero: (
             (True, ((Q.negative_infinite, 0, True),)),
+            (False, ((Q.finite, 0, True),)),
+        ),
+    },
+    (factorial, 1): {
+        Q.positive: (
+            (True, ((Q.integer, 0, True), (Q.nonnegative, 0, True))),
         ),
     },
     (im, 1): {
