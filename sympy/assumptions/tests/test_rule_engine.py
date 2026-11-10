@@ -2,38 +2,39 @@ from __future__ import annotations
 
 from sympy.abc import x, y
 from sympy.assumptions.ask import Q
-from sympy.assumptions.rule_engine import SELF, Condition, ask_by_rules
+from sympy.assumptions.rule_engine import SELF, ask_by_rules, index_rules
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
 
-RULES = {
-    # The absolute value of an even number is even
-    (Abs, Q.even, True): [(Condition(Q.even, 0),)],
-    # An absolute value is not negative
-    (Abs, Q.negative, False): [()],
-    # An absolute value is zero exactly when its argument is
-    (Abs, Q.zero, True): [(Condition(Q.zero, 0),)],
-    (Abs, Q.zero, False): [(Condition(Q.zero, 0, False),)],
-    # exp is positive on the reals
-    (exp, Q.positive, True): [(Condition(Q.real, 0),)],
-    # A positive number to a real power is positive
-    (Pow, Q.positive, True): [(Condition(Q.positive, 0), Condition(Q.real, 1))],
-    # A positive number is real, and is not zero
-    (Expr, Q.real, True): [(Condition(Q.positive, SELF),)],
-    (Expr, Q.zero, False): [(Condition(Q.positive, SELF),)],
-    # A positive number is not negative, and a number which is not negative
-    # and not zero is positive
-    (Expr, Q.nonnegative, True): [(Condition(Q.positive, SELF),)],
-    (Expr, Q.positive, True): [(Condition(Q.nonnegative, SELF),
-                                Condition(Q.zero, SELF, False))],
-}
+RULES = index_rules([
+    (Abs, Q.even, (0, Q.even)),
+    (Abs, ~Q.negative),
+    (Abs, Q.zero, (0, Q.zero)),
+    (Abs, ~Q.zero, (0, ~Q.zero)),
+    (exp, Q.positive, (0, Q.real)),
+    (Pow, Q.positive, (0, Q.positive), (1, Q.real)),
+    (Expr, Q.real, (SELF, Q.positive)),
+    (Expr, ~Q.zero, (SELF, Q.positive)),
+    (Expr, Q.nonnegative, (SELF, Q.positive)),
+    (Expr, Q.positive, (SELF, Q.nonnegative), (SELF, ~Q.zero)),
+])
 
 
 def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
+
+
+def test_index_rules():
+    assert index_rules([(Abs, Q.even, (0, Q.even)), (Abs, ~Q.negative),
+                        (Abs, ~Q.zero, (0, ~Q.zero), (SELF, Q.real)),
+                        (Abs, Q.even, (0, Q.zero))]) == {
+        (Abs, Q.even, True): [((0, Q.even, True),), ((0, Q.zero, True),)],
+        (Abs, Q.negative, False): [()],
+        (Abs, Q.zero, False): [((0, Q.zero, False), (SELF, Q.real, True))],
+    }
 
 
 def test_rule_about_an_argument():
@@ -59,8 +60,10 @@ def test_assumptions_about_the_expression():
     assert ask(Q.integer, Abs(x), Q.even(Abs(x))) is True
     assert ask(Q.even, Abs(x), Q.odd(Abs(x))) is False
     assert ask(Q.even, Abs(x), ~Q.integer(Abs(x))) is False
-    # assumptions which are not a single predicate are not used
+    assert ask(Q.even, Abs(x), Q.even(Abs(x)) & Q.real(y)) is True
+    # only a predicate, its negation, and a conjunction of these are used
     assert ask(Q.even, Abs(x), Q.even(x) | Q.even(Abs(x))) is None
+    assert ask(Q.even, Abs(x), ~(Q.odd(Abs(x)) | ~Q.even(Abs(x)))) is None
 
 
 def test_conditions_are_answered_by_rules():
@@ -93,12 +96,11 @@ def test_no_answer_below_a_cycle_is_not_kept():
     # is tested. The first rule of real leads to positive, which leads back
     # to real: a cycle, so positive has no answer there. The second rule
     # then answers real, and positive has an answer after that.
-    rules = {
-        (g, Q.real, True): [(Condition(Q.positive, SELF),),
-                            (Condition(Q.integer, 0),)],
-        (g, Q.positive, True): [(Condition(Q.real, SELF),)],
-        (g, Q.nonzero, True): [(Condition(Q.real, SELF),
-                                Condition(Q.positive, SELF))],
-    }
+    rules = index_rules([
+        (g, Q.real, (SELF, Q.positive)),
+        (g, Q.real, (0, Q.integer)),
+        (g, Q.positive, (SELF, Q.real)),
+        (g, Q.nonzero, (SELF, Q.real), (SELF, Q.positive)),
+    ])
     assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
     assert ask_by_rules(Q.nonzero, g(x), True, rules) is None
