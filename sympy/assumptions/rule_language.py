@@ -31,6 +31,29 @@ A row about an entry ``X[i, j]`` of a matrix is written for ``f(x, i, j)``,
 and a row about a slice ``X[1:3, 0:2]`` for ``f(x, rows, columns)``, where
 ``rows`` and ``columns`` are the ranges ``(start, stop, step)``.
 
+A condition can also say that two arguments are equal, or that an argument
+is equal to a rational number, ``I`` or ``-I``, with ``Q.eq``::
+
+    # The diagonal entries of a positive definite matrix are positive
+    for_all((MatrixElement,),
+        (Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j))),
+
+Two arguments are equal when they are the same number or the same range.
+``Q.ne(a, b)`` is written for ``~Q.eq(a, b)``.
+
+A condition can compare two arguments, or an argument and a rational
+number, by size with ``Q.gt``, ``Q.lt``, ``Q.ge`` and ``Q.le``::
+
+    # The logarithm is positive above 1
+    for_all((log,),
+        (Q.real(x) & Q.gt(x, 1)) >> Q.positive(f(x))),
+
+``Q.gt(a, b)`` says that ``a`` and ``b`` are extended real numbers and that
+``a > b``, and ``Q.ge(a, b)`` that ``a >= b``. ``Q.lt(a, b)`` is
+``Q.gt(b, a)`` and ``Q.le(a, b)`` is ``Q.ge(b, a)``. These four can only be
+conditions: a row may not conclude one or have one negated. No other
+predicate of two arguments may be used.
+
 A row can also be about one expression alone. It is then written with ``x``
 and without ``f``, and holds for every instance ``x`` of the classes::
 
@@ -53,8 +76,10 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from sympy.assumptions.ask import Q
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef, Function
+from sympy.core.numbers import I, Rational
 from sympy.core.symbol import Symbol
 from sympy.logic.boolalg import And, Boolean, Implies
 
@@ -67,6 +92,23 @@ j = Symbol('j')
 rows = Symbol('rows')
 columns = Symbol('columns')
 f = Function('f')
+
+# The predicates of two arguments which a row can use as a condition, as
+# ``written: (relation, swapped, same)``: ``written(a, b)`` is
+# ``relation(a, b)``, or ``relation(b, a)`` if ``swapped``, if ``same``, and
+# its negation otherwise
+WRITTEN = {
+    Q.eq: (Q.eq, False, True), Q.ne: (Q.eq, False, False),
+    Q.gt: (Q.gt, False, True), Q.lt: (Q.gt, True, True),
+    Q.ge: (Q.ge, False, True), Q.le: (Q.ge, True, True),
+}
+
+# The relations which a row can only have as a condition, and only between
+# two arguments or an argument and a rational number
+ORDERS = frozenset({Q.gt, Q.ge})
+
+# The numbers other than rational numbers which Q.eq can compare with
+UNITS = (I, -I)
 
 
 class ForAll(NamedTuple):
@@ -146,13 +188,29 @@ def node(row):
     if not all(isinstance(arg, Symbol) for arg in args) or len(set(args)) != len(args):
         raise ValueError(f"the arguments of {expr} must be distinct symbols")
     for literal in row.atoms(AppliedPredicate):
-        if len(literal.arguments) != 1:
-            raise ValueError(
-                f"{literal} in the row {row}: a row may only use predicates of "
-                "one argument about the expression or its arguments")
-        if literal.arg not in (expr, *args):
+        if len(literal.arguments) == 2:
+            _check_relation(literal, row, args)
+        elif len(literal.arguments) != 1 or literal.arg not in (expr, *args):
             raise ValueError(
                 f"{literal} in the row {row} is not about {expr} or one of "
                 "its arguments")
     return expr
 
+
+def _check_relation(literal, row, args):
+    written = WRITTEN.get(literal.function)
+    if written is None:
+        names = ', '.join(map(str, WRITTEN))
+        raise ValueError(
+            f"{literal} in the row {row}: the predicates of two arguments "
+            f"which a row can use are {names}")
+    order = written[0] in ORDERS
+    a, b = literal.arguments
+    numbers = [isinstance(arg, Rational) or (not order and arg in UNITS)
+               for arg in (a, b)]
+    if all(numbers) or a == b or not all(
+            number or arg in args for number, arg in zip(numbers, (a, b))):
+        kind = "a rational number" if order else "a rational number, I or -I"
+        raise ValueError(
+            f"{literal} in the row {row} must be about two distinct "
+            f"arguments, or an argument and {kind}")

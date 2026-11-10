@@ -24,6 +24,12 @@ and explicit matrices for the others, as in ``2*X`` or ``X**2``. An entry
 ``X[rows, columns]`` with each pair of ranges ``(start, stop, step)`` which
 :class:`~.MatrixSlice` accepts and which are in the matrix: with any step of
 size one or two, upwards and downwards.
+
+A condition ``Q.eq(a, b)`` holds when the two values are equal: the same
+number, or the same range. Ranges with different numbers in them are not
+equal even if they have the same entries: ``(0, 3, 2)`` and ``(0, 4, 2)``.
+A condition ``Q.gt(a, b)`` holds when both values are extended real and
+``a > b``, and ``Q.ge(a, b)`` when they are extended real and ``a >= b``.
 """
 from __future__ import annotations
 
@@ -135,6 +141,17 @@ MATRIX_TRUTH = {
     Q.integer_elements: lambda value: all(entry.is_integer for entry in value),
     Q.real_elements: lambda value: all(entry.is_real for entry in value),
     Q.complex_elements: lambda value: all(entry.is_complex for entry in value),
+}
+
+def _extended_real(a, b):
+    return (getattr(a, 'is_extended_real', None) is True
+            and getattr(b, 'is_extended_real', None) is True)
+
+
+RELATION_TRUTH = {
+    Q.eq: lambda a, b: a is not S.NaN and b is not S.NaN and a == b,
+    Q.gt: lambda a, b: _extended_real(a, b) and bool(a > b),
+    Q.ge: lambda a, b: _extended_real(a, b) and bool(a >= b),
 }
 
 _truth: dict = {}
@@ -283,11 +300,18 @@ def counterexamples(cls, row):
                    for clause in row_clauses)]
 
 
+def _truth_in(sample, predicate, slot):
+    if isinstance(slot, tuple):
+        a, b = (sample[s] if isinstance(s, int) else s for s in slot)
+        return RELATION_TRUTH[predicate](a, b)
+    return truth(predicate, sample[slot])
+
+
 def _is_false(literal, sample):
     predicate, slot, value = literal
     if slot == -1 and sample[slot] is S.NaN and predicate in (Q.finite, Q.infinite):
         return True
-    return truth(predicate, sample[slot]) is (not value)
+    return _truth_in(sample, predicate, slot) is (not value)
 
 
 def untested(cls, row):
@@ -325,7 +349,7 @@ def untested(cls, row):
 
 
 def _tests(sample, clause):
-    truths = [truth(predicate, sample[slot]) for predicate, slot, _ in clause]
+    truths = [_truth_in(sample, predicate, slot) for predicate, slot, _ in clause]
     if None in truths:
         return False
     return sum(found is value for found, (_, _, value) in zip(truths, clause)) == 1

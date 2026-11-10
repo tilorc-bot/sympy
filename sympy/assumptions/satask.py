@@ -6,9 +6,11 @@ from __future__ import annotations
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
+from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.rule_engine import rule_arguments, sat_rules
+from sympy.assumptions.rule_engine import (Comparisons, WRITTEN, canonical,
+    rule_arguments, split_sat_rules, unit_literals)
 from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
@@ -156,11 +158,17 @@ def find_symbols(pred):
     return pred.atoms(Symbol)
 
 
-def get_relevant_clsfacts(exprs, relevant_facts=None):
+def get_relevant_clsfacts(exprs, relevant_facts=None, compared=None,
+                          relations=None):
     """
     Extract relevant facts from the items in *exprs*. Facts come from the
     rules in ``assumptions.rules`` package, in their compiled form, and from
     ``assumptions.sathandlers`` module.
+
+    A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
+    decided by *compared* if it can be. Otherwise the rule is kept only if
+    the query has a predicate of the two which states the condition or its
+    negation, and the condition is written with that predicate.
 
     This function is recursively called by ``get_all_relevant_facts()``.
 
@@ -172,6 +180,17 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
 
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
         Pre-discovered relevant facts. They are updated in place.
+
+    compared : sympy.assumptions.rule_engine.Comparisons, optional.
+        How the conditions between two arguments are decided under the
+        assumptions of the query.
+
+    relations : dict, optional.
+        The relations of two expressions which the query is about, as
+        ``{(relation, a, b): (predicate, same)}``, with each relation one of
+        ``Q.eq``, ``Q.gt`` and ``Q.ge``, and the predicate of the query
+        which has its truth value if ``same``, and the opposite one
+        otherwise.
 
     Returns
     =======
@@ -219,17 +238,24 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     """
     if not relevant_facts:
         relevant_facts = CNF()
+    if compared is None:
+        compared = Comparisons()
+    if relations is None:
+        relations = {}
 
     newexprs = set()
     for expr in exprs:
         args = rule_arguments(expr)
-        rules = sat_rules(type(expr), len(args))
-        if rules:
+        rules, related = split_sat_rules(type(expr), len(args))
+        if rules or related:
             targets = (*args, expr)
             relevant_facts.clauses.update(
                 frozenset(Literal(predicate(targets[slot]), not value)
                           for predicate, slot, value in clause)
                 for clause in rules)
+            if related:
+                relevant_facts.clauses.update(
+                    _related_clauses(related, targets, compared, relations))
             newexprs.update(args)
         for fact in class_fact_registry(expr):
             newfact = CNF.to_CNF(fact)
@@ -239,6 +265,45 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
                     newexprs |= set(key.arguments)
 
     return newexprs - exprs, relevant_facts
+
+
+def _related_clauses(clauses, targets, compared, relations):
+    found = set()
+    for clause in clauses:
+        literals = []
+        for predicate, slot, value in clause:
+            if type(slot) is not tuple:
+                literals.append(Literal(predicate(targets[slot]), not value))
+                continue
+            a, b = (targets[s] if type(s) is int else s for s in slot)
+            known = compared.decide(predicate, a, b)
+            if known is value:
+                break
+            if known is None:
+                written = relations.get((predicate, a, b))
+                if written is None:
+                    break
+                atom, same = written
+                literals.append(Literal(atom, value is not same))
+        else:
+            found.add(frozenset(literals))
+    return found
+
+
+def _relations(atoms):
+    """
+    The relations of two expressions which *atoms* state, as the argument
+    *relations* of :func:`get_relevant_clsfacts`.
+    """
+    relations: dict = {}
+    for atom in atoms:
+        if (isinstance(atom, AppliedPredicate) and len(atom.arguments) == 2
+                and atom.function in WRITTEN):
+            (relation, a, b), same = canonical(atom.function, *atom.arguments)
+            relations.setdefault((relation, a, b), (atom, same))
+            if relation is Q.eq:
+                relations.setdefault((relation, b, a), (atom, same))
+    return relations
 
 
 def get_all_relevant_facts(proposition, assumptions,
@@ -292,11 +357,14 @@ def get_all_relevant_facts(proposition, assumptions,
     i = 0
     relevant_facts = CNF()
     all_exprs = set()
+    compared = Comparisons(unit_literals(assumptions))
+    relations = _relations(proposition.all_predicates() | assumptions.all_predicates())
     while True:
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)
         all_exprs |= exprs
-        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        exprs, relevant_facts = get_relevant_clsfacts(
+            exprs, relevant_facts, compared, relations)
         i += 1
         if i >= iterations:
             break

@@ -14,10 +14,12 @@ from importlib import import_module
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.facts import get_known_facts
-from sympy.assumptions.rule_language import node
+from sympy.assumptions.rule_language import ORDERS, UNITS, WRITTEN, node
 from sympy.assumptions.rules import MODULES
+from sympy.core.numbers import Integer, Rational
 from sympy.logic.boolalg import Implies
 from sympy.logic.inference import satisfiable
+from sympy.printing.repr import srepr
 
 EXPR = -1
 
@@ -34,7 +36,10 @@ SAT_RULES_DOC = '''\
 # value ``value`` for an expression: the argument number ``slot`` of the
 # expression which a rule is about, or that expression itself for the slot
 # ``EXPR``. A sum, a product and a block diagonal matrix are read as their
-# first argument and the rest.
+# first argument and the rest. A literal ``(Q.eq, (a, b), value)``, ``(Q.gt,
+# (a, b), value)`` or ``(Q.ge, (a, b), value)`` is about two arguments: ``a``
+# and ``b`` are slots, or one of them is a number. ``Q.gt`` and ``Q.ge`` say
+# that both are extended real and ``a > b`` or ``a >= b``.
 EXPR = -1
 
 # For each class and number of arguments, the clauses which hold for every
@@ -48,7 +53,12 @@ ASK_RULES_DOC = '''\
 # about an expression gives ``value``. The expression is the argument number
 # ``slot`` of the expression which a rule is about, or that expression itself
 # for the slot ``EXPR``. A sum, a product and a block diagonal matrix are read
-# as their first argument and the rest.
+# as their first argument and the rest. A condition ``(Q.eq, (a, b), value)``
+# holds when it is found that the arguments of the slots ``a`` and ``b`` are
+# equal, or not equal for the value ``False``. A condition ``(Q.gt, (a, b),
+# True)`` holds when it is found that both are extended real and ``a > b``,
+# and ``(Q.ge, (a, b), True)`` when ``a >= b``. One of ``a`` and ``b`` can be
+# a number instead of a slot.
 EXPR = -1
 
 # For each class and number of arguments, the ways to find the truth value of
@@ -67,7 +77,9 @@ def statements():
 
 def _literal_key(literal):
     predicate, slot, value = literal
-    return (slot == EXPR, slot, predicate.name, value)
+    slots = slot if isinstance(slot, tuple) else (slot,)
+    return (slot == EXPR, [(arg in UNITS, UNITS.index(arg) if arg in UNITS else arg)
+                           for arg in slots], predicate.name, value)
 
 
 def clauses(row):
@@ -83,6 +95,20 @@ def clauses(row):
     >>> clauses(Q.even(x) >> Q.even(f(x)))
     [((Q.even, 0, False), (Q.even, -1, True))]
 
+    A condition between two arguments has a pair in place of the slot:
+
+    >>> from sympy.assumptions.rule_language import i, j
+    >>> clauses((Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j)))
+    [((Q.positive_definite, 0, False), (Q.eq, (1, 2), False), (Q.positive, -1, True))]
+
+    ``Q.ne`` is compiled as the negation of ``Q.eq``, and ``Q.lt(a, b)`` as
+    ``Q.gt(b, a)``:
+
+    >>> clauses((Q.positive_definite(x) & Q.ne(i, j)) >> Q.positive(f(x, i, j)))
+    [((Q.positive_definite, 0, False), (Q.eq, (1, 2), True), (Q.positive, -1, True))]
+    >>> clauses(Q.lt(x, 1) >> ~Q.positive(f(x)))
+    [((Q.gt, (1, 0), False), (Q.positive, -1, False))]
+
     """
     expr = node(row)
     slots = {arg: i for i, arg in enumerate(expr.args)}
@@ -90,13 +116,25 @@ def clauses(row):
     result = set()
     for clause in CNF.to_CNF(row).clauses:
         literals = {_literal(lit.lit, slots, not lit.is_Not) for lit in clause}
+        for predicate, _, value in literals:
+            if predicate in ORDERS and value:
+                raise ValueError(
+                    f"the row {row} concludes or negates a comparison by size: "
+                    "it can only be a condition")
         if not any((p, slot, not value) in literals for p, slot, value in literals):
             result.add(tuple(sorted(literals, key=_literal_key)))
     return sorted(result, key=lambda clause: [_literal_key(lit) for lit in clause])
 
 
 def _literal(atom, slots, value):
-    return (atom.function, slots[atom.arg], value)
+    arguments = atom.arguments
+    if len(arguments) == 1:
+        return (atom.function, slots[arguments[0]], value)
+    predicate, swapped, same = WRITTEN[atom.function]
+    if swapped:
+        arguments = arguments[::-1]
+    return (predicate, tuple(slots.get(arg, arg) for arg in arguments),
+            value if same else not value)
 
 
 def nargs(row):
@@ -139,17 +177,29 @@ def sat_rules(written=None):
     return table
 
 
-def _imports(classes):
-    names = sorted({(cls.__module__, cls.__name__) for cls in classes})
+def _imports(classes, literals):
+    numbers = {arg for _, slot, _ in literals if isinstance(slot, tuple)
+               for arg in slot if not isinstance(arg, int)}
+    names = sorted({(cls.__module__, cls.__name__) for cls in classes}
+                   | {('sympy.core.numbers', _number_class(number)) for number in numbers})
     if len({name for _, name in names}) != len(names):
         raise ValueError("two classes of the rules have the same name")
     return ['from sympy.assumptions.ask import Q'] + [
         f'from {module} import {name}' for module, name in names]
 
 
+def _number_class(number):
+    if number in UNITS:
+        return 'I'
+    return 'Integer' if isinstance(number, Integer) else 'Rational'
+
+
 def _render_slot(slot):
     if slot == EXPR:
         return 'EXPR'
+    if isinstance(slot, tuple):
+        return '({})'.format(', '.join(
+            srepr(arg) if isinstance(arg, Rational) else str(arg) for arg in slot))
     return str(slot)
 
 
@@ -164,7 +214,9 @@ def sat_module():
     The source of ``sympy/assumptions/sat_rules_generated.py``.
     """
     table = sat_rules()
-    lines = _imports([cls for cls, _ in table])
+    lines = _imports([cls for cls, _ in table],
+        [literal for rows in table.values() for _, row_clauses in rows
+         for clause in row_clauses for literal in clause])
     lines += ['', *SAT_RULES_DOC.splitlines(), 'SAT_RULES = {']
     for cls, number in sorted(table, key=lambda key: (key[0].__name__, key[1] or -1)):
         lines.append(f'    ({cls.__name__}, {number}): (')
@@ -253,7 +305,9 @@ def ask_module():
     The source of ``sympy/assumptions/ask_rules_generated.py``.
     """
     table = ask_rules()
-    lines = _imports([cls for cls, _ in table])
+    lines = _imports([cls for cls, _ in table],
+        [literal for found in table.values() for ways in found.values()
+         for _, conditions in ways for literal in conditions])
     lines += ['', *ASK_RULES_DOC.splitlines(), 'ASK_RULES = {']
     for cls, number in sorted(table, key=lambda key: (key[0].__name__, key[1] or -1)):
         lines.append(f'    ({cls.__name__}, {number}): {{')
