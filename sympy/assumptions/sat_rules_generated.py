@@ -6,6 +6,7 @@ Instead, run ./bin/ask_update.py.
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add
 from sympy.core.mul import Mul
+from sympy.core.numbers import I
 from sympy.core.numbers import Integer
 from sympy.core.numbers import Rational
 from sympy.core.power import Pow
@@ -41,8 +42,10 @@ from sympy.matrices.expressions.transpose import Transpose
 # value ``value`` for an expression: the argument number ``slot`` of the
 # expression which a rule is about, or that expression itself for the slot
 # ``EXPR``. A sum, a product and a block diagonal matrix are read as their
-# first argument and the rest. A literal ``(Q.eq, (a, b), value)`` is about
-# two arguments: ``a`` and ``b`` are slots, or one of them is a number.
+# first argument and the rest. A literal ``(Q.eq, (a, b), value)``, ``(Q.gt,
+# (a, b), value)`` or ``(Q.ge, (a, b), value)`` is about two arguments: ``a``
+# and ``b`` are slots, or one of them is a number. ``Q.gt`` and ``Q.ge`` say
+# that both are extended real and ``a > b`` or ``a >= b``.
 EXPR = -1
 
 # For each class and number of arguments, the clauses which hold for every
@@ -568,6 +571,12 @@ SAT_RULES = {
         ((Q.zero, 0, False), (Q.extended_negative, 1, False), (Q.infinite, EXPR, True)),
         # Implies(Q.positive(exponent) & ~Q.finite(base), Q.infinite(f(base, exponent)))
         ((Q.finite, 0, True), (Q.positive, 1, False), (Q.infinite, EXPR, True)),
+        # Implies(Q.extended_negative(exponent) & Q.gt(base, 1), Q.finite(f(base, exponent)))
+        ((Q.gt, (0, Integer(1)), False), (Q.extended_negative, 1, False), (Q.finite, EXPR, True)),
+        # Implies(Q.extended_positive(exponent) & Q.gt(base, -1) & Q.lt(base, 1), Q.finite(f(base, exponent)))
+        ((Q.gt, (0, Integer(-1)), False), (Q.extended_positive, 1, False), (Q.gt, (Integer(1), 0), False), (Q.finite, EXPR, True)),
+        # Implies(Q.positive_infinite(exponent) & Q.gt(base, 1), Q.positive_infinite(f(base, exponent)))
+        ((Q.gt, (0, Integer(1)), False), (Q.positive_infinite, 1, False), (Q.positive_infinite, EXPR, True)),
         # Implies(Q.even(base) & Q.integer(exponent) & Q.positive(exponent), Q.even(f(base, exponent)))
         ((Q.even, 0, False), (Q.integer, 1, False), (Q.positive, 1, False), (Q.even, EXPR, True)),
         # Implies(Q.integer(exponent) & Q.odd(base) & ~Q.negative(exponent), Q.odd(f(base, exponent)))
@@ -616,6 +625,10 @@ SAT_RULES = {
         ((Q.finite, 0, False), (Q.zero, 0, True), (Q.finite, 1, False), (Q.zero, EXPR, False)),
         # Implies(Q.finite(base) & Q.real(exponent) & Q.zero(f(base, exponent)), Q.positive(exponent))
         ((Q.finite, 0, False), (Q.positive, 1, True), (Q.real, 1, False), (Q.zero, EXPR, False)),
+        # Implies(Q.imaginary(exponent) & Q.eq(base, I), Q.positive(f(base, exponent)))
+        ((Q.eq, (0, I), False), (Q.imaginary, 1, False), (Q.positive, EXPR, True)),
+        # Implies(Q.imaginary(exponent) & Q.eq(base, -I), Q.positive(f(base, exponent)))
+        ((Q.eq, (0, -I), False), (Q.imaginary, 1, False), (Q.positive, EXPR, True)),
         # Implies(Q.zero(exponent), Q.integer(f(base, exponent)))
         ((Q.zero, 1, False), (Q.integer, EXPR, True)),
         # Implies(Q.integer(base) & Q.integer(exponent) & ~Q.negative(exponent), Q.integer(f(base, exponent)))
@@ -745,6 +758,8 @@ SAT_RULES = {
         ((Q.negative, EXPR, False),),
         # Implies(Q.zero(x), Q.positive(f(x)))
         ((Q.zero, 0, False), (Q.positive, EXPR, True)),
+        # Implies(Q.ge(x, -1) & Q.lt(x, 1), Q.positive(f(x)))
+        ((Q.ge, (0, Integer(-1)), False), (Q.gt, (Integer(1), 0), False), (Q.positive, EXPR, True)),
         # Implies(Q.algebraic(x) & Q.ne(x, 1), ~Q.algebraic(f(x)))
         ((Q.algebraic, 0, False), (Q.eq, (0, Integer(1)), True), (Q.algebraic, EXPR, False)),
     ),
@@ -771,6 +786,10 @@ SAT_RULES = {
         ((Q.extended_nonnegative, 0, False), (Q.negative, EXPR, False)),
         # Implies(Q.extended_nonpositive(x), ~Q.positive(f(x)))
         ((Q.extended_nonpositive, 0, False), (Q.positive, EXPR, False)),
+        # Implies(Q.positive(x) & Q.le(x, 1), Q.positive(f(x)))
+        ((Q.positive, 0, False), (Q.ge, (Integer(1), 0), False), (Q.positive, EXPR, True)),
+        # Implies(Q.negative(x) & Q.ge(x, -1), Q.negative(f(x)))
+        ((Q.negative, 0, False), (Q.ge, (0, Integer(-1)), False), (Q.negative, EXPR, True)),
         # Implies(Q.algebraic(x) & ~Q.zero(x), Q.transcendental(f(x)))
         ((Q.algebraic, 0, False), (Q.zero, 0, True), (Q.transcendental, EXPR, True)),
     ),
@@ -847,6 +866,12 @@ SAT_RULES = {
         ((Q.positive_infinite, 0, False), (Q.positive_infinite, EXPR, True)),
         # Implies(~Q.positive(x), ~Q.real(f(x)))
         ((Q.positive, 0, True), (Q.real, EXPR, False)),
+        # Implies(Q.real(x) & Q.gt(x, 1), Q.positive(f(x)))
+        ((Q.real, 0, False), (Q.gt, (0, Integer(1)), False), (Q.positive, EXPR, True)),
+        # Implies(Q.positive(x) & Q.lt(x, 1), Q.negative(f(x)))
+        ((Q.positive, 0, False), (Q.gt, (Integer(1), 0), False), (Q.negative, EXPR, True)),
+        # Implies(Q.lt(x, 1), ~Q.positive(f(x)))
+        ((Q.gt, (Integer(1), 0), False), (Q.positive, EXPR, False)),
         # Equivalent(Q.positive(x), Q.real(f(x)))
         ((Q.positive, 0, False), (Q.real, EXPR, True)),
         # Implies(Q.complex(x) & ~Q.zero(x), Q.complex(f(x)))

@@ -10,7 +10,8 @@ from sympy.core.numbers import ImaginaryUnit, Number, NumberSymbol
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.compiled_rules import RELATIONS, rule_arguments, split_sat_rules
+from sympy.assumptions.compiled_rules import (RELATIONS, WRITTEN, canonical,
+    rule_arguments, split_sat_rules)
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
@@ -170,7 +171,7 @@ def find_symbols(pred):
     return pred.atoms(Symbol)
 
 
-def get_relevant_clsfacts(exprs, relevant_facts=None, relations=frozenset()):
+def get_relevant_clsfacts(exprs, relevant_facts=None, relations=None):
     """
     Extract relevant facts from the items in *exprs*. Facts come from the
     rules in ``assumptions.rules`` package, in their compiled form, and from
@@ -178,10 +179,10 @@ def get_relevant_clsfacts(exprs, relevant_facts=None, relations=frozenset()):
 
     A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
     decided from the form of the arguments if it can be. Otherwise the rule
-    is kept only if one of the predicates which decide the condition, such
-    as ``Q.eq(i, j)``, ``Q.eq(j, i)`` and ``Q.ne(i, j)``, is in *relations*.
-    The condition is then kept as a predicate of the two, which is linked to
-    the others.
+    is kept only if one of the relations which can make the condition false,
+    such as ``Q.eq(i, j)``, ``Q.eq(j, i)`` and ``Q.gt(i, j)`` for
+    ``Q.eq(i, j)``, is in *relations*. The condition is then kept as a
+    predicate of the two, which is linked to those relations.
 
     This function is recursively called by ``get_all_relevant_facts()``.
 
@@ -194,9 +195,11 @@ def get_relevant_clsfacts(exprs, relevant_facts=None, relations=frozenset()):
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
         Pre-discovered relevant facts. They are updated in place.
 
-    relations : set, optional.
-        The predicates of two expressions which the query is about, as
-        triples ``(predicate, a, b)``.
+    relations : dict, optional.
+        The relations of two expressions which the query is about, as
+        ``{(relation, a, b): clauses}``, with each relation one of
+        ``Q.eq``, ``Q.gt`` and ``Q.ge``, and the clauses which link it to
+        the predicates of the query that state it.
 
     Returns
     =======
@@ -244,6 +247,8 @@ def get_relevant_clsfacts(exprs, relevant_facts=None, relations=frozenset()):
     """
     if not relevant_facts:
         relevant_facts = CNF()
+    if relations is None:
+        relations = {}
 
     newexprs = set()
     for expr in exprs:
@@ -273,6 +278,7 @@ def _related_clauses(clauses, targets, relations):
     found = set()
     for clause in clauses:
         literals = []
+        links = []
         for predicate, slot, value in clause:
             if type(slot) is not tuple:
                 literals.append(Literal(predicate(targets[slot]), not value))
@@ -283,19 +289,45 @@ def _related_clauses(clauses, targets, relations):
             if known is value:
                 break
             if known is None:
-                if not any(((assumed, b, a) if swapped else (assumed, a, b)) in relations
-                           for assumed, swapped, _ in deciders):
-                    break
                 atom = predicate(a, b)
-                literals.append(Literal(atom, not value))
-                for assumed, swapped, same in deciders:
-                    other = assumed(b, a) if swapped else assumed(a, b)
+                kept = False
+                for assumed, swapped, assumed_value, answer in deciders:
+                    key = (assumed, b, a) if swapped else (assumed, a, b)
+                    if answer is value or key not in relations:
+                        continue
+                    kept = True
+                    links.extend(relations[key])
+                    other = assumed(*key[1:])
                     if other != atom:
-                        found.add(frozenset((Literal(atom, True), Literal(other, not same))))
-                        found.add(frozenset((Literal(atom, False), Literal(other, same))))
+                        links.append(frozenset((Literal(other, assumed_value),
+                                                Literal(atom, not answer))))
+                if not kept:
+                    break
+                literals.append(Literal(atom, not value))
         else:
             found.add(frozenset(literals))
+            found.update(links)
     return found
+
+
+def _relations(atoms):
+    """
+    The relations of two expressions which *atoms* state, as the argument
+    *relations* of :func:`get_relevant_clsfacts`.
+    """
+    relations: dict = {}
+    for atom in atoms:
+        if not isinstance(atom, AppliedPredicate):
+            continue
+        arguments = atom.arguments
+        if len(arguments) == 2 and atom.function in WRITTEN:
+            key, same = canonical(atom.function, *arguments)
+            linked = relations.setdefault(key, set())
+            other = key[0](*key[1:])
+            if other != atom:
+                linked.add(frozenset((Literal(atom, True), Literal(other, not same))))
+                linked.add(frozenset((Literal(atom, False), Literal(other, same))))
+    return relations
 
 
 def get_all_relevant_facts(proposition, assumptions,
@@ -349,9 +381,7 @@ def get_all_relevant_facts(proposition, assumptions,
     i = 0
     relevant_facts = CNF()
     all_exprs = set()
-    relations = {(atom.function, *atom.arguments)
-                 for atom in proposition.all_predicates() | assumptions.all_predicates()
-                 if isinstance(atom, AppliedPredicate) and len(atom.arguments) == 2}
+    relations = _relations(proposition.all_predicates() | assumptions.all_predicates())
     while True:
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)

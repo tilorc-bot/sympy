@@ -126,6 +126,23 @@ RULES = (
         (~Q.finite(base) & Q.positive(exponent))
         >> Q.infinite(f(base, exponent))),
 
+    # A number above 1 to a negative power is finite
+    #     its absolute value is below 1, and 2**-oo is 0
+    for_all((Pow,),
+        (Q.gt(base, 1) & Q.extended_negative(exponent))
+        >> Q.finite(f(base, exponent))),
+
+    # A number between -1 and 1 to a positive power is finite
+    #     its absolute value is below 1, and (1/2)**oo is 0
+    for_all((Pow,),
+        (Q.gt(base, -1) & Q.lt(base, 1) & Q.extended_positive(exponent))
+        >> Q.finite(f(base, exponent))),
+
+    # A number above 1 to the power oo is oo
+    for_all((Pow,),
+        (Q.gt(base, 1) & Q.positive_infinite(exponent))
+        >> Q.positive_infinite(f(base, exponent))),
+
     # --- exp ---
 
     # The exponential of a finite number is finite

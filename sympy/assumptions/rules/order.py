@@ -8,6 +8,7 @@ from sympy.assumptions.ask import Q
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
+from sympy.core.numbers import I
 from sympy.core.power import Pow
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs
@@ -185,6 +186,12 @@ RULES = (
         (Q.zero(f(base, exponent)) & Q.finite(base) & Q.real(exponent))
         >> Q.positive(exponent)),
 
+    # A power of I or of -I with an imaginary exponent is positive
+    #     I**(I*t) is exp(-pi*t/2) and (-I)**(I*t) is exp(pi*t/2)
+    for_all((Pow,),
+        (Q.eq(base, I) & Q.imaginary(exponent)) >> Q.positive(f(base, exponent)),
+        (Q.eq(base, -I) & Q.imaginary(exponent)) >> Q.positive(f(base, exponent))),
+
     # --- exp ---
 
     # The exponential of a real number is positive
@@ -206,6 +213,17 @@ RULES = (
     #     log(0) is zoo, log(-1) is I*pi and log(-oo) is oo
     for_all((log,),
         ~Q.positive(x) >> ~Q.real(f(x))),
+
+    # The logarithm is positive above 1 and negative between 0 and 1
+    #     log(oo) is oo, which is not positive
+    for_all((log,),
+        (Q.real(x) & Q.gt(x, 1)) >> Q.positive(f(x)),
+        (Q.positive(x) & Q.lt(x, 1)) >> Q.negative(f(x))),
+
+    # The logarithm of a number below 1 is not positive
+    #     it is negative, or not real, or zoo at 0, or oo at -oo
+    for_all((log,),
+        Q.lt(x, 1) >> ~Q.positive(f(x))),
 
     # --- factorial ---
 
@@ -245,6 +263,11 @@ RULES = (
         Q.extended_nonnegative(x) >> ~Q.negative(f(x)),
         Q.extended_nonpositive(x) >> ~Q.positive(f(x))),
 
+    # The arcsine is positive on (0, 1] and negative on [-1, 0)
+    for_all((asin,),
+        (Q.positive(x) & Q.le(x, 1)) >> Q.positive(f(x)),
+        (Q.negative(x) & Q.ge(x, -1)) >> Q.negative(f(x))),
+
     # --- acos ---
 
     # The arccosine is not negative
@@ -252,6 +275,11 @@ RULES = (
     for_all((acos,),
         ~Q.negative(f(x)),
         Q.zero(x) >> Q.positive(f(x))),
+
+    # The arccosine is positive on [-1, 1)
+    #     acos(1) is zero
+    for_all((acos,),
+        (Q.ge(x, -1) & Q.lt(x, 1)) >> Q.positive(f(x))),
 
     # --- Determinant, Trace ---
 

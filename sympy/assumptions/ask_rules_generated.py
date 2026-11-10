@@ -8,6 +8,7 @@ from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
+from sympy.core.numbers import I
 from sympy.core.numbers import Integer
 from sympy.core.numbers import Rational
 from sympy.core.power import Pow
@@ -45,7 +46,9 @@ from sympy.matrices.expressions.transpose import Transpose
 # for the slot ``EXPR``. A sum, a product and a block diagonal matrix are read
 # as their first argument and the rest. A condition ``(Q.eq, (a, b), value)``
 # holds when it is found that the arguments of the slots ``a`` and ``b`` are
-# equal, or not equal for the value ``False``. One of ``a`` and ``b`` can be
+# equal, or not equal for the value ``False``. A condition ``(Q.gt, (a, b),
+# True)`` holds when it is found that both are extended real and ``a > b``,
+# and ``(Q.ge, (a, b), True)`` when ``a >= b``. One of ``a`` and ``b`` can be
 # a number instead of a slot.
 EXPR = -1
 
@@ -686,7 +689,9 @@ ASK_RULES = {
         ),
         Q.finite: (
             (True, ((Q.finite, 0, True), (Q.nonnegative, 1, True))),
+            (True, ((Q.gt, (0, Integer(1)), True), (Q.extended_negative, 1, True))),
             (True, ((Q.finite, 0, True), (Q.zero, 0, False), (Q.finite, 1, True))),
+            (True, ((Q.gt, (0, Integer(-1)), True), (Q.extended_positive, 1, True), (Q.gt, (Integer(1), 0), True))),
         ),
         Q.hermitian: (
             (True, ((Q.antihermitian, 0, True), (Q.zero, 0, False), (Q.even, 1, True))),
@@ -734,6 +739,11 @@ ASK_RULES = {
             (True, ((Q.nonzero, 0, True), (Q.even, 1, True))),
             (True, ((Q.positive, 0, True), (Q.real, 1, True))),
             (True, ((Q.eq, (0, Integer(1)), True), (Q.finite, 1, True))),
+            (True, ((Q.eq, (0, I), True), (Q.imaginary, 1, True))),
+            (True, ((Q.eq, (0, -I), True), (Q.imaginary, 1, True))),
+        ),
+        Q.positive_infinite: (
+            (True, ((Q.gt, (0, Integer(1)), True), (Q.positive_infinite, 1, True))),
         ),
         Q.prime: (
             (True, ((Q.prime, 0, True), (Q.composite, 1, False), (Q.integer, 1, True), (Q.positive, 1, True), (Q.prime, 1, False))),
@@ -852,6 +862,7 @@ ASK_RULES = {
         ),
         Q.positive: (
             (True, ((Q.zero, 0, True),)),
+            (True, ((Q.ge, (0, Integer(-1)), True), (Q.gt, (Integer(1), 0), True))),
         ),
     },
     (acot, 1): {
@@ -879,9 +890,11 @@ ASK_RULES = {
     },
     (asin, 1): {
         Q.negative: (
+            (True, ((Q.negative, 0, True), (Q.ge, (0, Integer(-1)), True))),
             (False, ((Q.extended_nonnegative, 0, True),)),
         ),
         Q.positive: (
+            (True, ((Q.positive, 0, True), (Q.ge, (Integer(1), 0), True))),
             (False, ((Q.extended_nonpositive, 0, True),)),
         ),
         Q.transcendental: (
@@ -989,6 +1002,13 @@ ASK_RULES = {
         Q.infinite: (
             (True, ((Q.finite, 0, False),)),
             (True, ((Q.zero, 0, True),)),
+        ),
+        Q.negative: (
+            (True, ((Q.positive, 0, True), (Q.gt, (Integer(1), 0), True))),
+        ),
+        Q.positive: (
+            (True, ((Q.real, 0, True), (Q.gt, (0, Integer(1)), True))),
+            (False, ((Q.gt, (Integer(1), 0), True),)),
         ),
         Q.positive_infinite: (
             (True, ((Q.positive_infinite, 0, True),)),
