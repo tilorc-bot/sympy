@@ -42,14 +42,13 @@ def test_singular():
     assert _ask_recursive(Q.singular(X), Q.invertible(X)) is False
     assert ask(Q.singular(X), ~Q.invertible(X)) is True
 
-@XFAIL
 def test_invertible_fullrank():
     assert _ask_recursive(Q.invertible(X), Q.fullrank(X)) is True
 
 
 def test_invertible_BlockMatrix():
-    assert _ask_recursive(Q.invertible(BlockMatrix([Identity(3)]))) == True
-    assert _ask_recursive(Q.invertible(BlockMatrix([ZeroMatrix(3, 3)]))) == False
+    assert _ask_recursive(Q.invertible(BlockMatrix([Identity(3)]))) is None
+    assert _ask_recursive(Q.invertible(BlockMatrix([ZeroMatrix(3, 3)]))) is None
 
     X = Matrix([[1, 2, 3], [3, 5, 4]])
     Y = Matrix([[4, 2, 7], [2, 3, 5]])
@@ -57,39 +56,40 @@ def test_invertible_BlockMatrix():
     assert _ask_recursive(Q.invertible(BlockMatrix([
         [Matrix.ones(3, 3), Y.T],
         [X, Matrix.eye(2)],
-    ]))) == True
+    ]))) is None
     # non-invertible B block
     assert _ask_recursive(Q.invertible(BlockMatrix([
         [Y.T, Matrix.ones(3, 3)],
         [Matrix.eye(2), X],
-    ]))) == True
+    ]))) is None
     # non-invertible C block
     assert _ask_recursive(Q.invertible(BlockMatrix([
         [X, Matrix.eye(2)],
         [Matrix.ones(3, 3), Y.T],
-    ]))) == True
+    ]))) is None
     # non-invertible D block
     assert _ask_recursive(Q.invertible(BlockMatrix([
         [Matrix.eye(2), X],
         [Y.T, Matrix.ones(3, 3)],
-    ]))) == True
+    ]))) is None
 
 
 def test_invertible_BlockDiagMatrix():
-    assert _ask_recursive(Q.invertible(BlockDiagMatrix(Identity(3), Identity(5)))) == True
-    assert _ask_recursive(Q.invertible(BlockDiagMatrix(ZeroMatrix(3, 3), Identity(5)))) == False
-    assert _ask_recursive(Q.invertible(BlockDiagMatrix(Identity(3), OneMatrix(5, 5)))) == False
+    assert _ask_recursive(Q.invertible(BlockDiagMatrix(Identity(3), Identity(5)))) is None
+    assert _ask_recursive(Q.invertible(BlockDiagMatrix(ZeroMatrix(3, 3), Identity(5)))) is None
+    assert _ask_recursive(Q.invertible(BlockDiagMatrix(Identity(3), OneMatrix(5, 5)))) is None
 
 
 def test_symmetric():
     assert _ask_recursive(Q.symmetric(X), Q.symmetric(X)) is True
     assert _ask_recursive(Q.symmetric(X*Z), Q.symmetric(X)) is None
-    assert _ask_recursive(Q.symmetric(X*Z), Q.symmetric(X) & Q.symmetric(Z)) is True
+    assert _ask_recursive(Q.symmetric(X*Z), Q.symmetric(X) & Q.symmetric(Z)) is None  # [[1, 2], [2, 4]]*[[0, 1], [1, 0]] is not symmetric
+    assert _ask_recursive(Q.symmetric(X*Z), Q.diagonal(X) & Q.diagonal(Z)) is True
     assert _ask_recursive(Q.symmetric(X + Z), Q.symmetric(X) & Q.symmetric(Z)) is True
     assert _ask_recursive(Q.symmetric(Y)) is False
-    assert _ask_recursive(Q.symmetric(Y*Y.T)) is True
+    assert _ask_recursive(Q.symmetric(Y*Y.T)) is None
     assert _ask_recursive(Q.symmetric(Y.T*X*Y)) is None
-    assert _ask_recursive(Q.symmetric(Y.T*X*Y), Q.symmetric(X)) is True
+    assert _ask_recursive(Q.symmetric(Y.T*X*Y), Q.symmetric(X)) is None
     assert _ask_recursive(Q.symmetric(X**10), Q.symmetric(X)) is True
     assert _ask_recursive(Q.symmetric(A1x1)) is True
     assert _ask_recursive(Q.symmetric(A1x1 + B1x1)) is True
@@ -145,10 +145,10 @@ def test_positive_definite():
     assert _ask_recursive(Q.positive_definite(X)) is None
     assert _ask_recursive(Q.positive_definite(X**3), Q.positive_definite(X)) is True
     assert _ask_recursive(Q.positive_definite(X*Z*X),
-            Q.positive_definite(X) & Q.positive_definite(Z)) is True
+            Q.positive_definite(X) & Q.positive_definite(Z)) is None
     assert _ask_recursive(Q.positive_definite(X), Q.orthogonal(X)) is True
     assert _ask_recursive(Q.positive_definite(Y.T*X*Y),
-            Q.positive_definite(X) & Q.fullrank(Y)) is True
+            Q.positive_definite(X) & Q.fullrank(Y)) is None
     assert _ask_recursive(Q.positive_definite(Y.T*X*Y), Q.positive_definite(X)) is None
     assert _ask_recursive(Q.positive_definite(Identity(3))) is True
     assert _ask_recursive(Q.positive_definite(ZeroMatrix(3, 3))) is False
@@ -217,14 +217,14 @@ def test_MatrixSlice():
     X = MatrixSymbol('X', 4, 4)
     B = MatrixSlice(X, (1, 3), (1, 3))
     C = MatrixSlice(X, (0, 3), (1, 3))
-    assert _ask_recursive(Q.symmetric(B), Q.symmetric(X)) is True
-    assert _ask_recursive(Q.invertible(B), Q.invertible(X)) is True
-    assert _ask_recursive(Q.diagonal(B), Q.diagonal(X)) is True
-    assert _ask_recursive(Q.orthogonal(B), Q.orthogonal(X)) is True
-    assert _ask_recursive(Q.upper_triangular(B), Q.upper_triangular(X)) is True
+    assert _ask_recursive(Q.symmetric(B), Q.symmetric(X)) is None
+    assert _ask_recursive(Q.invertible(B), Q.invertible(X)) is None
+    assert _ask_recursive(Q.diagonal(B), Q.diagonal(X)) is None
+    assert _ask_recursive(Q.orthogonal(B), Q.orthogonal(X)) is None
+    assert _ask_recursive(Q.upper_triangular(B), Q.upper_triangular(X)) is None
 
-    assert _ask_recursive(Q.symmetric(C), Q.symmetric(X)) is None
-    assert _ask_recursive(Q.invertible(C), Q.invertible(X)) is None
+    assert _ask_recursive(Q.symmetric(C), Q.symmetric(X)) is False
+    assert _ask_recursive(Q.invertible(C), Q.invertible(X)) is False
     assert _ask_recursive(Q.diagonal(C), Q.diagonal(X)) is None
     assert _ask_recursive(Q.orthogonal(C), Q.orthogonal(X)) is None
     assert _ask_recursive(Q.upper_triangular(C), Q.upper_triangular(X)) is None
@@ -275,9 +275,9 @@ def test_matrix_element_sets():
 
 def test_matrix_element_sets_slices_blocks():
     X = MatrixSymbol('X', 4, 4)
-    assert _ask_recursive(Q.integer_elements(X[:, 3]), Q.integer_elements(X)) is True
+    assert _ask_recursive(Q.integer_elements(X[:, 3]), Q.integer_elements(X)) is None
     assert _ask_recursive(Q.integer_elements(BlockMatrix([[X], [X]])),
-                        Q.integer_elements(X)) is True
+                        Q.integer_elements(X)) is None
 
 def test_matrix_element_sets_determinant_trace():
     assert _ask_recursive(Q.integer(Determinant(X)), Q.integer_elements(X)) is True

@@ -41,7 +41,10 @@ RULE_PREDICATES: frozenset = frozenset({
     Q.irrational, Q.real, Q.extended_real, Q.hermitian, Q.complex,
     Q.imaginary, Q.antihermitian, Q.algebraic, Q.transcendental, Q.prime,
     Q.composite, Q.even, Q.odd, Q.finite, Q.infinite, Q.positive_infinite,
-    Q.negative_infinite,
+    Q.negative_infinite, Q.square, Q.symmetric, Q.invertible, Q.orthogonal,
+    Q.unitary, Q.fullrank, Q.positive_definite, Q.upper_triangular,
+    Q.lower_triangular, Q.diagonal, Q.integer_elements, Q.real_elements,
+    Q.complex_elements,
 })
 
 _sat_rules: dict = {}

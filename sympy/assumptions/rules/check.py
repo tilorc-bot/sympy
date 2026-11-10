@@ -17,6 +17,9 @@ A row about a sum or a product is written for ``f(x, y)``, where ``y`` is the
 sum or the product of all the arguments but the first, and that can be
 ``nan`` when every argument is a number. So ``y`` is ``nan`` too in the
 tests of those rows.
+
+Matrix expressions are also tested with numbers for some of their arguments
+and explicit matrices for the others, as in ``2*X`` or ``X**2``.
 """
 from __future__ import annotations
 
@@ -32,6 +35,8 @@ from sympy.core.symbol import Symbol
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.matrices.exceptions import ShapeError
 from sympy.matrices.immutable import ImmutableMatrix
+from sympy.matrices.dense import eye
+from sympy.matrices.expressions.matexpr import MatrixExpr
 from sympy.matrices.matrixbase import MatrixBase
 
 NUMBERS = (
@@ -48,20 +53,63 @@ MATRICES = (
     ImmutableMatrix([[2]]),
     ImmutableMatrix([[1, 2, 3], [4, 5, 6]]),
     ImmutableMatrix([[1, 2], [3, 4], [5, 6]]),
+    ImmutableMatrix([[1], [2]]),
+    ImmutableMatrix([[1, 0, 0], [0, 1, 0]]),
+    ImmutableMatrix([[1, 0], [0, 1], [0, 0]]),
+    ImmutableMatrix([[0, 1], [1, 0]]),
+    ImmutableMatrix([[0, -1], [1, 0]]),
+    ImmutableMatrix([[-1, 0], [0, -1]]),
+    ImmutableMatrix([[1, 0], [0, I]]),
+    ImmutableMatrix([[1, I], [I, 1]])/sqrt(2),
+    ImmutableMatrix([[2, 1], [1, 2]]),
+    ImmutableMatrix([[1, 2], [0, 3]]),
+    ImmutableMatrix([[1, 0], [2, 3]]),
+    ImmutableMatrix([[2, 0], [0, 3]]),
+    ImmutableMatrix([[Rational(1, 2), 0], [0, 1]]),
+    ImmutableMatrix([[0, 1], [0, 0]]),
+    ImmutableMatrix([[1, 1], [0, -1]]),
+    ImmutableMatrix([[I, 1], [1, 0]]),
+    ImmutableMatrix([[1, I], [0, 2]]),
 )
+
+SCALARS = (
+    S.Zero, S.One, S.NegativeOne, Integer(2), Integer(-2), Rational(1, 2),
+    I, 1 + I, oo, -oo, zoo,
+)
+
+def _number_test(value, name):
+    if isinstance(value, MatrixExpr):
+        return None
+    return getattr(value, name)
+
 
 NUMBER_TRUTH = {
     Q.positive_infinite: lambda value: value is S.Infinity,
     Q.negative_infinite: lambda value: value is S.NegativeInfinity,
+    Q.integer_elements: lambda value: _number_test(value, 'is_integer'),
+    Q.real_elements: lambda value: _number_test(value, 'is_real'),
+    Q.complex_elements: lambda value: _number_test(value, 'is_complex'),
 }
 
 MATRIX_TRUTH = {
     Q.square: lambda value: value.rows == value.cols,
     Q.invertible: lambda value: value.rows == value.cols and value.det() != 0,
-    Q.positive_definite: lambda value: value.is_positive_definite,
-    Q.integer_elements: lambda value: all(e.is_integer for e in value),
-    Q.real_elements: lambda value: all(e.is_real for e in value),
-    Q.complex_elements: lambda value: all(e.is_complex for e in value),
+    Q.symmetric: lambda value: value.rows == value.cols and value == value.T,
+    Q.orthogonal: lambda value: (value.rows == value.cols
+        and all(entry.is_real for entry in value)
+        and (value*value.T).expand() == eye(value.rows)),
+    Q.unitary: lambda value: (value.rows == value.cols
+        and (value*value.H).expand() == eye(value.rows)),
+    Q.positive_definite: lambda value: (value.rows == value.cols
+        and value == value.T and all(entry.is_real for entry in value)
+        and value.is_positive_definite),
+    Q.upper_triangular: lambda value: value.rows == value.cols and value.is_upper,
+    Q.lower_triangular: lambda value: value.rows == value.cols and value.is_lower,
+    Q.diagonal: lambda value: value.rows == value.cols and value.is_diagonal(),
+    Q.fullrank: lambda value: value.rank() == min(value.shape),
+    Q.integer_elements: lambda value: all(entry.is_integer for entry in value),
+    Q.real_elements: lambda value: all(entry.is_real for entry in value),
+    Q.complex_elements: lambda value: all(entry.is_complex for entry in value),
 }
 
 _truth: dict = {}
@@ -102,7 +150,8 @@ def _read(predicate, value):
             return result if isinstance(result, bool) else None
     if test is None:
         return None
-    return bool(test(value))
+    result = test(value)
+    return None if result is None else bool(result)
 
 
 def value_of(cls, values):
@@ -116,6 +165,8 @@ def value_of(cls, values):
             value = cls(*values)
             if any(isinstance(v, MatrixBase) for v in values):
                 value = value.doit()
+                if isinstance(value, MatrixExpr) and not isinstance(value, MatrixBase):
+                    value = value.as_explicit()
         except (TypeError, ValueError, NotImplementedError, ShapeError):
             value = None
         _values[key] = value
@@ -137,6 +188,12 @@ def _samples(cls, row):
     if number == 2 and issubclass(cls, (Add, Mul)):
         for first in NUMBERS:
             yield (first, S.NaN, value_of(cls, (first, S.NaN)))
+    if number is not None and number > 1 and issubclass(cls, MatrixExpr):
+        for values in product(SCALARS + MATRICES, repeat=number):
+            if len({isinstance(v, MatrixBase) for v in values}) == 2:
+                value = value_of(cls, values)
+                if value is not None:
+                    yield (*values, value)
 
 
 def counterexamples(cls, row):
