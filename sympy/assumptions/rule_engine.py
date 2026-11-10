@@ -25,6 +25,7 @@ from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.ask_rules_generated import ASK_RULES
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.cnf import CNF
+from sympy.assumptions.lra_satask import lra_satask
 from sympy.assumptions.sat_rules_generated import SAT_RULES
 from sympy.core.add import Add
 from sympy.core.basic import Basic
@@ -35,6 +36,7 @@ from sympy.core.numbers import I, Rational
 from sympy.core.operations import AssocOp
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
+from sympy.logic.algorithms.lra_theory import UnhandledInput
 from sympy.logic.boolalg import And, Not
 from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 
@@ -48,6 +50,7 @@ _sat_rules: dict = {}
 _ask_rules: dict = {}
 _known_classes: dict = {}
 _deciding: dict = {}
+_implying: dict = {}
 _handled: dict = {}
 _symbols_unknown: dict = {}
 _local = threading.local()
@@ -180,6 +183,10 @@ WRITTEN = {
 # How each relation is decided from the form of two expressions
 RELATIONS = {Q.eq: equal, Q.gt: greater, Q.ge: not_less}
 
+# The predicates of one expression which compare it with zero
+SIGNS = frozenset({Q.positive, Q.negative, Q.zero, Q.nonzero, Q.nonnegative,
+                   Q.nonpositive})
+
 
 def canonical(written, a, b):
     """
@@ -212,41 +219,75 @@ class Comparisons:
     ===========
 
     The relation is decided from the form of the two expressions, or by an
-    assumption which states it. ``a > b`` also decides ``a >= b`` and
-    ``a = b``. No expression is built.
+    assumption which states it (``a > b`` also decides ``a >= b`` and
+    ``a = b``), or by linear real arithmetic
+    (:func:`~sympy.assumptions.lra_satask.lra_satask`).
+
+    Arithmetic is used only between expressions which are known to be real,
+    and only if an assumption which shares a symbol with them is a relation
+    between two real expressions or compares a real sum with zero. It is
+    given the assumptions of those two kinds and those which compare a real
+    symbol with zero. A symbol is known to be real by its old assumptions or
+    by an assumption, as is ``t`` if ``c + t`` or ``c*t`` is, for a rational
+    number ``c``. No expression is built.
 
     Examples
     ========
 
     >>> from sympy import Q, S
-    >>> from sympy.abc import x
+    >>> from sympy.abc import x, y
     >>> from sympy.assumptions.rule_engine import Comparisons
-    >>> compared = Comparisons([(Q.lt(1, x), True)])
+    >>> compared = Comparisons([(Q.real(x), True), (Q.gt(x, 2), True)])
     >>> compared.decide(Q.gt, x, S(1)), compared.decide(Q.eq, x, S(1))
     (True, False)
-    >>> print(compared.decide(Q.gt, x, S(0)))
-    None
-    >>> Comparisons().decide(Q.gt, S(2), S(1))
+    >>> print(compared.decide(Q.gt, x, S(3)), compared.decide(Q.gt, y, S(1)))
+    None None
+    >>> Comparisons([(Q.gt(y, 2), True)]).decide(Q.gt, y, S(2))
     True
+    >>> print(Comparisons([(Q.gt(y, 2), True)]).decide(Q.gt, y, S(1)))
+    None
 
     """
-    __slots__ = ('stated', 'related')
+    __slots__ = ('units', 'stated', 'related', 'arithmetic', 'real', 'facts',
+                 'symbols', 'solved')
 
     def __init__(self, units=()):
+        self.units = units
         self.stated = stated = {}
+        arithmetic = False
         for atom, value in units:
-            if len(atom.arguments) == 2 and atom.function in WRITTEN:
-                key, same = canonical(atom.function, *atom.arguments)
-                stated[key] = value is same
+            arguments = atom.arguments
+            if len(arguments) == 2:
+                if atom.function in WRITTEN:
+                    key, same = canonical(atom.function, *arguments)
+                    stated[key] = value is same
+                    arithmetic = True
+            elif isinstance(arguments[0], Add) and atom.function in SIGNS:
+                arithmetic = True
+        # Whether an assumption is a relation or compares a sum with zero
+        self.arithmetic = arithmetic
         # The expressions which the stated relations are about
         self.related = {e for key in stated for e in key[1:]} if stated else ()
+        # The assumptions which are given to the arithmetic, as triples
+        # ``(literal, symbols, arguments)``, the expressions which they make
+        # known to be real, and the symbols of those which can decide a
+        # relation. They are found when they are first needed.
+        self.facts = None
+        self.real = self.symbols = frozenset()
+        self.solved = {}
 
     def concerns(self, expr):
         """
         Whether an assumption can decide a relation between *expr* and a
         number.
         """
-        return expr in self.related
+        if not self.arithmetic:
+            return False
+        if expr in self.related:
+            return True
+        if self.facts is None:
+            self._prepare()
+        return not self.symbols.isdisjoint(expr.free_symbols)
 
     def decide(self, relation, a, b, form=True):
         """
@@ -254,15 +295,94 @@ class Comparisons:
         false, the form of the two expressions is not looked at.
         """
         result = RELATIONS[relation](a, b) if form else None
-        stated = self.stated
-        if result is None and stated:
+        if result is None and self.arithmetic:
+            stated = self.stated
             result = stated.get((relation, a, b))
             if result is None and relation is not Q.gt:
                 if stated.get((Q.gt, a, b)):
                     result = relation is Q.ge
                 elif relation is Q.eq:
                     result = False if stated.get((Q.gt, b, a)) else stated.get((Q.eq, b, a))
+            if result is None:
+                key = (relation, a, b)
+                solved = self.solved
+                if key in solved:
+                    return solved[key]
+                result = solved[key] = self._solve(relation, a, b)
         return result
+
+    def _prepare(self):
+        implying = _implying_real()
+        real = set()
+        for atom, value in self.units:
+            if value and len(atom.arguments) == 1 and atom.function in implying:
+                expr = atom.arguments[0]
+                real.add(expr)
+                while (isinstance(expr, (Add, Mul)) and len(expr.args) == 2
+                       and isinstance(expr.args[0], Rational)):
+                    expr = expr.args[1]
+                    real.add(expr)
+        facts = []
+        symbols = set()
+        for atom, value in self.units:
+            arguments = atom.arguments
+            binary = len(arguments) == 2
+            if (atom.function in (WRITTEN if binary else SIGNS)
+                    and all(_real(arg, real) for arg in arguments)):
+                found = atom.free_symbols
+                facts.append((atom if value else Not(atom), found, arguments))
+                if binary or isinstance(arguments[0], Add):
+                    symbols |= found
+        self.real = real
+        self.facts = tuple(facts)
+        self.symbols = symbols
+
+    def _solve(self, relation, a, b):
+        if self.facts is None:
+            self._prepare()
+        symbols = a.free_symbols | b.free_symbols
+        real = self.real
+        if self.symbols.isdisjoint(symbols) or not (_real(a, real) and _real(b, real)):
+            return None
+        chosen = []
+        rest = self.facts
+        while True:
+            linked = [fact for fact in rest if not fact[1].isdisjoint(symbols)]
+            if not linked:
+                break
+            chosen += linked
+            symbols = symbols.union(*[fact[1] for fact in linked])
+            rest = [fact for fact in rest if fact not in linked]
+        known = real.union((a, b), *[fact[2] for fact in chosen])
+        try:
+            return lra_satask(relation(a, b), And(*[fact[0] for fact in chosen]),
+                              known_real=known)
+        except UnhandledInput:
+            return None
+
+
+def _real(expr, real):
+    """
+    Whether *expr* is known to be real from its form: a rational number, one
+    of the expressions *real*, a symbol which is real by its old
+    assumptions, or a sum or a product of these.
+    """
+    if isinstance(expr, Rational) or expr in real:
+        return True
+    if isinstance(expr, Symbol):
+        return expr.is_real is True
+    if isinstance(expr, (Add, Mul)):
+        return all(_real(arg, real) for arg in expr.args)
+    return False
+
+
+def _implying_real():
+    found = _implying.get(Q.real)
+    if found is None:
+        facts = get_known_facts_dict()
+        found = _implying[Q.real] = frozenset(
+            predicate for predicate in facts if Q.real in facts[predicate][0])
+    return found
 
 
 def rule_arguments(expr):
@@ -560,7 +680,15 @@ class _Query:
         self.assumptions = assumptions
         self.asked = asked
         self.assumed, literals = _unit_assumptions(assumptions)
-        self.compared = Comparisons(literals)
+        # What the arithmetic finds is kept for the next query under the
+        # same assumptions.
+        last = getattr(_local, 'compared', None)
+        if last is not None and last[0] == assumptions:
+            self.compared = last[1]
+        else:
+            self.compared = Comparisons(literals)
+            if self.compared.arithmetic:
+                _local.compared = (assumptions, self.compared)
         self.answers = {}
         self.slots = {}
         # The truth values of the conditions between two arguments of an
