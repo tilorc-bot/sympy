@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from sympy.abc import x, y
-from sympy.assumptions.ask import Q
-from sympy.assumptions.rule_engine import SELF, ask_by_rules, index_rules
+from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
+from sympy.assumptions.ask import Q, _extract_all_facts
+from sympy.assumptions.ask_generated import get_known_facts_dict
+from sympy.assumptions.cnf import CNF
+from sympy.assumptions.rule_engine import (SELF, _ask_single_fact, _local_facts,
+    ask_by_rules, index_rules)
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
@@ -35,6 +39,38 @@ def test_index_rules():
         (Abs, Q.negative, False): [()],
         (Abs, Q.zero, False): [((0, Q.zero, False), (SELF, Q.real, True))],
     }
+
+
+def test_local_facts():
+    assert _local_facts(True) == {}
+    assert _local_facts(Q.even(x)) == {x: [(Q.even, True)]}
+    local_facts = _local_facts(~Q.even(x) & Q.real(y) & Q.zero(x))
+    assert set(local_facts) == {x, y}
+    assert set(local_facts[x]) == {(Q.zero, True), (Q.even, False)}
+    assert local_facts[y] == [(Q.real, True)]
+    assert _local_facts(Q.even(x) | Q.odd(x)) == {}
+    assert _local_facts(Q.gt(x, y) & Q.real(x)) == {x: [(Q.real, True)]}
+
+
+def test_ask_single_fact():
+    assert _ask_single_fact(Q.zero, [(Q.zero, False)]) is False
+    assert _ask_single_fact(Q.zero, [(Q.even, False)]) is False
+    assert _ask_single_fact(Q.even, [(Q.zero, True)]) is True
+    assert _ask_single_fact(Q.even, [(Q.odd, True)]) is False
+    assert _ask_single_fact(Q.even, [(Q.integer, True)]) is None
+    assert _ask_single_fact(Q.even, [(Q.real, True), (Q.zero, True)]) is True
+    assert _ask_single_fact(Q.even, None) is None
+
+
+def test_ask_single_fact_agrees_with_the_one_of_ask():
+    predicates = sorted(get_known_facts_dict(), key=str)
+    for key in predicates:
+        for predicate in predicates:
+            for value in (True, False):
+                assumption = predicate(x) if value else ~predicate(x)
+                expected = _ask_single_fact_of_ask(
+                    key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
+                assert _ask_single_fact(key, [(predicate, value)]) is expected
 
 
 def test_rule_about_an_argument():

@@ -54,18 +54,38 @@ def _literal(literal):
     return literal, True
 
 
-def _assumed(assumptions):
+def _local_facts(assumptions):
     """
     ``{expr: [(predicate, value), ...]}`` for the assumptions which are a
     predicate of one expression or the negation of one.
     """
-    assumed: dict = {}
+    local_facts: dict = {}
     literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
     for literal in literals:
         predicate, value = _literal(literal)
         if isinstance(predicate, AppliedPredicate) and len(predicate.arguments) == 1:
-            assumed.setdefault(predicate.arg, []).append((predicate.function, value))
-    return assumed
+            local_facts.setdefault(predicate.arg, []).append((predicate.function, value))
+    return local_facts
+
+
+def _ask_single_fact(key, local_facts):
+    """
+    Whether one of *local_facts*, ``[(predicate, value), ...]`` about one
+    expression, implies or refutes the predicate *key* by itself.
+    """
+    if not local_facts:
+        return None
+    known_facts = get_known_facts_dict()
+    for predicate, value in local_facts:
+        if value:
+            implied, rejected = known_facts.get(predicate, _NOTHING)
+            if key in implied:
+                return True
+            if key in rejected:
+                return False
+        elif predicate in known_facts.get(key, _NOTHING)[0]:
+            return False
+    return None
 
 
 _NOTHING: tuple = ((), ())
@@ -84,8 +104,7 @@ def ask_by_rules(
 class _Search:
 
     def __init__(self, assumptions, rules):
-        self.assumed = _assumed(assumptions)
-        self.known_facts = get_known_facts_dict()
+        self.local_facts = _local_facts(assumptions)
         self.rules = rules
         # finished nodes
         self.answers = {}
@@ -102,7 +121,7 @@ class _Search:
             return None
         self.path.add(node)
         cycles = self.cycles
-        answer = self._from_assumptions(predicate, expr)
+        answer = _ask_single_fact(predicate, self.local_facts.get(expr))
         if answer is None:
             answer = self._from_rules(predicate, expr)
         self.path.remove(node)
@@ -112,19 +131,6 @@ class _Search:
         if answer is not None or self.cycles == cycles:
             self.answers[node] = answer
         return answer
-
-    def _from_assumptions(self, predicate, expr):
-        known_facts = self.known_facts
-        for assumed, value in self.assumed.get(expr, ()):
-            if value:
-                implied, rejected = known_facts.get(assumed, _NOTHING)
-                if predicate in implied:
-                    return True
-                if predicate in rejected:
-                    return False
-            elif assumed in known_facts.get(predicate, _NOTHING)[0]:
-                return False
-        return None
 
     def _from_rules(self, predicate, expr):
         for cls in type(expr).__mro__:
