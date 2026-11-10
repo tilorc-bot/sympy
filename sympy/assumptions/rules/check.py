@@ -39,6 +39,7 @@ from sympy.core.add import Add
 from sympy.core.containers import Tuple
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, Integer, Rational, oo, pi, zoo
+from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.miscellaneous import sqrt
@@ -46,6 +47,7 @@ from sympy.matrices.exceptions import ShapeError
 from sympy.matrices.immutable import ImmutableMatrix
 from sympy.matrices.dense import eye
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixExpr
+from sympy.matrices.expressions.matpow import MatPow
 from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.matrixbase import MatrixBase
 
@@ -192,6 +194,10 @@ def value_of(cls, values):
     """
     key = (cls, values)
     if key not in _values:
+        # A matrix is not an exponent, and SymPy takes long to say so
+        if issubclass(cls, (Pow, MatPow)) and isinstance(values[1], MatrixBase):
+            _values[key] = None
+            return None
         try:
             value = cls(*values)
             if any(isinstance(v, MatrixBase) for v in values):
