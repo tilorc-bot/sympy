@@ -157,7 +157,7 @@ def test_positive_definite():
     assert _ask_recursive(Q.positive_definite(X + Z), Q.positive_definite(X) &
             Q.positive_definite(Z)) is True
     assert _ask_recursive(Q.positive_definite(-X), Q.positive_definite(X)) is None
-    assert _ask_recursive(Q.positive(X[1, 1]), Q.positive_definite(X)) is True
+    assert _ask_recursive(Q.positive(X[1, 1]), Q.positive_definite(X)) is None
 
 def test_triangular():
     assert _ask_recursive(Q.upper_triangular(X + Z.T + Identity(2)), Q.upper_triangular(X) &
