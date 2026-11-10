@@ -264,6 +264,10 @@ def test_positive_infinite_symbolic():
     assert _ask_recursive(Q.positive_infinite(x + I), Q.real(x)) is False
     assert _ask_recursive(Q.positive_infinite(x*I), Q.real(x)) is False
     assert _ask_recursive(Q.positive_infinite(x + y), Q.real(x) & Q.imaginary(y)) is False
+    assert _ask_recursive(Q.positive_infinite(S.Half**x), Q.negative_infinite(x)) is True
+    assert _ask_recursive(Q.positive_infinite(log(x)), Q.complex(x)) is False
+    assert _ask_recursive(Q.positive_infinite(exp(x)), ~Q.extended_real(x)) is False
+    assert _ask_recursive(Q.positive_infinite(Abs(x)), Q.infinite(x)) is True
 
 
 def test_negative_infinite_symbolic():
@@ -273,6 +277,11 @@ def test_negative_infinite_symbolic():
     assert _ask_recursive(Q.negative_infinite(x + I), Q.real(x)) is False
     assert _ask_recursive(Q.negative_infinite(x*I), Q.real(x)) is False
     assert _ask_recursive(Q.negative_infinite(x + y), Q.real(x) & Q.imaginary(y)) is False
+    assert _ask_recursive(Q.negative_infinite(x**y), Q.finite(x) & Q.finite(y)) is False
+    assert _ask_recursive(Q.negative_infinite(log(x))) is False
+    assert _ask_recursive(Q.negative_infinite(exp(x))) is False
+    assert _ask_recursive(Q.negative_infinite(sin(x))) is False
+    assert _ask_recursive(Q.negative_infinite(cos(x))) is False
 
 
 def test_nan():
@@ -1130,6 +1139,7 @@ def test_bounded():
     assert _ask_recursive(Q.finite(pi**x), Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(Rational(-1, 2)**x), Q.extended_positive(x)) is True
     assert _ask_recursive(Q.finite((-2)**x), Q.extended_negative(x)) is None
+    assert _ask_recursive(Q.finite((-2)**x), Q.positive_infinite(x)) is False
     assert _ask_recursive(Q.finite(y**x), Q.gt(y, 1) & Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(y**x), Q.lt(1, y) & Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(y**x), Q.ge(y, 1) & Q.extended_negative(x)) is None
@@ -1334,6 +1344,7 @@ def test_complex():
     assert _ask_recursive(Q.complex(re(x)), Q.complex(x)) is True
     assert _ask_recursive(Q.complex(im(x))) is None  # im(oo*I) is oo
     assert _ask_recursive(Q.complex(im(x)), Q.complex(x)) is True
+    assert _ask_recursive(Q.complex(sign(x))) is True
 
 
 def test_even_query():
@@ -1433,8 +1444,16 @@ def test_extended_real():
     assert _ask_recursive(Q.extended_real(-x), Q.negative(x)) is True
 
     assert _ask_recursive(Q.extended_real(x + S.Infinity), Q.real(x)) is True
+    assert _ask_recursive(Q.extended_real(x + I), Q.extended_real(x)) is False
 
     assert _ask_recursive(Q.extended_real(x), Q.infinite(x)) is None
+
+    assert _ask_recursive(Q.extended_real(2*x), Q.extended_real(x)) is True
+
+    assert _ask_recursive(Q.extended_real(sqrt(x)), Q.extended_nonnegative(x)) is True
+    assert _ask_recursive(Q.extended_real(x**Rational(-3, 2)), Q.extended_positive(x)) is True
+    assert _ask_recursive(Q.extended_real(2**x), Q.extended_real(x)) is True
+    assert _ask_recursive(Q.extended_real(pi**x), Q.extended_real(x)) is True
 
 
 @_both_exp_pow
@@ -1691,6 +1710,14 @@ def test_imaginary():
     assert _ask_recursive(Q.imaginary(x**y), Q.negative(x) & Q.rational(y)) is None
     assert _ask_recursive(Q.imaginary(x**y), Q.real(x) & Q.rational(y) & ~Q.integer(2*y)) is None
     assert _ask_recursive(Q.imaginary(x**y), Q.real(x) & Q.rational(y) & Q.integer(2*y)) is None
+    assert _ask_recursive(Q.imaginary(sqrt(x)), Q.negative(x)) is True
+    assert _ask_recursive(Q.imaginary(1/sqrt(x)), Q.negative(x)) is True
+    assert _ask_recursive(Q.imaginary(x**Rational(3, 2)), Q.negative(x)) is True
+    assert _ask_recursive(Q.imaginary(x**Rational(5, 2)), Q.negative(x)) is None
+
+    # real and imaginary parts
+    assert _ask_recursive(Q.imaginary(im(x))) is False
+    assert _ask_recursive(Q.imaginary(re(x))) is False
 
     # logarithm
     assert _ask_recursive(Q.imaginary(log(I))) is True
@@ -1736,6 +1763,11 @@ def test_integer():
 
     assert _ask_recursive(Q.integer(x/2), Q.odd(x)) is False
     assert _ask_recursive(Q.integer(x/2), Q.even(x)) is True
+    assert _ask_recursive(Q.integer(x/2), ~Q.even(x)) is False
+    assert _ask_recursive(Q.integer(-x/2), Q.even(x)) is True
+    assert _ask_recursive(Q.integer(-x/2), Q.odd(x)) is False
+    assert _ask_recursive(Q.integer(3*x/2), Q.even(x)) is None
+    assert _ask_recursive(Q.integer(Abs(x)/2), Q.irrational(x)) is False
     assert _ask_recursive(Q.integer(x/3), Q.odd(x)) is None
     assert _ask_recursive(Q.integer(x/3), Q.even(x)) is None
 
@@ -1863,6 +1895,10 @@ def test_zero():
 
     assert _ask_recursive(Q.zero(Abs(x))) is None
     assert _ask_recursive(Q.zero(Abs(x)), Q.zero(x)) is True
+
+    assert _ask_recursive(Q.zero(2**x), Q.negative_infinite(x)) is True
+    assert _ask_recursive(Q.zero(S.Half**x), Q.positive_infinite(x)) is True
+    assert _ask_recursive(Q.zero(exp(x)), ~Q.extended_real(x)) is False
 
     assert _ask_recursive(Q.integer(x), Q.zero(x)) is True
     assert _ask_recursive(Q.even(x), Q.zero(x)) is True
@@ -2056,6 +2092,7 @@ def test_positive():
     assert _ask_recursive(Q.negative(log(x)), Q.positive(x) & Q.lt(x, 1)) is True
     assert _ask_recursive(Q.positive(log(x)), Q.real(x) & Q.positive(x - 1)) is True
     assert _ask_recursive(Q.positive(log(x)), Q.real(x) & Q.negative(x - 1)) is False
+    assert _ask_recursive(Q.extended_positive(log(x)), Q.nonpositive(x)) is False
 
     # factorial
     assert _ask_recursive(Q.positive(factorial(x)), Q.integer(x) & Q.positive(x)) is True
@@ -2064,6 +2101,7 @@ def test_positive():
     #absolute value
     assert _ask_recursive(Q.positive(Abs(x))) is None  # Abs(0) = 0
     assert _ask_recursive(Q.positive(Abs(x)), Q.positive(x)) is True
+    assert _ask_recursive(Q.positive(Abs(x)), Q.infinite(x)) is False
 
 
 def test_nonpositive():
@@ -2251,6 +2289,8 @@ def test_algebraic():
         assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x)) is None
         assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x) & Q.nonzero(x - 1)) is False
         assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x) & Q.ne(x, 1)) is False
+        assert _ask_recursive(Q.algebraic(g(x)), Q.zero(x - 1)) is True
+        assert _ask_recursive(Q.zero(g(x)), Q.eq(x, 1)) is True
 
     for h in [cot, acot]:
         assert _ask_recursive(Q.algebraic(h(7))) is False
@@ -2273,6 +2313,18 @@ def test_algebraic():
     assert _ask_recursive(Q.algebraic(pi**n),Q.integer(n) & Q.positive(n)) is False
     assert _ask_recursive(Q.algebraic(x**y),Q.algebraic(x) & Q.rational(y)) is None  # 0**-1 is zoo
     assert _ask_recursive(Q.algebraic(x**y), Q.algebraic(x) & ~Q.zero(x) & Q.rational(y)) is True
+
+    # Gelfond-Schneider
+    assert _ask_recursive(Q.algebraic(2**x), Q.algebraic(x) & Q.irrational(x)) is False
+    assert _ask_recursive(Q.transcendental(2**x), Q.algebraic(x) & Q.irrational(x)) is True
+    assert _ask_recursive(Q.algebraic(y**x), Q.algebraic(y) & ~Q.zero(y) & Q.ne(y, 1)
+        & Q.algebraic(x) & Q.irrational(x)) is False
+    assert _ask_recursive(Q.algebraic(y**x), Q.algebraic(y) & Q.algebraic(x)
+        & Q.irrational(x)) is None
+
+    assert _ask_recursive(Q.algebraic(log(x)), Q.algebraic(x) & Q.negative(x)) is False
+    assert _ask_recursive(Q.transcendental(log(x)), Q.algebraic(x) & Q.negative(x)) is True
+    assert _ask_recursive(Q.rational(acos(x)), Q.integer(x) & Q.negative(x)) is False
 
 
 

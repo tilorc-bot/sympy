@@ -436,7 +436,11 @@ def test_equal():
     assert equal(a, Integer(1)) is None
     assert equal(Tuple(a, 2, 1), Tuple(0, 2, 1)) is None
     assert equal(nan, nan) is None
-    assert equal(pi, Integer(3)) is None
+    assert equal(pi, Integer(3)) is False
+    assert equal(Integer(1), pi) is False
+    assert equal(pi, oo) is False
+    assert equal(pi, I) is None
+    assert equal(pi, 2*I) is None
     assert equal(I, I) is True
     assert equal(-I, -I) is True
     assert equal(I, -I) is False
@@ -576,10 +580,10 @@ def test_relations_decided_once():
     query = compiled_rules._Query(Q.integer(n), (-1)**n)
     assert query.ask_about(Q.odd, (-1)**n) is True
     _, plain, related, decided, groups, count = compiled_rules._ways(Pow, 2, Q.odd)
-    assert count == sum(len(conditions) for _, conditions in groups)
-    assert {slot for slot, _ in groups} == {0, 1}
-    slots = {index: (decide, pair) for _, conditions in groups
-             for index, pair, decide, _ in conditions}
+    assert count == sum(len(group[1]) for group in groups)
+    assert {group[0] for group in groups} == {0, 1}
+    slots = {index: (decide, pair) for group in groups
+             for index, pair, decide, _ in group[1]}
     truths = {slots[index]: truth for index, truth in enumerate(query.truths[(-1)**n])}
     assert truths[equal, (0, Integer(-1))] is True
     assert truths[equal, (0, Integer(1))] is False
