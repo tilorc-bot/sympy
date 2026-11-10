@@ -58,6 +58,9 @@ NUMBER_TRUTH = {
 MATRIX_TRUTH = {
     Q.square: lambda value: value.rows == value.cols,
     Q.invertible: lambda value: value.rows == value.cols and value.det() != 0,
+    Q.integer_elements: lambda value: all(e.is_integer for e in value),
+    Q.real_elements: lambda value: all(e.is_real for e in value),
+    Q.complex_elements: lambda value: all(e.is_complex for e in value),
 }
 
 _truth: dict = {}
