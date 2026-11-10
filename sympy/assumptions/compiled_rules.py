@@ -86,6 +86,11 @@ def equal(a, b):
     None None
 
     """
+    a_number = isinstance(a, Rational)
+    if a_number or isinstance(b, Rational):
+        if a_number and isinstance(b, Rational):
+            return a.p == b.p and a.q == b.q
+        return None
     if a == b:
         return None if a is S.NaN else True
     if _explicit(a) and _explicit(b):
@@ -234,14 +239,19 @@ def ask_rules(cls, nargs, predicate):
 
 def _ways(cls, nargs, predicate):
     """
-    The ways of :func:`ask_rules`, those of them without conditions between
-    two arguments, and the others as triples ``(answer, relations,
-    conditions)``, with the conditions between two arguments apart.
+    The ways of :func:`ask_rules`; those of them without conditions between
+    two arguments; the others as triples ``(answer, tests, conditions)``,
+    with the conditions between two arguments apart, as pairs ``(index,
+    value)`` into the fifth item; a cache, for each tuple of truth values of
+    the fifth item, of the others which they let apply; and the conditions
+    between two arguments in any way for *cls* and *nargs*, as triples
+    ``(slots, decide, deciders)`` with the functions of :data:`RELATIONS`.
     """
     key = (cls, nargs, predicate)
     entry = _ask_rules.get(key)
     if entry is None:
         found = []
+        relations = {}
         for base in cls.__mro__:
             ways = ASK_RULES.get((base, nargs))
             if ways:
@@ -249,22 +259,39 @@ def _ways(cls, nargs, predicate):
                     found.extend((answer, conditions)
                                  for way_value, conditions in ways.get(decider, ())
                                  if way_value is value)
+                relations.update(dict.fromkeys(
+                    (relation, slot) for others in ways.values()
+                    for _, conditions in others
+                    for relation, slot, _ in conditions if type(slot) is tuple))
         _known_classes.setdefault((cls, nargs), any(
             (base, nargs) in ASK_RULES for base in cls.__mro__))
         for base in cls.__mro__:
             found.extend(ASK_RULES.get((base, None), {}).get(predicate, ()))
         rules = tuple(dict.fromkeys(found))
+        index = {relation: i for i, relation in enumerate(relations)}
         plain = []
         related = []
         for answer, conditions in rules:
-            relations = tuple(c for c in conditions if type(c[1]) is tuple)
-            if relations:
-                related.append((answer, relations, tuple(
+            tests = tuple((index[c[0], c[1]], c[2]) for c in conditions
+                          if type(c[1]) is tuple)
+            if tests:
+                related.append((answer, tests, tuple(
                     c for c in conditions if type(c[1]) is not tuple)))
             else:
                 plain.append((answer, conditions))
-        entry = _ask_rules[key] = (rules, tuple(plain), tuple(related))
+        entry = _ask_rules[key] = (
+            rules, tuple(plain), tuple(related), {},
+            tuple((slot, *RELATIONS[relation]) for relation, slot in relations))
     return entry
+
+
+def _decided_ways(related, truths):
+    """
+    The ways of *related* whose conditions between two arguments have the
+    truth values *truths*, without those conditions.
+    """
+    return tuple((answer, conditions) for answer, tests, conditions in related
+                 if all(truths[i] is value for i, value in tests))
 
 
 def _deciders(predicate):
@@ -347,15 +374,19 @@ class _Query:
     """
     What is found while one query is answered.
     """
-    __slots__ = ('assumptions', 'asked', 'assumed', 'answers', 'asking',
-                 'lowest', 'slots', 'plain', 'unknown', 'relations')
+    __slots__ = ('assumptions', 'asked', 'assumed', 'relations', 'answers',
+                 'asking', 'lowest', 'slots', 'truths', 'plain', 'unknown')
 
     def __init__(self, assumptions, asked=None):
         self.assumptions = assumptions
         self.asked = asked
-        self.assumed = _unit_assumptions(assumptions)
+        self.assumed, self.relations = _unit_assumptions(assumptions)
         self.answers = {}
         self.slots = {}
+        # The truth values of the conditions between two arguments of an
+        # expression, in the order in which :func:`_ways` lists them for its
+        # class.
+        self.truths = {}
         # Whether an expression is a symbol without assumptions of any kind,
         # and whether nothing is found about a predicate for such a symbol.
         self.plain = {}
@@ -366,7 +397,6 @@ class _Query:
         # kept only if it is an answer.
         self.asking = {}
         self.lowest = 0
-        self.relations = None
 
     def ask(self, predicate, args):
         if len(args) != 1:
@@ -413,7 +443,7 @@ class _Query:
         entry = _ask_rules.get(key)
         if entry is None:
             entry = _ways(*key)
-        _, rules, related = entry
+        _, rules, related, decided, pairs = entry
         # An atom, a number inside the expression which is asked about, and
         # an expression of a class without rules are read from their old
         # assumptions. A handler is used if it is registered for the class
@@ -429,16 +459,16 @@ class _Query:
             result = _handled_answer(predicate, expr, self.assumptions)
             if result is not None:
                 return result
-        if rules or related:
-            targets = (*slots, expr)
-            if related:
-                rules = (*((answer, conditions) for answer, relations, conditions in related
-                           if all(self.relation(relation, pair, targets) is value
-                                  for relation, pair, value in relations)), *rules)
-            ask_about = self.ask_about
-            plain = self.plain
-            unknown = self.unknown
-            for answer, conditions in rules:
+        if not (rules or related):
+            return None
+        targets = (*slots, expr)
+        ask_about = self.ask_about
+        plain = self.plain
+        unknown = self.unknown
+        ways = rules
+        pending = related
+        while True:
+            for answer, conditions in ways:
                 for condition, slot, value in conditions:
                     target = targets[slot]
                     is_plain = plain.get(target)
@@ -457,24 +487,40 @@ class _Query:
                         break
                 else:
                     return answer
+            # The ways with conditions between two arguments come last, and
+            # those conditions are found only when they are needed.
+            if not pending:
+                return None
+            pending = None
+            truths = self.truths.get(expr)
+            if truths is None:
+                truths = self.truths[expr] = self._truths(pairs, targets)
+            ways = decided.get(truths)
+            if ways is None:
+                ways = decided[truths] = _decided_ways(related, truths)
 
-    def relation(self, predicate, pair, targets):
+    def _truths(self, conditions, targets):
         """
-        The truth value of the condition *predicate* between the arguments of
-        the slots *pair*, from their form or from the assumptions.
+        The truth values of the *conditions* between two arguments, for the
+        expressions *targets* of the slots, from the form of the arguments or
+        from the assumptions.
         """
-        a, b = (targets[slot] if type(slot) is int else slot for slot in pair)
-        decide, deciders = RELATIONS[predicate]
-        result = decide(a, b)
-        if result is None:
-            relations = self.relations
-            if relations is None:
-                relations = self.relations = _relation_assumptions(self.assumptions)
-            for assumed, swapped, same in deciders:
-                value = relations.get((assumed, b, a) if swapped else (assumed, a, b))
-                if value is not None:
-                    return value is same
-        return result
+        relations = self.relations
+        found = []
+        for (a, b), decide, deciders in conditions:
+            if type(a) is int:
+                a = targets[a]
+            if type(b) is int:
+                b = targets[b]
+            result = decide(a, b)
+            if result is None and relations:
+                for assumed, swapped, same in deciders:
+                    value = relations.get((assumed, b, a) if swapped else (assumed, a, b))
+                    if value is not None:
+                        result = value is same
+                        break
+            found.append(result)
+        return tuple(found)
 
     def _assumed(self, predicate, expr):
         literals = self.assumed.get(expr)
@@ -542,23 +588,19 @@ def _has_handler(predicate, cls):
 def _unit_assumptions(assumptions):
     """
     The assumptions which are a predicate of one expression or the negation
-    of one: ``{expression: [(predicate, value), ...]}``.
+    of one, ``{expression: [(predicate, value), ...]}``, and those which are
+    a predicate of two expressions or the negation of one, ``{(predicate, a,
+    b): value}``.
     """
     units: dict = {}
+    relations: dict = {}
     for atom, value in _unit_literals(assumptions):
-        if len(atom.arguments) == 1:
-            units.setdefault(atom.arg, []).append((atom.function, value))
-    return units
-
-
-def _relation_assumptions(assumptions):
-    """
-    The assumptions which are a predicate of two expressions or the negation
-    of one: ``{(predicate, a, b): value}``.
-    """
-    return {(atom.function, *atom.arguments): value
-            for atom, value in _unit_literals(assumptions)
-            if len(atom.arguments) == 2}
+        arguments = atom.arguments
+        if len(arguments) == 1:
+            units.setdefault(arguments[0], []).append((atom.function, value))
+        elif len(arguments) == 2:
+            relations[(atom.function, *arguments)] = value
+    return units, relations
 
 
 def _unit_literals(assumptions):

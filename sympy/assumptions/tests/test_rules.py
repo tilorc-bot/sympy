@@ -14,7 +14,7 @@ from sympy.assumptions.rules.compiler import (GENERATED, _render, clauses,
     nargs, statements, ways)
 from sympy.assumptions.rules.language import (base, closed, columns,
     exponent, f, for_all, i, j, node, rows, x, y)
-from sympy.assumptions.satask import satask
+from sympy.assumptions.satask import get_relevant_clsfacts, satask
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.containers import Tuple
@@ -22,6 +22,7 @@ from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.numbers import ImaginaryUnit, Integer, Rational, nan, oo, pi
+from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.trigonometric import cos, sin
@@ -322,9 +323,12 @@ def test_relations_in_rows():
     assert nargs(row) == 3
     assert node(Q.eq(base, -1) >> Q.positive(f(base, exponent))) == f(base, exponent)
     assert node(Q.eq(Rational(1, 2), base) >> Q.positive(f(base, exponent))) == f(base, exponent)
-    raises(ValueError, lambda: node(Q.ne(i, j) >> Q.positive(f(x, i, j))))
+    assert node(Q.ne(i, j) >> Q.positive(f(x, i, j))) == f(x, i, j)
+    assert node(Q.ne(base, 1) >> Q.positive(f(base, exponent))) == f(base, exponent)
     raises(ValueError, lambda: node(Q.gt(i, j) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.eq(i, i) >> Q.positive(f(x, i, j))))
+    raises(ValueError, lambda: node(Q.ne(i, i) >> Q.positive(f(x, i, j))))
+    raises(ValueError, lambda: node(Q.ne(1, 2) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.eq(1, 2) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.eq(i, a) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.eq(i, pi) >> Q.positive(f(x, i, j))))
@@ -345,6 +349,13 @@ def test_relations_compiled():
     assert type(number[0][1][0]) is int and type(number[0][1][1]) is not int
     assert _render(number) == (
         '((Q.eq, (0, Integer(-1)), False), (Q.even, 1, False), (Q.positive, EXPR, True))')
+    # Q.ne is the negation of Q.eq
+    assert clauses((Q.ne(base, -1) & Q.even(exponent)) >> Q.positive(f(base, exponent))) == [
+        ((Q.eq, (0, Integer(-1)), True), (Q.even, 1, False), (Q.positive, -1, True))]
+    assert clauses(Q.ne(i, j) >> Q.positive(f(x, i, j))) == clauses(
+        ~Q.eq(i, j) >> Q.positive(f(x, i, j)))
+    assert ways(Q.ne(rows, columns) >> ~Q.symmetric(f(x, rows, columns))) == {
+        Q.symmetric: {(False, ((Q.eq, (1, 2), False),))}}
     other, = clauses(Q.eq(Rational(1, 2), base) >> Q.positive(f(base, exponent)))
     assert _render(other) == '((Q.eq, (Rational(1, 2), 0), False), (Q.positive, EXPR, True))'
     assert ((Q.positive_definite, 0, False), (Q.eq, (1, 2), False), (Q.positive, -1, True)
@@ -413,6 +424,52 @@ def test_relations_evaluated():
         assert ask(Q.zero(node(a, b)), Q.eq(b, -1)) is None
     finally:
         del rules[node, 2]
+
+
+def test_relations_decided_once():
+    n = Symbol('n')
+    query = compiled_rules._Query(Q.integer(n), (-1)**n)
+    assert query.ask_about(Q.odd, (-1)**n) is True
+    slots = [slot for slot, _, _ in compiled_rules._ways(Pow, 2, Q.odd)[4]]
+    truths = dict(zip(slots, query.truths[(-1)**n]))
+    assert truths[0, Integer(-1)] is True
+    assert truths[0, Integer(1)] is False
+    assert truths[1, Integer(1)] is None
+    _, plain, related, decided, _ = compiled_rules._ways(Pow, 2, Q.odd)
+    assert (True, ((Q.integer, 1, True),)) in compiled_rules._decided_ways(
+        related, query.truths[(-1)**n])
+    assert (True, ((Q.integer, 1, True),)) not in plain
+    # the conditions between two arguments are found only when the other
+    # ways give no answer
+    query = compiled_rules._Query(Q.odd(a) & Q.integer(b) & Q.nonnegative(b))
+    assert query.ask_about(Q.odd, a**b) is True
+    assert a**b not in query.truths
+
+    query = compiled_rules._Query(Q.integer(a) & Q.integer(b))
+    assert query.ask_about(Q.odd, a**b) is None
+    assert set(query.truths[a**b]) == {None}
+    assert decided[query.truths[a**b]] == ()
+
+    query = compiled_rules._Query(Q.integer(a) & Q.integer(b) & Q.ne(b, 1))
+    assert query.ask_about(Q.prime, a**b) is False
+    assert dict(zip(slots, query.truths[a**b]))[1, Integer(1)] is False
+
+
+def test_relations_kept_in_satask():
+    eq = Q.eq(a, Integer(1))
+    facts = lambda relations: {literal.lit for clause in get_relevant_clsfacts(
+        {a**b}, relations=relations)[1].clauses for literal in clause}
+    assert eq not in facts(set())
+    assert eq not in facts({(Q.eq, a, c)})
+    assert eq in facts({(Q.eq, a, Integer(1))})
+    assert eq in facts({(Q.ne, Integer(1), a)})
+    assert Q.ne(a, Integer(1)) in facts({(Q.eq, Integer(1), a)})
+    assert satask(Q.rational(a**b), Q.rational(b) & Q.eq(a, 1)) is True
+    assert satask(Q.rational(a**b), Q.rational(b) & Q.eq(1, a)) is True
+    assert satask(Q.rational(a**b), Q.rational(b) & ~Q.ne(a, 1)) is True
+    assert satask(Q.rational(a**b), Q.rational(b)) is None
+    assert satask(Q.eq(a, 1), Q.integer(b) & Q.even(a**b)) is False
+    assert satask(Q.prime(a**b), Q.integer(a) & Q.integer(b) & Q.ne(b, 1)) is False
 
 
 def test_relations_in_satask():

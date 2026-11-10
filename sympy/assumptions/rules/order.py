@@ -131,6 +131,11 @@ RULES = (
     for_all((Pow,),
         Q.zero(exponent) >> Q.positive(f(base, exponent))),
 
+    # One to a finite power is positive
+    #     it is 1, and 1**oo is nan
+    for_all((Pow,),
+        (Q.eq(base, 1) & Q.finite(exponent)) >> Q.positive(f(base, exponent))),
+
     # A positive number to a real power is positive
     for_all((Pow,),
         (Q.positive(base) & Q.real(exponent)) >> Q.positive(f(base, exponent))),
