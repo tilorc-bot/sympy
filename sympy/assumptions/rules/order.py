@@ -15,9 +15,10 @@ from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.trigonometric import acos, acot, asin, atan
 from sympy.logic.boolalg import Equivalent
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.matrices.expressions.trace import Trace
 
-from .language import base, closed, exponent, f, for_all, x, y
+from .language import base, closed, exponent, f, for_all, i, j, x, y
 
 RULES = (
     # --- any expression ---
@@ -254,4 +255,11 @@ RULES = (
     #     the eigenvalues are positive
     for_all((Determinant, Trace),
         Q.positive_definite(x) >> Q.positive(f(x))),
+
+    # --- MatrixElement ---
+
+    # The diagonal entries of a positive definite matrix are positive
+    #     the entry X[i, i] is e.T*X*e for the unit vector e of the index i
+    for_all((MatrixElement,),
+        (Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j))),
 )

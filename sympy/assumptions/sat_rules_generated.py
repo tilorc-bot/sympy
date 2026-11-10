@@ -23,19 +23,24 @@ from sympy.functions.elementary.trigonometric import cos
 from sympy.functions.elementary.trigonometric import cot
 from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import tan
+from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 from sympy.matrices.expressions.determinant import Determinant
 from sympy.matrices.expressions.hadamard import HadamardProduct
 from sympy.matrices.expressions.inverse import Inverse
 from sympy.matrices.expressions.matadd import MatAdd
+from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.matrices.expressions.matmul import MatMul
 from sympy.matrices.expressions.matpow import MatPow
+from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.expressions.trace import Trace
 from sympy.matrices.expressions.transpose import Transpose
 
 # A literal ``(predicate, slot, value)`` says that the predicate has the truth
 # value ``value`` for an expression: the argument number ``slot`` of the
 # expression which a rule is about, or that expression itself for the slot
-# ``EXPR``. A sum or a product is read as its first argument and the rest.
+# ``EXPR``. A sum, a product and a block diagonal matrix are read as their
+# first argument and the rest. A literal ``(Q.eq, (a, b), value)`` is about
+# two arguments: ``a`` and ``b`` are slots, or one of them is a number.
 EXPR = -1
 
 # For each class and number of arguments, the clauses which hold for every
@@ -191,6 +196,38 @@ SAT_RULES = {
         ((Q.real, 0, False), (Q.zero, 0, True), (Q.imaginary, 1, False), (Q.imaginary, EXPR, False)),
         # Implies(Q.imaginary(x) & Q.real(y) & ~Q.zero(y), ~Q.imaginary(f(x, y)))
         ((Q.imaginary, 0, False), (Q.real, 1, False), (Q.zero, 1, True), (Q.imaginary, EXPR, False)),
+    ),
+    (BlockDiagMatrix, 1): (
+        # Equivalent(Q.invertible(x), Q.invertible(f(x)))
+        ((Q.invertible, 0, False), (Q.invertible, EXPR, True)),
+        ((Q.invertible, 0, True), (Q.invertible, EXPR, False)),
+        # Equivalent(Q.integer_elements(x), Q.integer_elements(f(x)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, EXPR, True)),
+        ((Q.integer_elements, 0, True), (Q.integer_elements, EXPR, False)),
+        # Equivalent(Q.real_elements(x), Q.real_elements(f(x)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        ((Q.real_elements, 0, True), (Q.real_elements, EXPR, False)),
+        # Equivalent(Q.complex_elements(x), Q.complex_elements(f(x)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
+        ((Q.complex_elements, 0, True), (Q.complex_elements, EXPR, False)),
+    ),
+    (BlockDiagMatrix, 2): (
+        # Equivalent(Q.invertible(f(x, y)), Q.invertible(x) & Q.invertible(y))
+        ((Q.invertible, 0, False), (Q.invertible, 1, False), (Q.invertible, EXPR, True)),
+        ((Q.invertible, 0, True), (Q.invertible, EXPR, False)),
+        ((Q.invertible, 1, True), (Q.invertible, EXPR, False)),
+        # Equivalent(Q.integer_elements(f(x, y)), Q.integer_elements(x) & Q.integer_elements(y))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, 1, False), (Q.integer_elements, EXPR, True)),
+        ((Q.integer_elements, 0, True), (Q.integer_elements, EXPR, False)),
+        ((Q.integer_elements, 1, True), (Q.integer_elements, EXPR, False)),
+        # Equivalent(Q.real_elements(f(x, y)), Q.real_elements(x) & Q.real_elements(y))
+        ((Q.real_elements, 0, False), (Q.real_elements, 1, False), (Q.real_elements, EXPR, True)),
+        ((Q.real_elements, 0, True), (Q.real_elements, EXPR, False)),
+        ((Q.real_elements, 1, True), (Q.real_elements, EXPR, False)),
+        # Equivalent(Q.complex_elements(f(x, y)), Q.complex_elements(x) & Q.complex_elements(y))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, 1, False), (Q.complex_elements, EXPR, True)),
+        ((Q.complex_elements, 0, True), (Q.complex_elements, EXPR, False)),
+        ((Q.complex_elements, 1, True), (Q.complex_elements, EXPR, False)),
     ),
     (Determinant, 1): (
         # Implies(Q.integer_elements(x), Q.integer_elements(f(x)))
@@ -356,6 +393,30 @@ SAT_RULES = {
         ((Q.complex_elements, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.complex_elements, EXPR, True)),
         # Implies(Q.integer_elements(base) & Q.integer(exponent) & ~Q.negative(exponent), Q.integer_elements(f(base, exponent)))
         ((Q.integer_elements, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.integer_elements, EXPR, True)),
+    ),
+    (MatrixElement, 3): (
+        # Implies(Q.positive_definite(x) & Q.eq(i, j), Q.positive(f(x, i, j)))
+        ((Q.positive_definite, 0, False), (Q.eq, (1, 2), False), (Q.positive, EXPR, True)),
+        # Implies(Q.integer_elements(x), Q.integer(f(x, i, j)))
+        ((Q.integer_elements, 0, False), (Q.integer, EXPR, True)),
+        # Implies(Q.real_elements(x), Q.real(f(x, i, j)))
+        ((Q.real_elements, 0, False), (Q.real, EXPR, True)),
+        # Implies(Q.complex_elements(x), Q.complex(f(x, i, j)))
+        ((Q.complex_elements, 0, False), (Q.complex, EXPR, True)),
+    ),
+    (MatrixSlice, 3): (
+        # Implies(Q.symmetric(x) & Q.eq(rows, columns), Q.symmetric(f(x, rows, columns)))
+        ((Q.symmetric, 0, False), (Q.eq, (1, 2), False), (Q.symmetric, EXPR, True)),
+        # Implies(Q.diagonal(x) & Q.eq(rows, columns), Q.diagonal(f(x, rows, columns)))
+        ((Q.diagonal, 0, False), (Q.eq, (1, 2), False), (Q.diagonal, EXPR, True)),
+        # Implies(Q.positive_definite(x) & Q.eq(rows, columns), Q.positive_definite(f(x, rows, columns)))
+        ((Q.positive_definite, 0, False), (Q.eq, (1, 2), False), (Q.positive_definite, EXPR, True)),
+        # Implies(Q.integer_elements(x), Q.integer_elements(f(x, rows, columns)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x), Q.real_elements(f(x, rows, columns)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x), Q.complex_elements(f(x, rows, columns)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
     ),
     (Mul, 2): (
         # Implies(Q.finite(x) & Q.finite(y), Q.finite(f(x, y)))

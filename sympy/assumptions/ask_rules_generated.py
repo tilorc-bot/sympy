@@ -25,20 +25,26 @@ from sympy.functions.elementary.trigonometric import cos
 from sympy.functions.elementary.trigonometric import cot
 from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import tan
+from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 from sympy.matrices.expressions.determinant import Determinant
 from sympy.matrices.expressions.hadamard import HadamardProduct
 from sympy.matrices.expressions.inverse import Inverse
 from sympy.matrices.expressions.matadd import MatAdd
+from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.matrices.expressions.matmul import MatMul
 from sympy.matrices.expressions.matpow import MatPow
+from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.expressions.trace import Trace
 from sympy.matrices.expressions.transpose import Transpose
 
 # A condition ``(predicate, slot, value)`` holds when asking the predicate
 # about an expression gives ``value``. The expression is the argument number
 # ``slot`` of the expression which a rule is about, or that expression itself
-# for the slot ``EXPR``. A sum or a product is read as its first argument and
-# the rest.
+# for the slot ``EXPR``. A sum, a product and a block diagonal matrix are read
+# as their first argument and the rest. A condition ``(Q.eq, (a, b), value)``
+# holds when it is found that the arguments of the slots ``a`` and ``b`` are
+# equal, or not equal for the value ``False``. One of ``a`` and ``b`` can be
+# a number instead of a slot.
 EXPR = -1
 
 # For each class and number of arguments, the ways to find the truth value of
@@ -202,6 +208,46 @@ ASK_RULES = {
         Q.odd: (
             (True, ((Q.even, EXPR, False), (Q.integer, EXPR, True))),
             (False, ((Q.integer, EXPR, False),)),
+        ),
+    },
+    (BlockDiagMatrix, 1): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+            (False, ((Q.complex_elements, 0, False),)),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True),)),
+            (False, ((Q.integer_elements, 0, False),)),
+        ),
+        Q.invertible: (
+            (True, ((Q.invertible, 0, True),)),
+            (False, ((Q.invertible, 0, False),)),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+            (False, ((Q.real_elements, 0, False),)),
+        ),
+    },
+    (BlockDiagMatrix, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True), (Q.complex_elements, 1, True))),
+            (False, ((Q.complex_elements, 0, False),)),
+            (False, ((Q.complex_elements, 1, False),)),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True), (Q.integer_elements, 1, True))),
+            (False, ((Q.integer_elements, 0, False),)),
+            (False, ((Q.integer_elements, 1, False),)),
+        ),
+        Q.invertible: (
+            (True, ((Q.invertible, 0, True), (Q.invertible, 1, True))),
+            (False, ((Q.invertible, 0, False),)),
+            (False, ((Q.invertible, 1, False),)),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True), (Q.real_elements, 1, True))),
+            (False, ((Q.real_elements, 0, False),)),
+            (False, ((Q.real_elements, 1, False),)),
         ),
     },
     (Determinant, 1): {
@@ -445,6 +491,40 @@ ASK_RULES = {
         Q.upper_triangular: (
             (True, ((Q.invertible, 0, True), (Q.upper_triangular, 0, True), (Q.integer, 1, True))),
             (True, ((Q.upper_triangular, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+    },
+    (MatrixElement, 3): {
+        Q.complex: (
+            (True, ((Q.complex_elements, 0, True),)),
+        ),
+        Q.integer: (
+            (True, ((Q.integer_elements, 0, True),)),
+        ),
+        Q.positive: (
+            (True, ((Q.positive_definite, 0, True), (Q.eq, (1, 2), True))),
+        ),
+        Q.real: (
+            (True, ((Q.real_elements, 0, True),)),
+        ),
+    },
+    (MatrixSlice, 3): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+        ),
+        Q.diagonal: (
+            (True, ((Q.diagonal, 0, True), (Q.eq, (1, 2), True))),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True),)),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive_definite, 0, True), (Q.eq, (1, 2), True))),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+        ),
+        Q.symmetric: (
+            (True, ((Q.symmetric, 0, True), (Q.eq, (1, 2), True))),
         ),
     },
     (Mul, 2): {

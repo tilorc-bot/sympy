@@ -5,7 +5,9 @@ query is answered with them.
 A rule is written about a generic expression ``f(x)`` or ``f(x, y)``. In
 its compiled form it refers to the expressions it is about by *slots*:
 slot ``i`` is the ``i``-th of the :func:`rule_arguments` of an expression,
-and slot ``-1`` is the expression itself.
+and slot ``-1`` is the expression itself. A condition between two arguments,
+``(Q.eq, (a, b), value)``, has a pair of slots in place of one, and one of
+them can be a number. It is decided as :data:`RELATIONS` says.
 
 There are two compiled forms. :func:`sat_rules` gives the rules as clauses
 for :func:`~sympy.assumptions.satask.satask`. :func:`ask_rules` gives them
@@ -24,13 +26,17 @@ from sympy.assumptions.cnf import CNF
 from sympy.assumptions.sat_rules_generated import SAT_RULES
 from sympy.core.add import Add
 from sympy.core.basic import Basic
+from sympy.core.containers import Tuple
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
+from sympy.core.numbers import Rational
+from sympy.core.operations import AssocOp
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.logic.boolalg import And, Not
+from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 
-FIRST_AND_REST = (Add, Mul)
+FIRST_AND_REST = (Add, Mul, BlockDiagMatrix)
 
 # The predicates which :func:`evaluate` uses the compiled rules for. The
 # others still have hand-written handlers for the classes of the rules.
@@ -56,6 +62,54 @@ _symbols_unknown: dict = {}
 _local = threading.local()
 
 
+def equal(a, b):
+    """
+    Whether *a* and *b* are equal, as far as it is seen from their form, or
+    ``None``.
+
+    Explanation
+    ===========
+
+    They are equal if they are the same expression, other than ``nan``, and
+    not equal if they are different rational numbers or tuples of rational
+    numbers, such as the ranges of a matrix slice. No expression is built.
+
+    Examples
+    ========
+
+    >>> from sympy import S, Tuple
+    >>> from sympy.abc import i, j
+    >>> from sympy.assumptions.compiled_rules import equal
+    >>> equal(i, i), equal(S(1), S(2)), equal(Tuple(0, 2, 1), Tuple(0, 3, 1))
+    (True, False, False)
+    >>> print(equal(i, j), equal(i, S(1)))
+    None None
+
+    """
+    if a == b:
+        return None if a is S.NaN else True
+    if _explicit(a) and _explicit(b):
+        return False
+    return None
+
+
+def _explicit(a):
+    return isinstance(a, Rational) or (
+        isinstance(a, Tuple) and all(isinstance(e, Rational) for e in a.args))
+
+
+# For each predicate of two arguments which a rule can have as a condition:
+# the function which decides it from the arguments alone, and the
+# assumptions which decide it, as triples ``(assumed, swapped, same)``. The
+# condition about ``(a, b)`` has the truth value of ``assumed(a, b)``, or of
+# ``assumed(b, a)`` if ``swapped``, if ``same``, and the opposite truth value
+# otherwise.
+RELATIONS = {
+    Q.eq: (equal, ((Q.eq, False, True), (Q.eq, True, True),
+                   (Q.ne, False, False), (Q.ne, True, False))),
+}
+
+
 def rule_arguments(expr):
     """
     The expressions which the slots of a rule about *expr* stand for.
@@ -79,10 +133,14 @@ def rule_arguments(expr):
     >>> rule_arguments(x*y*z)
     (x, y*z)
 
+    A block diagonal matrix is read in the same way.
+
     """
     args = expr.args
     if len(args) > 2 and isinstance(expr, FIRST_AND_REST):
-        return (args[0], expr._from_args(args[1:]))
+        if isinstance(expr, AssocOp):
+            return (args[0], expr._from_args(args[1:]))
+        return (args[0], expr.func(*args[1:]))
     return args
 
 
@@ -107,13 +165,37 @@ def sat_rules(cls, nargs):
     True
 
     """
+    return _clauses(cls, nargs)[0]
+
+
+def split_sat_rules(cls, nargs):
+    """
+    The clauses of :func:`sat_rules`, as two tuples: those without
+    conditions between two arguments, and those with such conditions.
+    """
+    return _clauses(cls, nargs)[1:]
+
+
+def _clauses(cls, nargs):
+    """
+    The clauses of :func:`sat_rules`, those of them without conditions
+    between two arguments, and the others.
+    """
     key = (cls, nargs)
-    rules = _sat_rules.get(key)
-    if rules is None:
-        rules = _sat_rules[key] = tuple(
+    entry = _sat_rules.get(key)
+    if entry is None:
+        rules = tuple(
             clause for base in cls.__mro__ for number in (nargs, None)
             for clause in SAT_RULES.get((base, number), ()))
-    return rules
+        plain = []
+        related = []
+        for clause in rules:
+            if any(type(slot) is tuple for _, slot, _ in clause):
+                related.append(clause)
+            else:
+                plain.append(clause)
+        entry = _sat_rules[key] = (rules, tuple(plain), tuple(related))
+    return entry
 
 
 def ask_rules(cls, nargs, predicate):
@@ -147,9 +229,18 @@ def ask_rules(cls, nargs, predicate):
     True
 
     """
+    return _ways(cls, nargs, predicate)[0]
+
+
+def _ways(cls, nargs, predicate):
+    """
+    The ways of :func:`ask_rules`, those of them without conditions between
+    two arguments, and the others as triples ``(answer, relations,
+    conditions)``, with the conditions between two arguments apart.
+    """
     key = (cls, nargs, predicate)
-    rules = _ask_rules.get(key)
-    if rules is None:
+    entry = _ask_rules.get(key)
+    if entry is None:
         found = []
         for base in cls.__mro__:
             ways = ASK_RULES.get((base, nargs))
@@ -162,8 +253,18 @@ def ask_rules(cls, nargs, predicate):
             (base, nargs) in ASK_RULES for base in cls.__mro__))
         for base in cls.__mro__:
             found.extend(ASK_RULES.get((base, None), {}).get(predicate, ()))
-        rules = _ask_rules[key] = tuple(dict.fromkeys(found))
-    return rules
+        rules = tuple(dict.fromkeys(found))
+        plain = []
+        related = []
+        for answer, conditions in rules:
+            relations = tuple(c for c in conditions if type(c[1]) is tuple)
+            if relations:
+                related.append((answer, relations, tuple(
+                    c for c in conditions if type(c[1]) is not tuple)))
+            else:
+                plain.append((answer, conditions))
+        entry = _ask_rules[key] = (rules, tuple(plain), tuple(related))
+    return entry
 
 
 def _deciders(predicate):
@@ -247,7 +348,7 @@ class _Query:
     What is found while one query is answered.
     """
     __slots__ = ('assumptions', 'asked', 'assumed', 'answers', 'asking',
-                 'lowest', 'slots', 'plain', 'unknown')
+                 'lowest', 'slots', 'plain', 'unknown', 'relations')
 
     def __init__(self, assumptions, asked=None):
         self.assumptions = assumptions
@@ -265,6 +366,7 @@ class _Query:
         # kept only if it is an answer.
         self.asking = {}
         self.lowest = 0
+        self.relations = None
 
     def ask(self, predicate, args):
         if len(args) != 1:
@@ -308,9 +410,10 @@ class _Query:
         if slots is None:
             slots = self.slots[expr] = rule_arguments(expr)
         key = (cls, len(slots), predicate)
-        rules = _ask_rules.get(key)
-        if rules is None:
-            rules = ask_rules(*key)
+        entry = _ask_rules.get(key)
+        if entry is None:
+            entry = _ways(*key)
+        _, rules, related = entry
         # An atom, a number inside the expression which is asked about, and
         # an expression of a class without rules are read from their old
         # assumptions. A handler is used if it is registered for the class
@@ -326,8 +429,12 @@ class _Query:
             result = _handled_answer(predicate, expr, self.assumptions)
             if result is not None:
                 return result
-        if rules:
+        if rules or related:
             targets = (*slots, expr)
+            if related:
+                rules = (*((answer, conditions) for answer, relations, conditions in related
+                           if all(self.relation(relation, pair, targets) is value
+                                  for relation, pair, value in relations)), *rules)
             ask_about = self.ask_about
             plain = self.plain
             unknown = self.unknown
@@ -350,6 +457,24 @@ class _Query:
                         break
                 else:
                     return answer
+
+    def relation(self, predicate, pair, targets):
+        """
+        The truth value of the condition *predicate* between the arguments of
+        the slots *pair*, from their form or from the assumptions.
+        """
+        a, b = (targets[slot] if type(slot) is int else slot for slot in pair)
+        decide, deciders = RELATIONS[predicate]
+        result = decide(a, b)
+        if result is None:
+            relations = self.relations
+            if relations is None:
+                relations = self.relations = _relation_assumptions(self.assumptions)
+            for assumed, swapped, same in deciders:
+                value = relations.get((assumed, b, a) if swapped else (assumed, a, b))
+                if value is not None:
+                    return value is same
+        return result
 
     def _assumed(self, predicate, expr):
         literals = self.assumed.get(expr)
@@ -420,25 +545,45 @@ def _unit_assumptions(assumptions):
     of one: ``{expression: [(predicate, value), ...]}``.
     """
     units: dict = {}
-    if assumptions is True or assumptions is S.true:
-        return units
-    literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
-    for literal in literals:
-        value = not isinstance(literal, Not)
-        atom = literal if value else literal.args[0]
-        if not isinstance(atom, AppliedPredicate):
-            return _unit_clauses(assumptions)
+    for atom, value in _unit_literals(assumptions):
         if len(atom.arguments) == 1:
             units.setdefault(atom.arg, []).append((atom.function, value))
     return units
 
 
+def _relation_assumptions(assumptions):
+    """
+    The assumptions which are a predicate of two expressions or the negation
+    of one: ``{(predicate, a, b): value}``.
+    """
+    return {(atom.function, *atom.arguments): value
+            for atom, value in _unit_literals(assumptions)
+            if len(atom.arguments) == 2}
+
+
+def _unit_literals(assumptions):
+    """
+    The assumptions which are a predicate or the negation of one, as pairs
+    ``(applied predicate, value)``.
+    """
+    if assumptions is True or assumptions is S.true:
+        return ()
+    literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
+    found = []
+    for literal in literals:
+        value = not isinstance(literal, Not)
+        atom = literal if value else literal.args[0]
+        if not isinstance(atom, AppliedPredicate):
+            return _unit_clauses(assumptions)
+        found.append((atom, value))
+    return found
+
+
 def _unit_clauses(assumptions):
-    units: dict = {}
+    found = []
     for clause in CNF.from_prop(assumptions).clauses:
         if len(clause) == 1:
             literal, = clause
-            atom = literal.lit
-            if isinstance(atom, AppliedPredicate) and len(atom.arguments) == 1:
-                units.setdefault(atom.arg, []).append((atom.function, not literal.is_Not))
-    return units
+            if isinstance(literal.lit, AppliedPredicate):
+                found.append((literal.lit, not literal.is_Not))
+    return found

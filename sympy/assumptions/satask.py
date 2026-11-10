@@ -10,7 +10,7 @@ from sympy.core.numbers import ImaginaryUnit, Number, NumberSymbol
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.compiled_rules import rule_arguments, sat_rules
+from sympy.assumptions.compiled_rules import RELATIONS, rule_arguments, split_sat_rules
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
@@ -176,6 +176,11 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     rules in ``assumptions.rules`` package, in their compiled form, and from
     the numbers among *exprs* themselves.
 
+    A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
+    decided from the form of the arguments if it can be. Otherwise it is
+    kept as a predicate of the two, which is linked to the predicates which
+    decide it in another way, such as ``Q.eq(j, i)`` and ``Q.ne(i, j)``.
+
     This function is recursively called by ``get_all_relevant_facts()``.
 
     Parameters
@@ -237,13 +242,15 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     newexprs = set()
     for expr in exprs:
         args = rule_arguments(expr)
-        rules = sat_rules(type(expr), len(args))
-        if rules:
+        rules, related = split_sat_rules(type(expr), len(args))
+        if rules or related:
             targets = (*args, expr)
             relevant_facts.clauses.update(
                 frozenset(Literal(predicate(targets[slot]), not value)
                           for predicate, slot, value in clause)
                 for clause in rules)
+            if related:
+                relevant_facts.clauses.update(_related_clauses(related, targets))
             newexprs.update(args)
         if isinstance(expr, (Number, NumberSymbol, ImaginaryUnit)):
             for predicate, name in _number_properties.items():
@@ -253,6 +260,32 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
                         frozenset((Literal(predicate(expr), not value),)))
 
     return newexprs - exprs, relevant_facts
+
+
+def _related_clauses(clauses, targets):
+    found = set()
+    for clause in clauses:
+        literals = []
+        for predicate, slot, value in clause:
+            if type(slot) is not tuple:
+                literals.append(Literal(predicate(targets[slot]), not value))
+                continue
+            a, b = (targets[s] if type(s) is int else s for s in slot)
+            decide, deciders = RELATIONS[predicate]
+            known = decide(a, b)
+            if known is value:
+                break
+            if known is None:
+                atom = predicate(a, b)
+                literals.append(Literal(atom, not value))
+                for assumed, swapped, same in deciders:
+                    other = assumed(b, a) if swapped else assumed(a, b)
+                    if other != atom:
+                        found.add(frozenset((Literal(atom, True), Literal(other, not same))))
+                        found.add(frozenset((Literal(atom, False), Literal(other, same))))
+        else:
+            found.add(frozenset(literals))
+    return found
 
 
 def get_all_relevant_facts(proposition, assumptions,
