@@ -24,8 +24,13 @@ from sympy.functions.elementary.trigonometric import cot
 from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import tan
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.hadamard import HadamardProduct
+from sympy.matrices.expressions.inverse import Inverse
+from sympy.matrices.expressions.matadd import MatAdd
 from sympy.matrices.expressions.matmul import MatMul
+from sympy.matrices.expressions.matpow import MatPow
 from sympy.matrices.expressions.trace import Trace
+from sympy.matrices.expressions.transpose import Transpose
 
 # A literal ``(predicate, slot, value)`` says that the predicate has the truth
 # value ``value`` for an expression: the argument number ``slot`` of the
@@ -188,6 +193,12 @@ SAT_RULES = {
         ((Q.imaginary, 0, False), (Q.real, 1, False), (Q.zero, 1, True), (Q.imaginary, EXPR, False)),
     ),
     (Determinant, 1): (
+        # Implies(Q.integer_elements(x), Q.integer_elements(f(x)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x), Q.real_elements(f(x)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x), Q.complex_elements(f(x)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
         # Implies(Q.positive_definite(x), Q.positive(f(x)))
         ((Q.positive_definite, 0, False), (Q.positive, EXPR, True)),
         # Implies(Q.integer_elements(x), Q.integer(f(x)))
@@ -197,11 +208,154 @@ SAT_RULES = {
         # Implies(Q.complex_elements(x), Q.complex(f(x)))
         ((Q.complex_elements, 0, False), (Q.complex, EXPR, True)),
     ),
+    (HadamardProduct, 2): (
+        # Implies(Q.integer_elements(x) & Q.integer_elements(y), Q.integer_elements(f(x, y)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, 1, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x) & Q.real_elements(y), Q.real_elements(f(x, y)))
+        ((Q.real_elements, 0, False), (Q.real_elements, 1, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x) & Q.complex_elements(y), Q.complex_elements(f(x, y)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, 1, False), (Q.complex_elements, EXPR, True)),
+    ),
+    (Inverse, 2): (
+        # Q.invertible(f(base, exponent))
+        ((Q.invertible, EXPR, True),),
+        # Equivalent(Q.symmetric(base), Q.symmetric(f(base, exponent)))
+        ((Q.symmetric, 0, False), (Q.symmetric, EXPR, True)),
+        ((Q.symmetric, 0, True), (Q.symmetric, EXPR, False)),
+        # Equivalent(Q.orthogonal(base), Q.orthogonal(f(base, exponent)))
+        ((Q.orthogonal, 0, False), (Q.orthogonal, EXPR, True)),
+        ((Q.orthogonal, 0, True), (Q.orthogonal, EXPR, False)),
+        # Equivalent(Q.unitary(base), Q.unitary(f(base, exponent)))
+        ((Q.unitary, 0, False), (Q.unitary, EXPR, True)),
+        ((Q.unitary, 0, True), (Q.unitary, EXPR, False)),
+        # Equivalent(Q.positive_definite(base), Q.positive_definite(f(base, exponent)))
+        ((Q.positive_definite, 0, False), (Q.positive_definite, EXPR, True)),
+        ((Q.positive_definite, 0, True), (Q.positive_definite, EXPR, False)),
+        # Equivalent(Q.upper_triangular(base), Q.upper_triangular(f(base, exponent)))
+        ((Q.upper_triangular, 0, False), (Q.upper_triangular, EXPR, True)),
+        ((Q.upper_triangular, 0, True), (Q.upper_triangular, EXPR, False)),
+        # Equivalent(Q.lower_triangular(base), Q.lower_triangular(f(base, exponent)))
+        ((Q.lower_triangular, 0, False), (Q.lower_triangular, EXPR, True)),
+        ((Q.lower_triangular, 0, True), (Q.lower_triangular, EXPR, False)),
+        # Equivalent(Q.diagonal(base), Q.diagonal(f(base, exponent)))
+        ((Q.diagonal, 0, False), (Q.diagonal, EXPR, True)),
+        ((Q.diagonal, 0, True), (Q.diagonal, EXPR, False)),
+        # Implies(Q.real_elements(base), Q.real_elements(f(base, exponent)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(base), Q.complex_elements(f(base, exponent)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
+    ),
+    (MatAdd, 2): (
+        # Implies(Q.symmetric(x) & Q.symmetric(y), Q.symmetric(f(x, y)))
+        ((Q.symmetric, 0, False), (Q.symmetric, 1, False), (Q.symmetric, EXPR, True)),
+        # Implies(Q.positive_definite(x) & Q.positive_definite(y), Q.positive_definite(f(x, y)))
+        ((Q.positive_definite, 0, False), (Q.positive_definite, 1, False), (Q.positive_definite, EXPR, True)),
+        # Implies(Q.upper_triangular(x) & Q.upper_triangular(y), Q.upper_triangular(f(x, y)))
+        ((Q.upper_triangular, 0, False), (Q.upper_triangular, 1, False), (Q.upper_triangular, EXPR, True)),
+        # Implies(Q.lower_triangular(x) & Q.lower_triangular(y), Q.lower_triangular(f(x, y)))
+        ((Q.lower_triangular, 0, False), (Q.lower_triangular, 1, False), (Q.lower_triangular, EXPR, True)),
+        # Implies(Q.diagonal(x) & Q.diagonal(y), Q.diagonal(f(x, y)))
+        ((Q.diagonal, 0, False), (Q.diagonal, 1, False), (Q.diagonal, EXPR, True)),
+        # Implies(Q.symmetric(x) & ~Q.symmetric(y), ~Q.symmetric(f(x, y)))
+        ((Q.symmetric, 0, False), (Q.symmetric, 1, True), (Q.symmetric, EXPR, False)),
+        # Implies(Q.symmetric(y) & ~Q.symmetric(x), ~Q.symmetric(f(x, y)))
+        ((Q.symmetric, 0, True), (Q.symmetric, 1, False), (Q.symmetric, EXPR, False)),
+        # Implies(Q.upper_triangular(x) & ~Q.upper_triangular(y), ~Q.upper_triangular(f(x, y)))
+        ((Q.upper_triangular, 0, False), (Q.upper_triangular, 1, True), (Q.upper_triangular, EXPR, False)),
+        # Implies(Q.upper_triangular(y) & ~Q.upper_triangular(x), ~Q.upper_triangular(f(x, y)))
+        ((Q.upper_triangular, 0, True), (Q.upper_triangular, 1, False), (Q.upper_triangular, EXPR, False)),
+        # Implies(Q.lower_triangular(x) & ~Q.lower_triangular(y), ~Q.lower_triangular(f(x, y)))
+        ((Q.lower_triangular, 0, False), (Q.lower_triangular, 1, True), (Q.lower_triangular, EXPR, False)),
+        # Implies(Q.lower_triangular(y) & ~Q.lower_triangular(x), ~Q.lower_triangular(f(x, y)))
+        ((Q.lower_triangular, 0, True), (Q.lower_triangular, 1, False), (Q.lower_triangular, EXPR, False)),
+        # Implies(Q.diagonal(x) & ~Q.diagonal(y), ~Q.diagonal(f(x, y)))
+        ((Q.diagonal, 0, False), (Q.diagonal, 1, True), (Q.diagonal, EXPR, False)),
+        # Implies(Q.diagonal(y) & ~Q.diagonal(x), ~Q.diagonal(f(x, y)))
+        ((Q.diagonal, 0, True), (Q.diagonal, 1, False), (Q.diagonal, EXPR, False)),
+        # Implies(Q.integer_elements(x) & Q.integer_elements(y), Q.integer_elements(f(x, y)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, 1, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x) & Q.real_elements(y), Q.real_elements(f(x, y)))
+        ((Q.real_elements, 0, False), (Q.real_elements, 1, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x) & Q.complex_elements(y), Q.complex_elements(f(x, y)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, 1, False), (Q.complex_elements, EXPR, True)),
+    ),
     (MatMul, 2): (
         # Implies(Q.square(x) & Q.square(y), Equivalent(Q.invertible(f(x, y)), Q.invertible(x) & Q.invertible(y)))
         ((Q.invertible, 0, False), (Q.square, 0, False), (Q.invertible, 1, False), (Q.square, 1, False), (Q.invertible, EXPR, True)),
         ((Q.invertible, 0, True), (Q.square, 0, False), (Q.square, 1, False), (Q.invertible, EXPR, False)),
         ((Q.square, 0, False), (Q.invertible, 1, True), (Q.square, 1, False), (Q.invertible, EXPR, False)),
+        # Implies(Q.complex(x) & Q.invertible(y) & ~Q.zero(x), Q.invertible(f(x, y)))
+        ((Q.complex, 0, False), (Q.zero, 0, True), (Q.invertible, 1, False), (Q.invertible, EXPR, True)),
+        # Implies(Q.fullrank(x) & Q.fullrank(y) & Q.square(x), Q.fullrank(f(x, y)))
+        ((Q.fullrank, 0, False), (Q.square, 0, False), (Q.fullrank, 1, False), (Q.fullrank, EXPR, True)),
+        # Implies(Q.fullrank(x) & Q.fullrank(y) & Q.square(y), Q.fullrank(f(x, y)))
+        ((Q.fullrank, 0, False), (Q.fullrank, 1, False), (Q.square, 1, False), (Q.fullrank, EXPR, True)),
+        # Implies(Q.orthogonal(x) & Q.orthogonal(y), Q.orthogonal(f(x, y)))
+        ((Q.orthogonal, 0, False), (Q.orthogonal, 1, False), (Q.orthogonal, EXPR, True)),
+        # Implies(Q.unitary(x) & Q.unitary(y), Q.unitary(f(x, y)))
+        ((Q.unitary, 0, False), (Q.unitary, 1, False), (Q.unitary, EXPR, True)),
+        # Implies(Q.upper_triangular(x) & Q.upper_triangular(y), Q.upper_triangular(f(x, y)))
+        ((Q.upper_triangular, 0, False), (Q.upper_triangular, 1, False), (Q.upper_triangular, EXPR, True)),
+        # Implies(Q.lower_triangular(x) & Q.lower_triangular(y), Q.lower_triangular(f(x, y)))
+        ((Q.lower_triangular, 0, False), (Q.lower_triangular, 1, False), (Q.lower_triangular, EXPR, True)),
+        # Implies(Q.diagonal(x) & Q.diagonal(y), Q.diagonal(f(x, y)))
+        ((Q.diagonal, 0, False), (Q.diagonal, 1, False), (Q.diagonal, EXPR, True)),
+        # Implies(Q.complex(x) & Q.symmetric(y), Q.symmetric(f(x, y)))
+        ((Q.complex, 0, False), (Q.symmetric, 1, False), (Q.symmetric, EXPR, True)),
+        # Implies(Q.complex(x) & Q.upper_triangular(y), Q.upper_triangular(f(x, y)))
+        ((Q.complex, 0, False), (Q.upper_triangular, 1, False), (Q.upper_triangular, EXPR, True)),
+        # Implies(Q.complex(x) & Q.lower_triangular(y), Q.lower_triangular(f(x, y)))
+        ((Q.complex, 0, False), (Q.lower_triangular, 1, False), (Q.lower_triangular, EXPR, True)),
+        # Implies(Q.complex(x) & Q.diagonal(y), Q.diagonal(f(x, y)))
+        ((Q.complex, 0, False), (Q.diagonal, 1, False), (Q.diagonal, EXPR, True)),
+        # Implies(Q.positive_definite(y) & Q.positive(x), Q.positive_definite(f(x, y)))
+        ((Q.positive, 0, False), (Q.positive_definite, 1, False), (Q.positive_definite, EXPR, True)),
+        # Implies(Q.integer_elements(x) & Q.integer_elements(y), Q.integer_elements(f(x, y)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, 1, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x) & Q.real_elements(y), Q.real_elements(f(x, y)))
+        ((Q.real_elements, 0, False), (Q.real_elements, 1, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x) & Q.complex_elements(y), Q.complex_elements(f(x, y)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, 1, False), (Q.complex_elements, EXPR, True)),
+        # Implies(Q.integer_elements(y) & Q.integer(x), Q.integer_elements(f(x, y)))
+        ((Q.integer, 0, False), (Q.integer_elements, 1, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(y) & Q.real(x), Q.real_elements(f(x, y)))
+        ((Q.real, 0, False), (Q.real_elements, 1, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(y) & Q.complex(x), Q.complex_elements(f(x, y)))
+        ((Q.complex, 0, False), (Q.complex_elements, 1, False), (Q.complex_elements, EXPR, True)),
+    ),
+    (MatPow, 2): (
+        # Implies(Q.integer(exponent) & Q.invertible(base), Q.invertible(f(base, exponent)))
+        ((Q.invertible, 0, False), (Q.integer, 1, False), (Q.invertible, EXPR, True)),
+        # Implies(Q.fullrank(base) & Q.integer(exponent), Q.fullrank(f(base, exponent)))
+        ((Q.fullrank, 0, False), (Q.integer, 1, False), (Q.fullrank, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.positive(exponent) & ~Q.invertible(base), ~Q.invertible(f(base, exponent)))
+        ((Q.invertible, 0, True), (Q.integer, 1, False), (Q.positive, 1, False), (Q.invertible, EXPR, False)),
+        # Implies(Q.integer(exponent) & Q.orthogonal(base), Q.orthogonal(f(base, exponent)))
+        ((Q.orthogonal, 0, False), (Q.integer, 1, False), (Q.orthogonal, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.unitary(base), Q.unitary(f(base, exponent)))
+        ((Q.unitary, 0, False), (Q.integer, 1, False), (Q.unitary, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.positive_definite(base), Q.positive_definite(f(base, exponent)))
+        ((Q.positive_definite, 0, False), (Q.integer, 1, False), (Q.positive_definite, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.symmetric(base) & (Q.invertible(base) | ~Q.negative(exponent)), Q.symmetric(f(base, exponent)))
+        ((Q.invertible, 0, False), (Q.symmetric, 0, False), (Q.integer, 1, False), (Q.symmetric, EXPR, True)),
+        ((Q.symmetric, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.symmetric, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.upper_triangular(base) & (Q.invertible(base) | ~Q.negative(exponent)), Q.upper_triangular(f(base, exponent)))
+        ((Q.invertible, 0, False), (Q.upper_triangular, 0, False), (Q.integer, 1, False), (Q.upper_triangular, EXPR, True)),
+        ((Q.upper_triangular, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.upper_triangular, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.lower_triangular(base) & (Q.invertible(base) | ~Q.negative(exponent)), Q.lower_triangular(f(base, exponent)))
+        ((Q.invertible, 0, False), (Q.lower_triangular, 0, False), (Q.integer, 1, False), (Q.lower_triangular, EXPR, True)),
+        ((Q.lower_triangular, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.lower_triangular, EXPR, True)),
+        # Implies(Q.diagonal(base) & Q.integer(exponent) & (Q.invertible(base) | ~Q.negative(exponent)), Q.diagonal(f(base, exponent)))
+        ((Q.diagonal, 0, False), (Q.invertible, 0, False), (Q.integer, 1, False), (Q.diagonal, EXPR, True)),
+        ((Q.diagonal, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.diagonal, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.real_elements(base) & (Q.invertible(base) | ~Q.negative(exponent)), Q.real_elements(f(base, exponent)))
+        ((Q.invertible, 0, False), (Q.real_elements, 0, False), (Q.integer, 1, False), (Q.real_elements, EXPR, True)),
+        ((Q.real_elements, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(base) & Q.integer(exponent) & (Q.invertible(base) | ~Q.negative(exponent)), Q.complex_elements(f(base, exponent)))
+        ((Q.complex_elements, 0, False), (Q.invertible, 0, False), (Q.integer, 1, False), (Q.complex_elements, EXPR, True)),
+        ((Q.complex_elements, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.complex_elements, EXPR, True)),
+        # Implies(Q.integer_elements(base) & Q.integer(exponent) & ~Q.negative(exponent), Q.integer_elements(f(base, exponent)))
+        ((Q.integer_elements, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.integer_elements, EXPR, True)),
     ),
     (Mul, 2): (
         # Implies(Q.finite(x) & Q.finite(y), Q.finite(f(x, y)))
@@ -454,6 +608,12 @@ SAT_RULES = {
         ((Q.commutative, EXPR, False), (Q.finite, EXPR, True), (Q.infinite, EXPR, True)),
     ),
     (Trace, 1): (
+        # Implies(Q.integer_elements(x), Q.integer_elements(f(x)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, EXPR, True)),
+        # Implies(Q.real_elements(x), Q.real_elements(f(x)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        # Implies(Q.complex_elements(x), Q.complex_elements(f(x)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
         # Implies(Q.positive_definite(x), Q.positive(f(x)))
         ((Q.positive_definite, 0, False), (Q.positive, EXPR, True)),
         # Implies(Q.integer_elements(x), Q.integer(f(x)))
@@ -462,6 +622,44 @@ SAT_RULES = {
         ((Q.real_elements, 0, False), (Q.real, EXPR, True)),
         # Implies(Q.complex_elements(x), Q.complex(f(x)))
         ((Q.complex_elements, 0, False), (Q.complex, EXPR, True)),
+    ),
+    (Transpose, 1): (
+        # Equivalent(Q.symmetric(x), Q.symmetric(f(x)))
+        ((Q.symmetric, 0, False), (Q.symmetric, EXPR, True)),
+        ((Q.symmetric, 0, True), (Q.symmetric, EXPR, False)),
+        # Equivalent(Q.invertible(x), Q.invertible(f(x)))
+        ((Q.invertible, 0, False), (Q.invertible, EXPR, True)),
+        ((Q.invertible, 0, True), (Q.invertible, EXPR, False)),
+        # Equivalent(Q.orthogonal(x), Q.orthogonal(f(x)))
+        ((Q.orthogonal, 0, False), (Q.orthogonal, EXPR, True)),
+        ((Q.orthogonal, 0, True), (Q.orthogonal, EXPR, False)),
+        # Equivalent(Q.unitary(x), Q.unitary(f(x)))
+        ((Q.unitary, 0, False), (Q.unitary, EXPR, True)),
+        ((Q.unitary, 0, True), (Q.unitary, EXPR, False)),
+        # Equivalent(Q.fullrank(x), Q.fullrank(f(x)))
+        ((Q.fullrank, 0, False), (Q.fullrank, EXPR, True)),
+        ((Q.fullrank, 0, True), (Q.fullrank, EXPR, False)),
+        # Equivalent(Q.positive_definite(x), Q.positive_definite(f(x)))
+        ((Q.positive_definite, 0, False), (Q.positive_definite, EXPR, True)),
+        ((Q.positive_definite, 0, True), (Q.positive_definite, EXPR, False)),
+        # Equivalent(Q.diagonal(x), Q.diagonal(f(x)))
+        ((Q.diagonal, 0, False), (Q.diagonal, EXPR, True)),
+        ((Q.diagonal, 0, True), (Q.diagonal, EXPR, False)),
+        # Equivalent(Q.integer_elements(x), Q.integer_elements(f(x)))
+        ((Q.integer_elements, 0, False), (Q.integer_elements, EXPR, True)),
+        ((Q.integer_elements, 0, True), (Q.integer_elements, EXPR, False)),
+        # Equivalent(Q.real_elements(x), Q.real_elements(f(x)))
+        ((Q.real_elements, 0, False), (Q.real_elements, EXPR, True)),
+        ((Q.real_elements, 0, True), (Q.real_elements, EXPR, False)),
+        # Equivalent(Q.complex_elements(x), Q.complex_elements(f(x)))
+        ((Q.complex_elements, 0, False), (Q.complex_elements, EXPR, True)),
+        ((Q.complex_elements, 0, True), (Q.complex_elements, EXPR, False)),
+        # Equivalent(Q.lower_triangular(x), Q.upper_triangular(f(x)))
+        ((Q.lower_triangular, 0, False), (Q.upper_triangular, EXPR, True)),
+        ((Q.lower_triangular, 0, True), (Q.upper_triangular, EXPR, False)),
+        # Equivalent(Q.upper_triangular(x), Q.lower_triangular(f(x)))
+        ((Q.upper_triangular, 0, False), (Q.lower_triangular, EXPR, True)),
+        ((Q.upper_triangular, 0, True), (Q.lower_triangular, EXPR, False)),
     ),
     (acos, 1): (
         # ~Q.negative(f(x))

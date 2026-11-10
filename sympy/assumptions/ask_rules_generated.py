@@ -26,8 +26,13 @@ from sympy.functions.elementary.trigonometric import cot
 from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import tan
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.hadamard import HadamardProduct
+from sympy.matrices.expressions.inverse import Inverse
+from sympy.matrices.expressions.matadd import MatAdd
 from sympy.matrices.expressions.matmul import MatMul
+from sympy.matrices.expressions.matpow import MatPow
 from sympy.matrices.expressions.trace import Trace
+from sympy.matrices.expressions.transpose import Transpose
 
 # A condition ``(predicate, slot, value)`` holds when asking the predicate
 # about an expression gives ``value``. The expression is the argument number
@@ -203,7 +208,13 @@ ASK_RULES = {
         Q.complex: (
             (True, ((Q.complex_elements, 0, True),)),
         ),
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+        ),
         Q.integer: (
+            (True, ((Q.integer_elements, 0, True),)),
+        ),
+        Q.integer_elements: (
             (True, ((Q.integer_elements, 0, True),)),
         ),
         Q.positive: (
@@ -212,10 +223,16 @@ ASK_RULES = {
         Q.real: (
             (True, ((Q.real_elements, 0, True),)),
         ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+        ),
     },
     (Expr, None): {
         Q.antihermitian: (
             (True, ((Q.imaginary, EXPR, True),)),
+        ),
+        Q.diagonal: (
+            (True, ((Q.lower_triangular, EXPR, True), (Q.upper_triangular, EXPR, True))),
         ),
         Q.extended_real: (
             (True, ((Q.extended_negative, EXPR, True),)),
@@ -227,6 +244,9 @@ ASK_RULES = {
         ),
         Q.infinite: (
             (False, ((Q.finite, EXPR, True),)),
+        ),
+        Q.invertible: (
+            (True, ((Q.fullrank, EXPR, True), (Q.square, EXPR, True))),
         ),
         Q.irrational: (
             (True, ((Q.rational, EXPR, False), (Q.real, EXPR, True))),
@@ -250,11 +270,181 @@ ASK_RULES = {
             (False, ((Q.real, EXPR, False),)),
         ),
     },
-    (MatMul, 2): {
+    (HadamardProduct, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True), (Q.complex_elements, 1, True))),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True), (Q.integer_elements, 1, True))),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True), (Q.real_elements, 1, True))),
+        ),
+    },
+    (Inverse, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+        ),
+        Q.diagonal: (
+            (True, ((Q.diagonal, 0, True),)),
+            (False, ((Q.diagonal, 0, False),)),
+        ),
         Q.invertible: (
+            (True, ()),
+        ),
+        Q.lower_triangular: (
+            (True, ((Q.lower_triangular, 0, True),)),
+            (False, ((Q.lower_triangular, 0, False),)),
+        ),
+        Q.orthogonal: (
+            (True, ((Q.orthogonal, 0, True),)),
+            (False, ((Q.orthogonal, 0, False),)),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive_definite, 0, True),)),
+            (False, ((Q.positive_definite, 0, False),)),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+        ),
+        Q.symmetric: (
+            (True, ((Q.symmetric, 0, True),)),
+            (False, ((Q.symmetric, 0, False),)),
+        ),
+        Q.unitary: (
+            (True, ((Q.unitary, 0, True),)),
+            (False, ((Q.unitary, 0, False),)),
+        ),
+        Q.upper_triangular: (
+            (True, ((Q.upper_triangular, 0, True),)),
+            (False, ((Q.upper_triangular, 0, False),)),
+        ),
+    },
+    (MatAdd, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True), (Q.complex_elements, 1, True))),
+        ),
+        Q.diagonal: (
+            (True, ((Q.diagonal, 0, True), (Q.diagonal, 1, True))),
+            (False, ((Q.diagonal, 0, False), (Q.diagonal, 1, True))),
+            (False, ((Q.diagonal, 0, True), (Q.diagonal, 1, False))),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True), (Q.integer_elements, 1, True))),
+        ),
+        Q.lower_triangular: (
+            (True, ((Q.lower_triangular, 0, True), (Q.lower_triangular, 1, True))),
+            (False, ((Q.lower_triangular, 0, False), (Q.lower_triangular, 1, True))),
+            (False, ((Q.lower_triangular, 0, True), (Q.lower_triangular, 1, False))),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive_definite, 0, True), (Q.positive_definite, 1, True))),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True), (Q.real_elements, 1, True))),
+        ),
+        Q.symmetric: (
+            (True, ((Q.symmetric, 0, True), (Q.symmetric, 1, True))),
+            (False, ((Q.symmetric, 0, False), (Q.symmetric, 1, True))),
+            (False, ((Q.symmetric, 0, True), (Q.symmetric, 1, False))),
+        ),
+        Q.upper_triangular: (
+            (True, ((Q.upper_triangular, 0, True), (Q.upper_triangular, 1, True))),
+            (False, ((Q.upper_triangular, 0, False), (Q.upper_triangular, 1, True))),
+            (False, ((Q.upper_triangular, 0, True), (Q.upper_triangular, 1, False))),
+        ),
+    },
+    (MatMul, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex, 0, True), (Q.complex_elements, 1, True))),
+            (True, ((Q.complex_elements, 0, True), (Q.complex_elements, 1, True))),
+        ),
+        Q.diagonal: (
+            (True, ((Q.complex, 0, True), (Q.diagonal, 1, True))),
+            (True, ((Q.diagonal, 0, True), (Q.diagonal, 1, True))),
+        ),
+        Q.fullrank: (
+            (True, ((Q.fullrank, 0, True), (Q.square, 0, True), (Q.fullrank, 1, True))),
+            (True, ((Q.fullrank, 0, True), (Q.fullrank, 1, True), (Q.square, 1, True))),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer, 0, True), (Q.integer_elements, 1, True))),
+            (True, ((Q.integer_elements, 0, True), (Q.integer_elements, 1, True))),
+        ),
+        Q.invertible: (
+            (True, ((Q.complex, 0, True), (Q.zero, 0, False), (Q.invertible, 1, True))),
             (True, ((Q.invertible, 0, True), (Q.square, 0, True), (Q.invertible, 1, True), (Q.square, 1, True))),
             (False, ((Q.invertible, 0, False), (Q.square, 0, True), (Q.square, 1, True))),
             (False, ((Q.square, 0, True), (Q.invertible, 1, False), (Q.square, 1, True))),
+        ),
+        Q.lower_triangular: (
+            (True, ((Q.complex, 0, True), (Q.lower_triangular, 1, True))),
+            (True, ((Q.lower_triangular, 0, True), (Q.lower_triangular, 1, True))),
+        ),
+        Q.orthogonal: (
+            (True, ((Q.orthogonal, 0, True), (Q.orthogonal, 1, True))),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive, 0, True), (Q.positive_definite, 1, True))),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real, 0, True), (Q.real_elements, 1, True))),
+            (True, ((Q.real_elements, 0, True), (Q.real_elements, 1, True))),
+        ),
+        Q.symmetric: (
+            (True, ((Q.complex, 0, True), (Q.symmetric, 1, True))),
+        ),
+        Q.unitary: (
+            (True, ((Q.unitary, 0, True), (Q.unitary, 1, True))),
+        ),
+        Q.upper_triangular: (
+            (True, ((Q.complex, 0, True), (Q.upper_triangular, 1, True))),
+            (True, ((Q.upper_triangular, 0, True), (Q.upper_triangular, 1, True))),
+        ),
+    },
+    (MatPow, 2): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True), (Q.invertible, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.complex_elements, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.diagonal: (
+            (True, ((Q.diagonal, 0, True), (Q.invertible, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.diagonal, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.fullrank: (
+            (True, ((Q.fullrank, 0, True), (Q.integer, 1, True))),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.invertible: (
+            (True, ((Q.invertible, 0, True), (Q.integer, 1, True))),
+            (False, ((Q.invertible, 0, False), (Q.integer, 1, True), (Q.positive, 1, True))),
+        ),
+        Q.lower_triangular: (
+            (True, ((Q.invertible, 0, True), (Q.lower_triangular, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.lower_triangular, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.orthogonal: (
+            (True, ((Q.orthogonal, 0, True), (Q.integer, 1, True))),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive_definite, 0, True), (Q.integer, 1, True))),
+        ),
+        Q.real_elements: (
+            (True, ((Q.invertible, 0, True), (Q.real_elements, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.real_elements, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.symmetric: (
+            (True, ((Q.invertible, 0, True), (Q.symmetric, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.symmetric, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.unitary: (
+            (True, ((Q.unitary, 0, True), (Q.integer, 1, True))),
+        ),
+        Q.upper_triangular: (
+            (True, ((Q.invertible, 0, True), (Q.upper_triangular, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.upper_triangular, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
         ),
     },
     (Mul, 2): {
@@ -494,7 +684,13 @@ ASK_RULES = {
         Q.complex: (
             (True, ((Q.complex_elements, 0, True),)),
         ),
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+        ),
         Q.integer: (
+            (True, ((Q.integer_elements, 0, True),)),
+        ),
+        Q.integer_elements: (
             (True, ((Q.integer_elements, 0, True),)),
         ),
         Q.positive: (
@@ -502,6 +698,59 @@ ASK_RULES = {
         ),
         Q.real: (
             (True, ((Q.real_elements, 0, True),)),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+        ),
+    },
+    (Transpose, 1): {
+        Q.complex_elements: (
+            (True, ((Q.complex_elements, 0, True),)),
+            (False, ((Q.complex_elements, 0, False),)),
+        ),
+        Q.diagonal: (
+            (True, ((Q.diagonal, 0, True),)),
+            (False, ((Q.diagonal, 0, False),)),
+        ),
+        Q.fullrank: (
+            (True, ((Q.fullrank, 0, True),)),
+            (False, ((Q.fullrank, 0, False),)),
+        ),
+        Q.integer_elements: (
+            (True, ((Q.integer_elements, 0, True),)),
+            (False, ((Q.integer_elements, 0, False),)),
+        ),
+        Q.invertible: (
+            (True, ((Q.invertible, 0, True),)),
+            (False, ((Q.invertible, 0, False),)),
+        ),
+        Q.lower_triangular: (
+            (True, ((Q.upper_triangular, 0, True),)),
+            (False, ((Q.upper_triangular, 0, False),)),
+        ),
+        Q.orthogonal: (
+            (True, ((Q.orthogonal, 0, True),)),
+            (False, ((Q.orthogonal, 0, False),)),
+        ),
+        Q.positive_definite: (
+            (True, ((Q.positive_definite, 0, True),)),
+            (False, ((Q.positive_definite, 0, False),)),
+        ),
+        Q.real_elements: (
+            (True, ((Q.real_elements, 0, True),)),
+            (False, ((Q.real_elements, 0, False),)),
+        ),
+        Q.symmetric: (
+            (True, ((Q.symmetric, 0, True),)),
+            (False, ((Q.symmetric, 0, False),)),
+        ),
+        Q.unitary: (
+            (True, ((Q.unitary, 0, True),)),
+            (False, ((Q.unitary, 0, False),)),
+        ),
+        Q.upper_triangular: (
+            (True, ((Q.lower_triangular, 0, True),)),
+            (False, ((Q.lower_triangular, 0, False),)),
         ),
     },
     (acos, 1): {
