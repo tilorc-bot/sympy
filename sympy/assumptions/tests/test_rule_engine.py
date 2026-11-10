@@ -78,22 +78,22 @@ def test_rules_of_a_base_class():
     assert ask(Q.zero, exp(x), Q.real(x)) is False
 
 
-def test_rules_which_lead_back_to_the_question():
-    # positive asks nonnegative, which asks positive
+def test_cycle():
+    # positive has an edge to nonnegative, which has one back to positive
     assert ask(Q.positive, x) is None
     assert ask(Q.nonnegative, x) is None
     assert ask(Q.positive, x, Q.nonnegative(x) & ~Q.zero(x)) is True
     assert ask(Q.nonnegative, exp(x), Q.real(x)) is True
 
 
-def test_no_answer_under_a_question_cut_short_is_not_kept():
+def test_no_answer_below_a_cycle_is_not_kept():
     class g(Function):
         pass
 
     # These rules are not true of anything: they only have the shape which
-    # is tested. For real, the first rule asks positive, which asks real
-    # again and finds nothing; the second rule then answers real. positive
-    # has an answer after that.
+    # is tested. The first rule of real leads to positive, which leads back
+    # to real: a cycle, so positive has no answer there. The second rule
+    # then answers real, and positive has an answer after that.
     rules = {
         (g, Q.real): (Rule(True, (Condition(Q.positive, SELF),)),
                       Rule(True, (Condition(Q.integer, 0),))),

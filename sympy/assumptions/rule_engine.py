@@ -1,11 +1,15 @@
 """
-Backward chaining over rules about expressions and their arguments.
+Rules about expressions and their arguments, and a depth-first search which
+answers questions with them.
 
 A :class:`Rule` gives the truth value of a predicate for an expression when
 its conditions hold. A :class:`Condition` is a question about one argument of
-the expression, or about the expression itself. :func:`ask_by_rules` answers
-a question by trying the rules for the class of the expression, and answers
-the questions of their conditions in the same way.
+the expression, or about the expression itself.
+
+:func:`ask_by_rules` searches a graph. A node is a question: a predicate and
+an expression. Its edges go to the questions in the conditions of its rules.
+The search is depth-first: it tries the rules of a node one after the other,
+and visits the nodes of the conditions of a rule before it goes on.
 """
 from __future__ import annotations
 
@@ -55,7 +59,8 @@ def ask_by_rules(predicate, expr, assumptions, rules):
     hold gives the answer.
 
     A question is answered from the assumptions about its expression if they
-    decide it, and from the rules otherwise.
+    decide it, and from the rules otherwise. The questions in the conditions
+    of a rule are answered in the same way, by a depth-first search.
 
     Examples
     ========
@@ -73,42 +78,47 @@ def ask_by_rules(predicate, expr, assumptions, rules):
     None
 
     """
-    return _Chain(assumptions, rules).ask(predicate, expr)
+    return _Search(assumptions, rules).visit(predicate, expr)
 
 
-class _Chain:
+class _Search:
     """
-    One run of backward chaining.
+    One depth-first search.
 
-    It keeps the answers which were found, so that a question is answered
-    once, and the questions which are being answered, so that a rule which
-    leads back to its own question is not followed again.
+    ``answers`` has the nodes which are finished, with their answers, so
+    that a node is visited once. ``path`` has the nodes from the question
+    which was asked to the one which is being visited. An edge to a node on
+    the path closes a cycle and is not followed.
     """
 
     def __init__(self, assumptions, rules):
         self.assumptions = CNF.from_prop(assumptions)
         self.rules = rules
         self.answers = {}
-        self.being_answered = set()
-        self.cut_short = 0
+        self.path = set()
+        self.cycles = 0
 
-    def ask(self, predicate, expr):
-        question = (predicate, expr)
-        if question in self.answers:
-            return self.answers[question]
-        if question in self.being_answered:
-            self.cut_short += 1
+    def visit(self, predicate, expr):
+        """
+        The answer of the node ``(predicate, expr)``.
+        """
+        node = (predicate, expr)
+        if node in self.answers:
+            return self.answers[node]
+        if node in self.path:
+            self.cycles += 1
             return None
-        self.being_answered.add(question)
-        cut_short = self.cut_short
+        self.path.add(node)
+        cycles = self.cycles
         answer = self._from_assumptions(predicate, expr)
         if answer is None:
             answer = self._from_rules(predicate, expr)
-        self.being_answered.remove(question)
-        # No answer may be for lack of a question which was cut short, and
-        # which has an answer later.
-        if answer is not None or self.cut_short == cut_short:
-            self.answers[question] = answer
+        self.path.remove(node)
+        # A node without an answer is finished only if no cycle was closed
+        # below it: the node which a cycle led back to may get an answer
+        # later, and this one with it.
+        if answer is not None or self.cycles == cycles:
+            self.answers[node] = answer
         return answer
 
     def _from_assumptions(self, predicate, expr):
@@ -121,7 +131,7 @@ class _Chain:
             for rule in self.rules.get((cls, predicate), ()):
                 for condition, argument, value in rule.conditions:
                     target = expr if argument == SELF else args[argument]
-                    if self.ask(condition, target) is not value:
+                    if self.visit(condition, target) is not value:
                         break
                 else:
                     return rule.answer
