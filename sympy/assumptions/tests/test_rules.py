@@ -644,6 +644,62 @@ def test_relations_kept_in_satask():
     assert satask(Q.prime(a**b), Q.integer(a) & Q.integer(b) & Q.ne(b, 1)) is False
 
 
+def test_relations_stated_by_sums():
+    stated = compiled_rules.stated_comparisons
+    one, minus_one = Integer(1), Integer(-1)
+    assert stated(Q.zero(a - 1)) == ((True, (Q.eq, a, one), True), (False, (Q.eq, a, one), False))
+    assert stated(Q.nonzero(a - 1)) == ((True, (Q.eq, a, one), False),)
+    assert stated(Q.positive(a - 1)) == ((True, (Q.gt, a, one), True),)
+    assert stated(Q.negative(a + 1)) == ((True, (Q.gt, minus_one, a), True),)
+    assert stated(Q.nonnegative(a + Rational(1, 2))) == (
+        (True, (Q.ge, a, Rational(-1, 2)), True),)
+    assert stated(Q.nonpositive(a - 1)) == ((True, (Q.ge, one, a), True),)
+    for atom in (Q.real(a - 1), Q.positive(a + b), Q.positive(a + b + 1),
+                 Q.positive(a - pi), Q.positive(a), Q.positive(2*a)):
+        assert stated(atom) == ()
+
+    def relations(assumptions):
+        return compiled_rules._unit_assumptions(assumptions)[1]
+
+    assert relations(Q.zero(a - 1)) == {(Q.eq, a, one): True}
+    assert relations(~Q.zero(a - 1)) == {(Q.eq, a, one): False}
+    assert relations(Q.nonzero(a - 1)) == {(Q.eq, a, one): False}
+    assert relations(Q.positive(a - 1)) == {(Q.gt, a, one): True}
+    assert relations(Q.negative(a - 1)) == {(Q.gt, one, a): True}
+    assert relations(Q.nonnegative(a - 1)) == {(Q.ge, a, one): True}
+    assert relations(Q.nonpositive(a - 1)) == {(Q.ge, one, a): True}
+    assert relations(~Q.positive(a - 1)) == {}
+    assert relations(~Q.nonzero(a - 1)) == {}
+    assert relations(Q.positive(a + b + 1)) == {}
+    assert relations(Q.positive(a + b)) == {}
+
+    gt = Q.gt(a, one)
+    assert _relations([Q.positive(a - 1)]) == {(Q.gt, a, one): {
+        frozenset((Literal(Q.positive(a - 1), True), Literal(gt, False)))}}
+    assert _relations([Q.zero(a - 1)]) == {(Q.eq, a, one): {
+        frozenset((Literal(Q.zero(a - 1), True), Literal(Q.eq(a, one), False))),
+        frozenset((Literal(Q.zero(a - 1), False), Literal(Q.eq(a, one), True)))}}
+    assert _relations([Q.real(a - 1), Q.positive(a + b + 1)]) == {}
+    # the comparison is added to the facts only when a rule uses it
+    facts = lambda exprs, *atoms: {literal.lit for clause in get_relevant_clsfacts(
+        exprs, relations=_relations(atoms))[1].clauses for literal in clause}
+    assert gt in facts({a**b}, Q.positive(a - 1))
+    assert gt not in facts({sin(a)}, Q.positive(a - 1))
+    assert Q.eq(a, one) not in facts({sin(a)}, Q.nonzero(a - 1))
+    assert not any(len(lit.arguments) == 2 for lit in facts({sin(a)}, Q.nonzero(a - 1)))
+
+    for engine in (satask, _ask_recursive):
+        assert engine(Q.positive(log(a)), Q.real(a) & Q.positive(a - 1)) is True
+        assert engine(Q.positive(log(a)), Q.real(a) & ~Q.nonpositive(a - 1)) is None
+        assert engine(Q.positive(log(a)), Q.real(a) & Q.negative(a - 1)) is False
+        assert engine(Q.positive(acos(a)), Q.negative(a - 1) & Q.nonnegative(a + 1)) is True
+        assert engine(Q.positive(acos(a)), Q.nonpositive(a - 1) & Q.nonnegative(a + 1)) is None
+        assert engine(Q.rational(log(a)), Q.rational(a) & Q.nonzero(a - 1)) is False
+        assert engine(Q.rational(log(a)), Q.rational(a) & ~Q.zero(a - 1)) is False
+        assert engine(Q.rational(log(a)), Q.rational(a) & ~Q.zero(a - 2)) is None
+        assert engine(Q.finite(b**a), Q.positive(b - 1) & Q.extended_negative(a)) is True
+
+
 def test_relations_in_satask():
     X = MatrixSymbol('X', 4, 4)
     assert satask(Q.positive(X[a, b]), Q.positive_definite(X) & Q.eq(a, b)) is True

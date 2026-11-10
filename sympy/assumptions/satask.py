@@ -11,7 +11,7 @@ from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.compiled_rules import (RELATIONS, WRITTEN, canonical,
-    rule_arguments, split_sat_rules)
+    rule_arguments, split_sat_rules, stated_comparisons)
 from sympy.core import oo
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
@@ -313,7 +313,9 @@ def _related_clauses(clauses, targets, relations):
 def _relations(atoms):
     """
     The relations of two expressions which *atoms* state, as the argument
-    *relations* of :func:`get_relevant_clsfacts`.
+    *relations* of :func:`get_relevant_clsfacts`. A predicate of a sum such
+    as ``Q.nonzero(x - 1)`` states a relation of ``x`` and ``1``, as
+    :func:`~sympy.assumptions.compiled_rules.stated_comparisons` says.
     """
     relations: dict = {}
     for atom in atoms:
@@ -327,6 +329,10 @@ def _relations(atoms):
             if other != atom:
                 linked.add(frozenset((Literal(atom, True), Literal(other, not same))))
                 linked.add(frozenset((Literal(atom, False), Literal(other, same))))
+        elif len(arguments) == 1:
+            for value, key, answer in stated_comparisons(atom):
+                relations.setdefault(key, set()).add(frozenset(
+                    (Literal(atom, value), Literal(key[0](*key[1:]), not answer))))
     return relations
 
 

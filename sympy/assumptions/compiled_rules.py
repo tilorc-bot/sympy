@@ -217,6 +217,56 @@ def canonical(written, a, b):
     return ((relation, b, a) if swapped else (relation, a, b)), same
 
 
+# The comparison of ``t`` with ``-c`` which ``predicate(c + t)`` states, for
+# a rational number ``c``, when it has the truth value ``value``, as
+# ``predicate: ((value, written), ...)``
+SUMS = {
+    Q.zero: ((True, Q.eq), (False, Q.ne)),
+    Q.nonzero: ((True, Q.ne),),
+    Q.positive: ((True, Q.gt),),
+    Q.negative: ((True, Q.lt),),
+    Q.nonnegative: ((True, Q.ge),),
+    Q.nonpositive: ((True, Q.le),),
+}
+
+
+def stated_comparisons(atom):
+    """
+    The comparisons which *atom*, a predicate of a sum ``c + t`` of a
+    rational number and one other term, states about ``t`` and ``-c``.
+
+    Explanation
+    ===========
+
+    They are triples ``(value, relation, answer)``: if *atom* has the truth
+    value ``value``, then ``relation``, a triple of :func:`canonical`, has
+    the truth value ``answer``. Nothing is built but ``-c``.
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.compiled_rules import stated_comparisons
+    >>> stated_comparisons(Q.negative(x - 1))
+    ((True, (Q.gt, 1, x), True),)
+    >>> stated_comparisons(Q.zero(x + 1))
+    ((True, (Q.eq, x, -1), True), (False, (Q.eq, x, -1), False))
+    >>> stated_comparisons(Q.real(x - 1))
+    ()
+
+    """
+    readings = SUMS.get(atom.function)
+    if readings is None:
+        return ()
+    expr = atom.arguments[0]
+    if not (isinstance(expr, Add) and len(expr.args) == 2
+            and isinstance(expr.args[0], Rational)):
+        return ()
+    c, t = expr.args
+    return tuple((value, *canonical(written, t, -c)) for value, written in readings)
+
+
 def rule_arguments(expr):
     """
     The expressions which the slots of a rule about *expr* stand for.
@@ -715,14 +765,19 @@ def _unit_assumptions(assumptions):
     The assumptions which are a predicate of one expression or the negation
     of one, ``{expression: [(predicate, value), ...]}``, and the relations
     of :data:`RELATIONS` which the assumptions state, ``{(relation, a, b):
-    value}``.
+    value}``, also as :func:`stated_comparisons`.
     """
     units: dict = {}
     relations: dict = {}
     for atom, value in _unit_literals(assumptions):
         arguments = atom.arguments
         if len(arguments) == 1:
-            units.setdefault(arguments[0], []).append((atom.function, value))
+            expr, = arguments
+            units.setdefault(expr, []).append((atom.function, value))
+            if isinstance(expr, Add):
+                for stated, key, answer in stated_comparisons(atom):
+                    if stated is value:
+                        relations[key] = answer
         elif len(arguments) == 2 and atom.function in WRITTEN:
             key, same = canonical(atom.function, *arguments)
             relations[key] = value is same
