@@ -18,7 +18,8 @@ EXPR = -1
 
 # For each class and number of arguments, the clauses which hold for every
 # instance. At least one literal of a clause is true. Above each group of
-# clauses is the rule which they come from.
+# clauses is the rule which they come from. The clauses under ``None`` are for
+# any number of arguments.
 SAT_RULES = {
     (Abs, 1): (
         # Implies(Q.even(x), Q.even(f(x)))

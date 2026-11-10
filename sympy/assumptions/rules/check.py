@@ -23,12 +23,12 @@ from __future__ import annotations
 from itertools import product
 
 from sympy.assumptions.ask import Q
-from sympy.assumptions.rules.compiler import clauses
-from sympy.assumptions.rules.language import node
+from sympy.assumptions.rules.compiler import clauses, nargs
 from sympy.core.add import Add
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, Integer, Rational, oo, pi, zoo
 from sympy.core.singleton import S
+from sympy.core.symbol import Symbol
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.matrices.exceptions import ShapeError
 from sympy.matrices.immutable import ImmutableMatrix
@@ -119,7 +119,12 @@ def value_of(cls, values):
 
 
 def _samples(cls, row):
-    number = len(node(row).args)
+    number = nargs(row)
+    if number is None:
+        pool = NUMBERS if issubclass(cls, Symbol) else NUMBERS + MATRICES
+        yield from ((value,) for value in pool
+                    if isinstance(value, cls) or issubclass(cls, Symbol))
+        return
     for pool in (NUMBERS, MATRICES):
         for values in product(pool, repeat=number):
             value = value_of(cls, values)
