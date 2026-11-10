@@ -6,26 +6,29 @@ import sympy.assumptions
 from sympy.abc import a, b, c, d
 from sympy.assumptions import compiled_rules
 from sympy.assumptions.ask import Q, _ask_recursive
+from sympy.assumptions.assume import AppliedPredicate
+from sympy.assumptions.cnf import Literal
 from sympy.assumptions.compiled_rules import (ask_rules, equal, evaluate,
-    rule_arguments, sat_rules, split_sat_rules)
+    greater, not_less, rule_arguments, sat_rules, split_sat_rules)
 from sympy.assumptions.facts import get_known_facts
 from sympy.assumptions.rules.check import SAMPLES, counterexamples, untested
 from sympy.assumptions.rules.compiler import (GENERATED, _render, clauses,
     nargs, statements, ways)
-from sympy.assumptions.rules.language import (base, closed, columns,
-    exponent, f, for_all, i, j, node, rows, x, y)
-from sympy.assumptions.satask import get_relevant_clsfacts, satask
+from sympy.assumptions.rules.language import (ORDERS, WRITTEN, base, closed,
+    columns, exponent, f, for_all, i, j, node, rows, x, y)
+from sympy.assumptions.satask import _relations, get_relevant_clsfacts, satask
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.containers import Tuple
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.mul import Mul
-from sympy.core.numbers import ImaginaryUnit, Integer, Rational, nan, oo, pi
+from sympy.core.numbers import I, ImaginaryUnit, Integer, Rational, nan, oo, pi, zoo
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.trigonometric import cos, sin
+from sympy.functions.elementary.exponential import log
+from sympy.functions.elementary.trigonometric import acos, cos, sin
 from sympy.logic.boolalg import And, Equivalent
 from sympy.logic.inference import satisfiable
 from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
@@ -325,7 +328,20 @@ def test_relations_in_rows():
     assert node(Q.eq(Rational(1, 2), base) >> Q.positive(f(base, exponent))) == f(base, exponent)
     assert node(Q.ne(i, j) >> Q.positive(f(x, i, j))) == f(x, i, j)
     assert node(Q.ne(base, 1) >> Q.positive(f(base, exponent))) == f(base, exponent)
-    raises(ValueError, lambda: node(Q.gt(i, j) >> Q.positive(f(x, i, j))))
+    assert node(Q.eq(base, I) >> Q.positive(f(base, exponent))) == f(base, exponent)
+    assert node(Q.ne(-I, base) >> Q.positive(f(base, exponent))) == f(base, exponent)
+    for relation in (Q.gt, Q.lt, Q.ge, Q.le):
+        assert node(relation(i, j) >> Q.positive(f(x, i, j))) == f(x, i, j)
+        assert node(relation(base, Rational(1, 2)) >> Q.positive(f(base, exponent))) == f(base, exponent)
+        assert node(relation(-1, base) >> Q.positive(f(base, exponent))) == f(base, exponent)
+        raises(ValueError, lambda: node(relation(base, I) >> Q.positive(f(base, exponent))))
+        raises(ValueError, lambda: node(relation(-I, base) >> Q.positive(f(base, exponent))))
+        raises(ValueError, lambda: node(relation(base, pi) >> Q.positive(f(base, exponent))))
+        raises(ValueError, lambda: node(relation(base, base) >> Q.positive(f(base, exponent))))
+        raises(ValueError, lambda: node(relation(1, 2) >> Q.positive(f(base, exponent))))
+    raises(ValueError, lambda: node(AppliedPredicate(Q.integer, i, j) >> Q.positive(f(x, i, j))))
+    raises(ValueError, lambda: node(Q.eq(I, -I) >> Q.positive(f(x, i, j))))
+    raises(ValueError, lambda: node(Q.eq(i, 2*I) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.eq(i, i) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.ne(i, i) >> Q.positive(f(x, i, j))))
     raises(ValueError, lambda: node(Q.ne(1, 2) >> Q.positive(f(x, i, j))))
@@ -368,6 +384,46 @@ def test_relations_compiled():
             ) in ask_rules(MatrixElement, 3, Q.positive)
 
 
+def test_relations_by_size_compiled():
+    F = f(base, exponent)
+    assert clauses(Q.gt(base, 1) >> Q.finite(F)) == [
+        ((Q.gt, (0, Integer(1)), False), (Q.finite, -1, True))]
+    assert clauses(Q.lt(base, 1) >> Q.finite(F)) == [
+        ((Q.gt, (Integer(1), 0), False), (Q.finite, -1, True))]
+    assert clauses(Q.lt(1, base) >> Q.finite(F)) == clauses(Q.gt(base, 1) >> Q.finite(F))
+    assert clauses(Q.ge(base, -1) >> Q.finite(F)) == [
+        ((Q.ge, (0, Integer(-1)), False), (Q.finite, -1, True))]
+    assert clauses(Q.le(base, -1) >> Q.finite(F)) == [
+        ((Q.ge, (Integer(-1), 0), False), (Q.finite, -1, True))]
+    assert clauses(Q.gt(base, exponent) >> Q.finite(F)) == [
+        ((Q.gt, (0, 1), False), (Q.finite, -1, True))]
+    swapped, = clauses((Q.lt(base, 1) & Q.real(exponent)) >> Q.finite(F))
+    assert _render(swapped) == (
+        '((Q.real, 1, False), (Q.gt, (Integer(1), 0), False), (Q.finite, EXPR, True))')
+    unit, = clauses(Q.eq(base, I) >> Q.positive(F))
+    assert _render(unit) == '((Q.eq, (0, I), False), (Q.positive, EXPR, True))'
+    unit, = clauses(Q.ne(base, -I) >> Q.positive(F))
+    assert _render(unit) == '((Q.eq, (0, -I), True), (Q.positive, EXPR, True))'
+    # literals with I and with rational numbers can be sorted
+    assert clauses((Q.eq(base, I) & Q.eq(base, 1)) >> Q.positive(F)) == [
+        ((Q.eq, (0, Integer(1)), False), (Q.eq, (0, I), False), (Q.positive, -1, True))]
+    assert ways(Q.lt(base, 1) >> Q.finite(F)) == {
+        Q.finite: {(True, ((Q.gt, (Integer(1), 0), True),))}}
+    # a comparison by size is only a condition
+    raises(ValueError, lambda: clauses(Q.finite(F) >> Q.gt(base, 1)))
+    raises(ValueError, lambda: clauses(~Q.lt(base, 1) >> Q.finite(F)))
+    raises(ValueError, lambda: clauses(Equivalent(Q.ge(base, 1), Q.finite(F))))
+    assert clauses(Q.finite(F) >> Q.eq(base, 1))
+    assert clauses(Q.finite(F) >> Q.ne(base, I))
+
+
+def test_written_relations_agree():
+    assert WRITTEN == compiled_rules.WRITTEN
+    assert set(compiled_rules.RELATIONS) == {
+        relation for relation, _, _ in WRITTEN.values()}
+    assert ORDERS < set(compiled_rules.RELATIONS)
+
+
 def test_equal():
     assert equal(a, a) is True
     assert equal(a + 1, a + 1) is True
@@ -381,6 +437,39 @@ def test_equal():
     assert equal(Tuple(a, 2, 1), Tuple(0, 2, 1)) is None
     assert equal(nan, nan) is None
     assert equal(pi, Integer(3)) is None
+    assert equal(I, I) is True
+    assert equal(-I, -I) is True
+    assert equal(I, -I) is False
+    assert equal(I, Integer(1)) is False
+    assert equal(Integer(0), -I) is False
+    assert equal(a, I) is None
+    assert equal(-I, a) is None
+    assert equal(2*I, I) is None
+
+
+def test_greater():
+    one, two, half = Integer(1), Integer(2), Rational(1, 2)
+    assert greater(two, one) is True
+    assert greater(one, one) is False
+    assert greater(half, Rational(-1, 2)) is True
+    assert greater(Rational(-3, 2), Integer(-1)) is False
+    assert not_less(one, one) is True
+    assert not_less(half, one) is False
+    assert not_less(Rational(2, 4), half) is True
+    assert greater(pi, one) is True
+    assert greater(one, pi) is False
+    assert greater(oo, one) is True
+    assert not_less(oo, oo) is True
+    assert greater(-oo, Integer(-1)) is False
+    assert greater(I, one) is False
+    assert not_less(one, I) is False
+    assert greater(zoo, one) is False
+    assert greater(a, one) is None
+    assert not_less(one, a) is None
+    assert greater(a, b) is None
+    assert greater(nan, one) is None
+    assert greater(Tuple(0, 2, 1), one) is None
+    assert type(greater(two, one)) is bool and type(greater(pi, one)) is bool
 
 
 def test_relations_evaluated():
@@ -426,16 +515,76 @@ def test_relations_evaluated():
         del rules[node, 2]
 
 
+def test_relations_by_size_evaluated():
+    rules = compiled_rules.ASK_RULES
+
+    def integer(condition, *args, assumptions=True):
+        class node(Function):
+            pass
+
+        rules[node, 2] = {Q.integer: ((True, (condition,)),)}
+        try:
+            return _with_rules([Q.integer], lambda: _ask_recursive(
+                Q.integer(node(*args)), assumptions))
+        finally:
+            del rules[node, 2]
+
+    gt, ge, ne = (Q.gt, (0, 1), True), (Q.ge, (0, 1), True), (Q.eq, (0, 1), False)
+    assert integer(gt, a, b, assumptions=Q.gt(a, b)) is True
+    assert integer(gt, a, b, assumptions=Q.lt(b, a)) is True
+    assert integer(gt, a, b, assumptions=~Q.le(a, b)) is None
+    assert integer(gt, a, b, assumptions=Q.ge(a, b)) is None
+    assert integer(gt, a, b, assumptions=Q.gt(b, a)) is None
+    assert integer(gt, 2, 1) is True
+    assert integer(gt, pi, 3) is True
+    assert integer(gt, I, 1) is None
+    assert integer(ge, a, b, assumptions=Q.ge(a, b)) is True
+    assert integer(ge, a, b, assumptions=Q.le(b, a)) is True
+    assert integer(ge, a, b, assumptions=Q.gt(a, b)) is True
+    assert integer(ge, a, b, assumptions=Q.eq(a, b)) is None
+    assert integer(ge, a, b, assumptions=~Q.lt(a, b)) is None
+    assert integer(ge, 1, 1) is True
+    assert integer(ne, a, b, assumptions=Q.gt(a, b)) is True
+    assert integer(ne, a, b, assumptions=Q.lt(a, b)) is True
+    assert integer(ne, a, b, assumptions=Q.ne(b, a)) is True
+    assert integer(ne, a, b, assumptions=~Q.ge(a, b)) is None
+    assert integer(ne, a, b, assumptions=Q.ge(a, b)) is None
+    number = (Q.gt, (0, Integer(1)), True)
+    assert integer(number, a, b, assumptions=Q.gt(a, 1)) is True
+    assert integer(number, a, b, assumptions=Q.lt(1, a)) is True
+    assert integer(number, a, b, assumptions=Q.ge(a, 1)) is None
+    assert integer(number, a, b, assumptions=Q.gt(a, 2)) is None
+    assert integer(number, a, b, assumptions=Q.gt(b, 1)) is None
+    assert integer(number, oo, b) is True
+    assert integer(number, Rational(1, 2), b) is None
+
+
+def test_relations_assumed():
+    _, relations = compiled_rules._unit_assumptions(
+        Q.eq(a, b) & Q.ne(a, 1) & Q.lt(a, 2) & ~Q.le(b, 3) & Q.ge(c, d) & ~Q.gt(c, 0))
+    assert relations == {
+        (Q.eq, a, b): True, (Q.eq, a, 1): False, (Q.gt, 2, a): True,
+        (Q.ge, 3, b): False, (Q.ge, c, d): True, (Q.gt, c, 0): False}
+    assert compiled_rules.canonical(Q.le, a, 1) == ((Q.ge, 1, a), True)
+    query = compiled_rules._Query(Q.gt(a, 1) & Q.integer(b))
+    assert query.related == {a, Integer(1)}
+    assert not compiled_rules._Query(Q.integer(b)).related
+
+
 def test_relations_decided_once():
     n = Symbol('n')
     query = compiled_rules._Query(Q.integer(n), (-1)**n)
     assert query.ask_about(Q.odd, (-1)**n) is True
-    slots = [slot for slot, _, _ in compiled_rules._ways(Pow, 2, Q.odd)[4]]
-    truths = dict(zip(slots, query.truths[(-1)**n]))
-    assert truths[0, Integer(-1)] is True
-    assert truths[0, Integer(1)] is False
-    assert truths[1, Integer(1)] is None
-    _, plain, related, decided, _ = compiled_rules._ways(Pow, 2, Q.odd)
+    _, plain, related, decided, groups, count = compiled_rules._ways(Pow, 2, Q.odd)
+    assert count == sum(len(conditions) for _, conditions in groups)
+    assert {slot for slot, _ in groups} == {0, 1}
+    slots = {index: (decide, pair) for _, conditions in groups
+             for index, pair, decide, _ in conditions}
+    truths = {slots[index]: truth for index, truth in enumerate(query.truths[(-1)**n])}
+    assert truths[equal, (0, Integer(-1))] is True
+    assert truths[equal, (0, Integer(1))] is False
+    assert truths[greater, (0, Integer(1))] is False
+    assert truths[equal, (1, Integer(1))] is None
     assert (True, ((Q.integer, 1, True),)) in compiled_rules._decided_ways(
         related, query.truths[(-1)**n])
     assert (True, ((Q.integer, 1, True),)) not in plain
@@ -452,18 +601,41 @@ def test_relations_decided_once():
 
     query = compiled_rules._Query(Q.integer(a) & Q.integer(b) & Q.ne(b, 1))
     assert query.ask_about(Q.prime, a**b) is False
-    assert dict(zip(slots, query.truths[a**b]))[1, Integer(1)] is False
+    truths = {slots[index]: truth for index, truth in enumerate(query.truths[a**b])}
+    assert truths[equal, (1, Integer(1))] is False
+    assert truths[equal, (0, Integer(1))] is None
 
 
 def test_relations_kept_in_satask():
     eq = Q.eq(a, Integer(1))
-    facts = lambda relations: {literal.lit for clause in get_relevant_clsfacts(
-        {a**b}, relations=relations)[1].clauses for literal in clause}
-    assert eq not in facts(set())
-    assert eq not in facts({(Q.eq, a, c)})
-    assert eq in facts({(Q.eq, a, Integer(1))})
-    assert eq in facts({(Q.ne, Integer(1), a)})
-    assert Q.ne(a, Integer(1)) in facts({(Q.eq, Integer(1), a)})
+    gt = Q.gt(a, Integer(1))
+    facts = lambda *atoms: {literal.lit for clause in get_relevant_clsfacts(
+        {a**b, log(a)}, relations=_relations(atoms))[1].clauses for literal in clause}
+    assert _relations([Q.eq(a, 1), Q.integer(a)]) == {(Q.eq, a, 1): set()}
+    assert _relations([Q.lt(1, a)]) == {(Q.gt, a, 1): {
+        frozenset((Literal(Q.lt(1, a), True), Literal(gt, False))),
+        frozenset((Literal(Q.lt(1, a), False), Literal(gt, True)))}}
+    assert eq not in facts()
+    assert eq not in facts(Q.eq(a, c))
+    assert eq in facts(Q.eq(a, 1))
+    assert eq in facts(Q.ne(1, a))
+    assert Q.eq(1, a) in facts(Q.eq(1, a))
+    assert eq in facts(Q.gt(a, 1))
+    assert gt in facts(Q.gt(a, 1)) and gt in facts(Q.lt(1, a))
+    assert Q.lt(1, a) in facts(Q.lt(1, a))
+    assert gt not in facts(Q.ge(a, 1))
+    assert gt not in facts(Q.gt(1, a))
+    # without predicates of two expressions, no relation is kept
+    assert not any(len(literal.lit.arguments) == 2 for clause in
+                   get_relevant_clsfacts({a**b, log(a), acos(a)})[1].clauses
+                   for literal in clause)
+    assert satask(Q.finite(a**b), Q.lt(1, a) & Q.extended_negative(b)) is True
+    assert satask(Q.finite(a**b), Q.gt(a, 1) & Q.extended_negative(b)) is True
+    assert satask(Q.finite(a**b), ~Q.le(a, 1) & Q.extended_negative(b)) is None
+    assert satask(Q.finite(a**b), Q.ge(a, 1) & Q.extended_negative(b)) is None
+    assert satask(Q.positive(acos(a)), Q.le(-1, a) & Q.gt(1, a)) is True
+    assert satask(Q.lt(a, 1), Q.positive(log(a))) is False
+    assert satask(Q.prime(a**b), Q.integer(a) & Q.integer(b) & Q.gt(b, 1)) is False
     assert satask(Q.rational(a**b), Q.rational(b) & Q.eq(a, 1)) is True
     assert satask(Q.rational(a**b), Q.rational(b) & Q.eq(1, a)) is True
     assert satask(Q.rational(a**b), Q.rational(b) & ~Q.ne(a, 1)) is True

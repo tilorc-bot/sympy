@@ -28,6 +28,8 @@ size one or two, upwards and downwards.
 A condition ``Q.eq(a, b)`` holds when the two values are equal: the same
 number, or the same range. Ranges with different numbers in them are not
 equal even if they have the same entries: ``(0, 3, 2)`` and ``(0, 4, 2)``.
+A condition ``Q.gt(a, b)`` holds when both values are extended real and
+``a > b``, and ``Q.ge(a, b)`` when they are extended real and ``a >= b``.
 """
 from __future__ import annotations
 
@@ -140,8 +142,15 @@ MATRIX_TRUTH = {
     Q.complex_elements: lambda value: all(entry.is_complex for entry in value),
 }
 
+def _extended_real(a, b):
+    return (getattr(a, 'is_extended_real', None) is True
+            and getattr(b, 'is_extended_real', None) is True)
+
+
 RELATION_TRUTH = {
     Q.eq: lambda a, b: a is not S.NaN and b is not S.NaN and a == b,
+    Q.gt: lambda a, b: _extended_real(a, b) and bool(a > b),
+    Q.ge: lambda a, b: _extended_real(a, b) and bool(a >= b),
 }
 
 _truth: dict = {}
