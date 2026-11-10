@@ -19,7 +19,11 @@ from sympy.assumptions.ask import _ask_single_fact, _extract_all_facts
 from sympy.assumptions.cnf import CNF
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from sympy.assumptions.assume import Predicate
+    from sympy.core.basic import Basic
+    from sympy.logic.boolalg import Boolean
 
 # In a condition: the expression itself, instead of one of its arguments
 SELF = -1
@@ -27,52 +31,14 @@ SELF = -1
 
 class Condition(NamedTuple):
     """
-    One requirement of a :class:`Rule`: a question, and the answer which it
-    must have.
+    A question which a rule asks about the expression it is used for, and
+    the answer which it needs.
 
-    Explanation
-    ===========
-
-    The question is ``predicate``, asked about one part of the expression
-    which the rule is used for: the argument ``expr.args[argument]``, or the
-    expression itself if ``argument`` is :data:`SELF`.
-
-    The condition holds if the answer to that question is ``value``. It does
-    not hold if the answer is the opposite, and it does not hold if there is
-    no answer: ``Condition(Q.zero, 0, False)`` needs the argument to be known
-    not to be zero.
-
-    Parameters
-    ==========
-
-    predicate : Predicate
-        The predicate of the question, such as ``Q.even``.
-
-    argument : int
-        The index in ``expr.args`` of the argument which the question is
-        about, or :data:`SELF` for the expression itself.
-
-    value : bool, optional
-        The answer which the question must have. The default is ``True``.
-
-    Examples
-    ========
-
-    For ``Abs(x)``: "the argument is even", and "the argument is not zero".
-
-    >>> from sympy import Q
-    >>> from sympy.assumptions.rule_engine import SELF, Condition
-    >>> even_argument = Condition(Q.even, 0)
-    >>> nonzero_argument = Condition(Q.zero, 0, False)
-    >>> nonzero_argument.predicate, nonzero_argument.argument, nonzero_argument.value
-    (Q.zero, 0, False)
-
-    For ``x**y``: "the exponent is real". For any expression: "the
-    expression itself is positive".
-
-    >>> real_exponent = Condition(Q.real, 1)
-    >>> positive_itself = Condition(Q.positive, SELF)
-
+    ``Condition(Q.even, 0)`` holds for ``expr`` if ``Q.even(expr.args[0])``
+    is found to be true, and ``Condition(Q.zero, 0, False)`` if
+    ``Q.zero(expr.args[0])`` is found to be false. With :data:`SELF` as the
+    ``argument``, the question is about ``expr`` itself. A question without
+    an answer does not make a condition hold.
     """
     predicate: Predicate
     argument: int
@@ -81,64 +47,26 @@ class Condition(NamedTuple):
 
 class Rule(NamedTuple):
     """
-    One way to answer a question about an expression: if every condition
-    holds, the answer is ``answer``.
+    What follows for a predicate and an expression when all the
+    ``conditions`` hold: the predicate is true of the expression if
+    ``answer`` is ``True``, and false of it if ``answer`` is ``False``.
 
-    Explanation
-    ===========
-
-    A rule does not say which predicate and which class it is for. It is
-    stored under them, in the table which :func:`ask_by_rules` takes:
-    ``{(class, predicate): (rule, ...)}``.
-
-    The rules of an entry are tried in order, and the first one whose
-    conditions all hold gives the answer. A rule whose conditions do not all
-    hold says nothing: the answer is not the opposite of ``answer`` then. A
-    statement which gives both answers, such as "zero exactly when the
-    argument is zero", is written as two rules.
-
-    Parameters
-    ==========
-
-    answer : bool
-        The truth value of the predicate for the expression.
-
-    conditions : tuple of Condition, optional
-        What has to hold. The default is no conditions, for a rule which
-        always applies.
-
-    Examples
-    ========
-
-    "The absolute value of an even number is even", and "an absolute value
-    is not negative":
-
-    >>> from sympy import Abs, Q
-    >>> from sympy.abc import x
-    >>> from sympy.assumptions.rule_engine import Condition, Rule, ask_by_rules
-    >>> rules = {
-    ...     (Abs, Q.even): (Rule(True, (Condition(Q.even, 0),)),),
-    ...     (Abs, Q.negative): (Rule(False),),
-    ... }
-
-    "An absolute value is zero exactly when its argument is", as two rules:
-
-    >>> rules[Abs, Q.zero] = (
-    ...     Rule(True, (Condition(Q.zero, 0),)),
-    ...     Rule(False, (Condition(Q.zero, 0, False),)))
-    >>> ask_by_rules(Q.zero, Abs(x), Q.zero(x), rules)
-    True
-    >>> ask_by_rules(Q.zero, Abs(x), Q.positive(x), rules)
-    False
-    >>> print(ask_by_rules(Q.zero, Abs(x), Q.real(x), rules))
-    None
-
+    The predicate and the class of the expression are the key which the rule
+    is stored under. Under ``(Abs, Q.even)``, ``Rule(True,
+    (Condition(Q.even, 0),))`` says that ``Abs(x)`` is even if ``x`` is.
+    Under ``(Abs, Q.negative)``, ``Rule(False)`` says that ``Abs(x)`` is
+    never negative.
     """
     answer: bool
     conditions: tuple[Condition, ...] = ()
 
 
-def ask_by_rules(predicate, expr, assumptions, rules):
+def ask_by_rules(
+        predicate: Predicate,
+        expr: Basic,
+        assumptions: Boolean | bool,
+        rules: Mapping[tuple[type[Basic], Predicate], Sequence[Rule]],
+) -> bool | None:
     """
     The truth value of ``predicate(expr)`` under *assumptions*, or ``None``
     if the rules do not give it.
