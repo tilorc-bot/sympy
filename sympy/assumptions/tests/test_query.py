@@ -711,7 +711,9 @@ def test_bounded():
     assert _ask_recursive(Q.finite(a), ~Q.finite(x) & ~Q.extended_positive(x)
         & Q.positive_infinite(y)) is None
     assert _ask_recursive(Q.finite(a), ~Q.finite(x) & ~Q.finite(y)
-        & ~Q.extended_positive(x) & ~Q.extended_positive(y)) is False
+        & ~Q.extended_positive(x) & ~Q.extended_positive(y)) is None  # oo*I - oo*I is nan
+    assert _ask_recursive(Q.finite(a), ~Q.finite(x) & ~Q.finite(y)
+        & Q.extended_negative(x) & Q.extended_negative(y)) is False
     # U + ?
     assert _ask_recursive(Q.finite(a), ~Q.finite(y)) is None
     assert _ask_recursive(Q.finite(a), Q.extended_positive(x)
@@ -724,7 +726,9 @@ def test_bounded():
     assert _ask_recursive(Q.finite(a), ~Q.extended_positive(x)
         & Q.positive_infinite(y)) is None
     assert _ask_recursive(Q.finite(a), ~Q.extended_positive(x) & ~Q.finite(y)
-        & ~Q.extended_positive(y)) is False
+        & ~Q.extended_positive(y)) is None  # oo*I - oo*I is nan
+    assert _ask_recursive(Q.finite(a), Q.extended_negative(x) & ~Q.finite(y)
+        & Q.extended_negative(y)) is False
     # ? + ?
     assert _ask_recursive(Q.finite(a)) is None
     assert _ask_recursive(Q.finite(a), Q.extended_positive(x)) is None
@@ -1106,7 +1110,7 @@ def test_bounded():
     assert _ask_recursive(Q.finite(a), Q.finite(z)) is None
     assert _ask_recursive(Q.finite(a), ~Q.finite(z)) is None
     assert _ask_recursive(Q.finite(a), ~Q.finite(z) & Q.extended_nonzero(x)
-        & Q.extended_nonzero(y) & Q.extended_nonzero(z)) is None
+        & Q.extended_nonzero(y) & Q.extended_nonzero(z)) is False
     assert _ask_recursive(Q.finite(a), Q.extended_nonzero(x) & ~Q.finite(y)
         & Q.extended_nonzero(y) & ~Q.finite(z)
         & Q.extended_nonzero(z)) is False
@@ -1117,11 +1121,12 @@ def test_bounded():
     assert _ask_recursive(Q.finite(2**x), Q.finite(x)) is True
     assert _ask_recursive(Q.finite(x**x)) is None
     assert _ask_recursive(Q.finite(S.Half ** x)) is None
-    assert _ask_recursive(Q.finite(S.Half ** x), Q.extended_positive(x)) is True
+    assert _ask_recursive(Q.finite(S.Half ** x), Q.extended_positive(x)) is None
     assert _ask_recursive(Q.finite(S.Half ** x), Q.extended_negative(x)) is None
-    assert _ask_recursive(Q.finite(2**x), Q.extended_negative(x)) is True
+    assert _ask_recursive(Q.finite(2**x), Q.extended_negative(x)) is None
     assert _ask_recursive(Q.finite(sqrt(x))) is None
-    assert _ask_recursive(Q.finite(2**x), ~Q.finite(x)) is False
+    assert _ask_recursive(Q.finite(2**x), ~Q.finite(x)) is None  # 2**-oo is 0
+    assert _ask_recursive(Q.finite(2**x), Q.positive_infinite(x)) is None
     assert _ask_recursive(Q.finite(x**2), ~Q.finite(x)) is False
 
     # https://github.com/sympy/sympy/issues/27707
@@ -1140,7 +1145,8 @@ def test_bounded():
     # exponential functions
     assert _ask_recursive(Q.finite(log(x))) is None
     assert _ask_recursive(Q.finite(log(x)), Q.finite(x)) is None
-    assert _ask_recursive(Q.finite(log(x)), ~Q.zero(x)) is True
+    assert _ask_recursive(Q.finite(log(x)), ~Q.zero(x)) is None  # log(oo) is oo
+    assert _ask_recursive(Q.finite(log(x)), ~Q.zero(x) & Q.finite(x)) is True
     assert _ask_recursive(Q.finite(log(x)), Q.infinite(x)) is False
     assert _ask_recursive(Q.finite(log(x)), Q.zero(x)) is False
     assert _ask_recursive(Q.finite(exp(x))) is None
@@ -1148,14 +1154,20 @@ def test_bounded():
     assert _ask_recursive(Q.finite(exp(2))) is True
 
     # trigonometric functions
-    assert _ask_recursive(Q.finite(sin(x))) is True
-    assert _ask_recursive(Q.finite(sin(x)), ~Q.finite(x)) is True
-    assert _ask_recursive(Q.finite(cos(x))) is True
-    assert _ask_recursive(Q.finite(cos(x)), ~Q.finite(x)) is True
-    assert _ask_recursive(Q.finite(2*sin(x))) is True
-    assert _ask_recursive(Q.finite(sin(x)**2)) is True
-    assert _ask_recursive(Q.finite(cos(x)**2)) is True
-    assert _ask_recursive(Q.finite(cos(x) + sin(x))) is True
+    assert _ask_recursive(Q.finite(sin(x))) is None  # sin(oo*I) is oo*I
+    assert _ask_recursive(Q.finite(sin(x)), Q.finite(x)) is True
+    assert _ask_recursive(Q.finite(sin(x)), ~Q.finite(x)) is None  # sin(oo*I) is oo*I
+    assert _ask_recursive(Q.finite(cos(x))) is None  # cos(oo*I) is oo
+    assert _ask_recursive(Q.finite(cos(x)), Q.finite(x)) is True
+    assert _ask_recursive(Q.finite(cos(x)), ~Q.finite(x)) is None  # cos(oo*I) is oo
+    assert _ask_recursive(Q.finite(2*sin(x))) is None  # sin(oo*I) is oo*I
+    assert _ask_recursive(Q.finite(2*sin(x)), Q.finite(x)) is True
+    assert _ask_recursive(Q.finite(sin(x)**2)) is None  # sin(oo*I) is oo*I
+    assert _ask_recursive(Q.finite(sin(x)**2), Q.finite(x)) is True
+    assert _ask_recursive(Q.finite(cos(x)**2)) is None  # cos(oo*I) is oo
+    assert _ask_recursive(Q.finite(cos(x)**2), Q.finite(x)) is True
+    assert _ask_recursive(Q.finite(cos(x) + sin(x))) is None  # sin(oo*I) is oo*I
+    assert _ask_recursive(Q.finite(cos(x) + sin(x)), Q.finite(x)) is True
 
 @XFAIL
 def test_unbounded_xfail():

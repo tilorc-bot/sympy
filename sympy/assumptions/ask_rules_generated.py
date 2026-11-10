@@ -6,11 +6,18 @@ Instead, run ./bin/ask_update.py.
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add
 from sympy.core.basic import Basic
+from sympy.core.expr import Expr
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.complexes import im
 from sympy.functions.elementary.complexes import re
+from sympy.functions.elementary.complexes import sign
+from sympy.functions.elementary.exponential import exp
+from sympy.functions.elementary.exponential import log
+from sympy.functions.elementary.trigonometric import cos
+from sympy.functions.elementary.trigonometric import sin
 from sympy.matrices.expressions.matmul import MatMul
 
 # A condition ``(predicate, slot, value)`` holds when asking the predicate
@@ -51,6 +58,13 @@ ASK_RULES = {
             (True, ((Q.even, 0, True), (Q.even, 1, True))),
             (True, ((Q.odd, 0, True), (Q.odd, 1, True))),
         ),
+        Q.finite: (
+            (True, ((Q.finite, 0, True), (Q.finite, 1, True))),
+        ),
+        Q.infinite: (
+            (True, ((Q.finite, 0, False), (Q.finite, 1, True))),
+            (True, ((Q.finite, 0, True), (Q.infinite, 1, True))),
+        ),
         Q.integer: (
             (True, ((Q.integer, 0, True), (Q.integer, 1, True))),
             (False, ((Q.integer, 0, False), (Q.integer, 1, True))),
@@ -63,12 +77,22 @@ ASK_RULES = {
         Q.negative: (
             (True, ((Q.negative, 0, True), (Q.negative, 1, True))),
         ),
+        Q.negative_infinite: (
+            (True, ((Q.extended_real, 0, True), (Q.positive_infinite, 0, False), (Q.negative_infinite, 1, True))),
+            (True, ((Q.negative_infinite, 0, True), (Q.extended_real, 1, True), (Q.positive_infinite, 1, False))),
+            (False, ((Q.extended_real, 0, True), (Q.negative_infinite, 0, False), (Q.extended_real, 1, True), (Q.negative_infinite, 1, False))),
+        ),
         Q.odd: (
             (True, ((Q.even, 0, True), (Q.odd, 1, True))),
             (True, ((Q.odd, 0, True), (Q.even, 1, True))),
         ),
         Q.positive: (
             (True, ((Q.positive, 0, True), (Q.positive, 1, True))),
+        ),
+        Q.positive_infinite: (
+            (True, ((Q.extended_real, 0, True), (Q.negative_infinite, 0, False), (Q.positive_infinite, 1, True))),
+            (True, ((Q.positive_infinite, 0, True), (Q.extended_real, 1, True), (Q.negative_infinite, 1, False))),
+            (False, ((Q.extended_real, 0, True), (Q.positive_infinite, 0, False), (Q.extended_real, 1, True), (Q.positive_infinite, 1, False))),
         ),
         Q.rational: (
             (True, ((Q.rational, 0, True), (Q.rational, 1, True))),
@@ -87,6 +111,19 @@ ASK_RULES = {
         Q.odd: (
             (True, ((Q.even, EXPR, False), (Q.integer, EXPR, True))),
             (False, ((Q.integer, EXPR, False),)),
+        ),
+    },
+    (Expr, None): {
+        Q.infinite: (
+            (False, ((Q.finite, EXPR, True),)),
+        ),
+        Q.negative_infinite: (
+            (True, ((Q.extended_negative, EXPR, True), (Q.finite, EXPR, False))),
+            (False, ((Q.finite, EXPR, True),)),
+        ),
+        Q.positive_infinite: (
+            (True, ((Q.extended_positive, EXPR, True), (Q.finite, EXPR, False))),
+            (False, ((Q.finite, EXPR, True),)),
         ),
     },
     (MatMul, 2): {
@@ -117,9 +154,18 @@ ASK_RULES = {
             (True, ((Q.integer, 0, True), (Q.even, 1, True), (Q.integer, 1, True))),
             (False, ((Q.even, 0, False), (Q.integer, 0, True), (Q.even, 1, False), (Q.integer, 1, True))),
         ),
+        Q.finite: (
+            (True, ((Q.finite, 0, True), (Q.finite, 1, True))),
+        ),
         Q.imaginary: (
             (True, ((Q.imaginary, 0, True), (Q.real, 1, True), (Q.zero, 1, False))),
             (True, ((Q.real, 0, True), (Q.zero, 0, False), (Q.imaginary, 1, True))),
+        ),
+        Q.infinite: (
+            (True, ((Q.finite, 0, False), (Q.extended_nonzero, 1, True))),
+            (True, ((Q.finite, 0, False), (Q.infinite, 1, True))),
+            (True, ((Q.zero, 0, False), (Q.infinite, 1, True))),
+            (True, ((Q.finite, 0, False), (Q.finite, 1, True), (Q.zero, 1, False))),
         ),
         Q.integer: (
             (True, ((Q.integer, 0, True), (Q.integer, 1, True))),
@@ -156,6 +202,14 @@ ASK_RULES = {
         Q.even: (
             (True, ((Q.even, 0, True), (Q.integer, 1, True), (Q.positive, 1, True))),
         ),
+        Q.finite: (
+            (True, ((Q.finite, 0, True), (Q.nonnegative, 1, True))),
+            (True, ((Q.finite, 0, True), (Q.zero, 0, False), (Q.finite, 1, True))),
+        ),
+        Q.infinite: (
+            (True, ((Q.finite, 0, False), (Q.positive, 1, True))),
+            (True, ((Q.zero, 0, True), (Q.extended_negative, 1, True))),
+        ),
         Q.nonnegative: (
             (True, ((Q.nonnegative, 0, True), (Q.nonnegative, 1, True), (Q.odd, 1, True))),
             (True, ((Q.real, 0, True), (Q.even, 1, True), (Q.nonnegative, 1, True))),
@@ -180,9 +234,42 @@ ASK_RULES = {
             (False, ((Q.finite, 0, True), (Q.positive, 1, False), (Q.real, 1, True))),
         ),
     },
+    (Symbol, None): {
+        Q.infinite: (
+            (True, ((Q.commutative, EXPR, True), (Q.finite, EXPR, False))),
+        ),
+    },
+    (cos, 1): {
+        Q.finite: (
+            (True, ((Q.finite, 0, True),)),
+        ),
+    },
+    (exp, 1): {
+        Q.finite: (
+            (True, ((Q.finite, 0, True),)),
+        ),
+        Q.positive_infinite: (
+            (True, ((Q.positive_infinite, 0, True),)),
+        ),
+        Q.zero: (
+            (True, ((Q.negative_infinite, 0, True),)),
+        ),
+    },
     (im, 1): {
         Q.even: (
             (True, ((Q.real, 0, True),)),
+        ),
+    },
+    (log, 1): {
+        Q.finite: (
+            (True, ((Q.finite, 0, True), (Q.zero, 0, False))),
+        ),
+        Q.infinite: (
+            (True, ((Q.finite, 0, False),)),
+            (True, ((Q.zero, 0, True),)),
+        ),
+        Q.positive_infinite: (
+            (True, ((Q.positive_infinite, 0, True),)),
         ),
     },
     (re, 1): {
@@ -192,6 +279,16 @@ ASK_RULES = {
         ),
         Q.odd: (
             (True, ((Q.odd, 0, True),)),
+        ),
+    },
+    (sign, 1): {
+        Q.finite: (
+            (True, ()),
+        ),
+    },
+    (sin, 1): {
+        Q.finite: (
+            (True, ((Q.finite, 0, True),)),
         ),
     },
 }
