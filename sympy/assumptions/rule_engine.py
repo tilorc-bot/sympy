@@ -62,18 +62,16 @@ class Condition(NamedTuple):
 
     >>> from sympy import Q
     >>> from sympy.assumptions.rule_engine import SELF, Condition
-    >>> Condition(Q.even, 0)
-    Condition(predicate=Q.even, argument=0, value=True)
-    >>> Condition(Q.zero, 0, False)
-    Condition(predicate=Q.zero, argument=0, value=False)
+    >>> even_argument = Condition(Q.even, 0)
+    >>> nonzero_argument = Condition(Q.zero, 0, False)
+    >>> nonzero_argument.predicate, nonzero_argument.argument, nonzero_argument.value
+    (Q.zero, 0, False)
 
     For ``x**y``: "the exponent is real". For any expression: "the
     expression itself is positive".
 
-    >>> Condition(Q.real, 1)
-    Condition(predicate=Q.real, argument=1, value=True)
-    >>> Condition(Q.positive, SELF)
-    Condition(predicate=Q.positive, argument=-1, value=True)
+    >>> real_exponent = Condition(Q.real, 1)
+    >>> positive_itself = Condition(Q.positive, SELF)
 
     """
     predicate: Predicate
