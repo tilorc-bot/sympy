@@ -8,6 +8,8 @@ from sympy.core.add import Add
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.functions.elementary.complexes import Abs
+from sympy.functions.elementary.complexes import im
+from sympy.functions.elementary.complexes import re
 from sympy.matrices.expressions.matmul import MatMul
 
 # A literal ``(predicate, slot, value)`` says that the predicate has the truth
@@ -26,6 +28,8 @@ SAT_RULES = {
         ((Q.even, 0, False), (Q.even, EXPR, True)),
         # Implies(Q.odd(x), Q.odd(f(x)))
         ((Q.odd, 0, False), (Q.odd, EXPR, True)),
+        # Implies(Q.real(x) & ~Q.even(x), ~Q.even(f(x)))
+        ((Q.even, 0, True), (Q.real, 0, False), (Q.even, EXPR, False)),
         # Q.extended_nonnegative(f(x))
         ((Q.extended_nonnegative, EXPR, True),),
         # Implies(Q.finite(x), Q.nonnegative(f(x)))
@@ -37,6 +41,14 @@ SAT_RULES = {
         ((Q.integer, 0, False), (Q.integer, EXPR, True)),
     ),
     (Add, 2): (
+        # Implies(Q.even(x) & Q.even(y), Q.even(f(x, y)))
+        ((Q.even, 0, False), (Q.even, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.odd(x) & Q.odd(y), Q.even(f(x, y)))
+        ((Q.odd, 0, False), (Q.odd, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.even(x) & Q.odd(y), Q.odd(f(x, y)))
+        ((Q.even, 0, False), (Q.odd, 1, False), (Q.odd, EXPR, True)),
+        # Implies(Q.even(y) & Q.odd(x), Q.odd(f(x, y)))
+        ((Q.odd, 0, False), (Q.even, 1, False), (Q.odd, EXPR, True)),
         # Implies(Q.positive(x) & Q.positive(y), Q.positive(f(x, y)))
         ((Q.positive, 0, False), (Q.positive, 1, False), (Q.positive, EXPR, True)),
         # Implies(Q.negative(x) & Q.negative(y), Q.negative(f(x, y)))
@@ -68,14 +80,28 @@ SAT_RULES = {
         ((Q.finite, 1, True), (Q.complex, EXPR, False)),
         # Implies(Q.commutative(x) & Q.commutative(y), Q.commutative(f(x, y)))
         ((Q.commutative, 0, False), (Q.commutative, 1, False), (Q.commutative, EXPR, True)),
+        # Implies(Q.even(x) & Q.integer(y), Q.even(f(x, y)))
+        ((Q.even, 0, False), (Q.integer, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.even(y) & Q.integer(x), Q.even(f(x, y)))
+        ((Q.integer, 0, False), (Q.even, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.odd(x) & Q.odd(y), Q.odd(f(x, y)))
+        ((Q.odd, 0, False), (Q.odd, 1, False), (Q.odd, EXPR, True)),
         # Implies(Q.integer(x) & Q.integer(y), Equivalent(Q.even(f(x, y)), Q.even(x) | Q.even(y)))
         ((Q.even, 0, False), (Q.integer, 0, False), (Q.integer, 1, False), (Q.even, EXPR, True)),
         ((Q.even, 0, True), (Q.integer, 0, False), (Q.even, 1, True), (Q.integer, 1, False), (Q.even, EXPR, False)),
         ((Q.integer, 0, False), (Q.even, 1, False), (Q.integer, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.composite(x) & Q.integer(y), ~Q.prime(f(x, y)))
+        ((Q.composite, 0, False), (Q.integer, 1, False), (Q.prime, EXPR, False)),
+        # Implies(Q.composite(y) & Q.integer(x), ~Q.prime(f(x, y)))
+        ((Q.integer, 0, False), (Q.composite, 1, False), (Q.prime, EXPR, False)),
         # Implies(Q.prime(x) & Q.prime(y), Q.composite(f(x, y)))
         ((Q.prime, 0, False), (Q.prime, 1, False), (Q.composite, EXPR, True)),
         # Implies(Q.composite(y) & Q.prime(x), Q.composite(f(x, y)))
         ((Q.prime, 0, False), (Q.composite, 1, False), (Q.composite, EXPR, True)),
+        # Implies(Q.composite(x) & Q.prime(y), Q.composite(f(x, y)))
+        ((Q.composite, 0, False), (Q.prime, 1, False), (Q.composite, EXPR, True)),
+        # Implies(Q.composite(x) & Q.composite(y), Q.composite(f(x, y)))
+        ((Q.composite, 0, False), (Q.composite, 1, False), (Q.composite, EXPR, True)),
         # Implies(Q.positive(x) & Q.positive(y), Q.positive(f(x, y)))
         ((Q.positive, 0, False), (Q.positive, 1, False), (Q.positive, EXPR, True)),
         # Implies(Q.zero(f(x, y)), Q.zero(x) | Q.zero(y))
@@ -104,6 +130,20 @@ SAT_RULES = {
         ((Q.imaginary, 0, False), (Q.real, 1, False), (Q.zero, 1, True), (Q.imaginary, EXPR, True)),
     ),
     (Pow, 2): (
+        # Implies(Q.even(base) & Q.integer(exponent) & Q.positive(exponent), Q.even(f(base, exponent)))
+        ((Q.even, 0, False), (Q.integer, 1, False), (Q.positive, 1, False), (Q.even, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.odd(base) & ~Q.negative(exponent), Q.odd(f(base, exponent)))
+        ((Q.odd, 0, False), (Q.integer, 1, False), (Q.negative, 1, True), (Q.odd, EXPR, True)),
+        # Implies(Q.integer(exponent) & Q.positive(exponent) & Q.prime(base) & ~Q.composite(exponent) & ~Q.prime(exponent), Q.prime(f(base, exponent)))
+        ((Q.prime, 0, False), (Q.composite, 1, True), (Q.integer, 1, False), (Q.positive, 1, False), (Q.prime, 1, True), (Q.prime, EXPR, True)),
+        # Implies(Q.integer(base) & Q.integer(exponent) & ~Q.prime(base), ~Q.prime(f(base, exponent)))
+        ((Q.integer, 0, False), (Q.prime, 0, True), (Q.integer, 1, False), (Q.prime, EXPR, False)),
+        # Implies(Q.integer(base) & Q.integer(exponent) & ~Q.positive(exponent), ~Q.prime(f(base, exponent)))
+        ((Q.integer, 0, False), (Q.integer, 1, False), (Q.positive, 1, True), (Q.prime, EXPR, False)),
+        # Implies(Q.integer(base) & Q.prime(exponent), ~Q.prime(f(base, exponent)))
+        ((Q.integer, 0, False), (Q.prime, 1, False), (Q.prime, EXPR, False)),
+        # Implies(Q.composite(exponent) & Q.integer(base), ~Q.prime(f(base, exponent)))
+        ((Q.integer, 0, False), (Q.composite, 1, False), (Q.prime, EXPR, False)),
         # Implies(Q.even(exponent) & Q.nonnegative(exponent) & Q.real(base), Q.nonnegative(f(base, exponent)))
         ((Q.real, 0, False), (Q.even, 1, False), (Q.nonnegative, 1, False), (Q.nonnegative, EXPR, True)),
         # Implies(Q.nonnegative(base) & Q.nonnegative(exponent) & Q.odd(exponent), Q.nonnegative(f(base, exponent)))
@@ -118,5 +158,17 @@ SAT_RULES = {
         ((Q.finite, 0, False), (Q.zero, 0, True), (Q.finite, 1, False), (Q.zero, EXPR, False)),
         # Implies(Q.finite(base) & Q.real(exponent) & Q.zero(f(base, exponent)), Q.positive(exponent))
         ((Q.finite, 0, False), (Q.positive, 1, True), (Q.real, 1, False), (Q.zero, EXPR, False)),
+    ),
+    (im, 1): (
+        # Implies(Q.real(x), Q.even(f(x)))
+        ((Q.real, 0, False), (Q.even, EXPR, True)),
+    ),
+    (re, 1): (
+        # Implies(Q.even(x), Q.even(f(x)))
+        ((Q.even, 0, False), (Q.even, EXPR, True)),
+        # Implies(Q.odd(x), Q.odd(f(x)))
+        ((Q.odd, 0, False), (Q.odd, EXPR, True)),
+        # Implies(Q.real(x) & ~Q.even(x), ~Q.even(f(x)))
+        ((Q.even, 0, True), (Q.real, 0, False), (Q.even, EXPR, False)),
     ),
 }

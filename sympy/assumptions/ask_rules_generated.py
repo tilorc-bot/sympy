@@ -5,9 +5,12 @@ Instead, run ./bin/ask_update.py.
 
 from sympy.assumptions.ask import Q
 from sympy.core.add import Add
+from sympy.core.basic import Basic
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.functions.elementary.complexes import Abs
+from sympy.functions.elementary.complexes import im
+from sympy.functions.elementary.complexes import re
 from sympy.matrices.expressions.matmul import MatMul
 
 # A condition ``(predicate, slot, value)`` holds when asking the predicate
@@ -24,6 +27,7 @@ ASK_RULES = {
     (Abs, 1): {
         Q.even: (
             (True, ((Q.even, 0, True),)),
+            (False, ((Q.even, 0, False), (Q.real, 0, True))),
         ),
         Q.extended_nonnegative: (
             (True, ()),
@@ -43,6 +47,10 @@ ASK_RULES = {
         ),
     },
     (Add, 2): {
+        Q.even: (
+            (True, ((Q.even, 0, True), (Q.even, 1, True))),
+            (True, ((Q.odd, 0, True), (Q.odd, 1, True))),
+        ),
         Q.integer: (
             (True, ((Q.integer, 0, True), (Q.integer, 1, True))),
             (False, ((Q.integer, 0, False), (Q.integer, 1, True))),
@@ -55,6 +63,10 @@ ASK_RULES = {
         Q.negative: (
             (True, ((Q.negative, 0, True), (Q.negative, 1, True))),
         ),
+        Q.odd: (
+            (True, ((Q.even, 0, True), (Q.odd, 1, True))),
+            (True, ((Q.odd, 0, True), (Q.even, 1, True))),
+        ),
         Q.positive: (
             (True, ((Q.positive, 0, True), (Q.positive, 1, True))),
         ),
@@ -63,6 +75,18 @@ ASK_RULES = {
         ),
         Q.real: (
             (True, ((Q.real, 0, True), (Q.real, 1, True))),
+        ),
+    },
+    (Basic, None): {
+        Q.composite: (
+            (True, ((Q.even, EXPR, True), (Q.positive, EXPR, True), (Q.prime, EXPR, False))),
+            (False, ((Q.integer, EXPR, False),)),
+            (False, ((Q.positive, EXPR, False),)),
+            (False, ((Q.prime, EXPR, True),)),
+        ),
+        Q.odd: (
+            (True, ((Q.even, EXPR, False), (Q.integer, EXPR, True))),
+            (False, ((Q.integer, EXPR, False),)),
         ),
     },
     (MatMul, 2): {
@@ -81,10 +105,14 @@ ASK_RULES = {
             (False, ((Q.finite, 1, False),)),
         ),
         Q.composite: (
+            (True, ((Q.composite, 0, True), (Q.composite, 1, True))),
+            (True, ((Q.composite, 0, True), (Q.prime, 1, True))),
             (True, ((Q.prime, 0, True), (Q.composite, 1, True))),
             (True, ((Q.prime, 0, True), (Q.prime, 1, True))),
         ),
         Q.even: (
+            (True, ((Q.even, 0, True), (Q.integer, 1, True))),
+            (True, ((Q.integer, 0, True), (Q.even, 1, True))),
             (True, ((Q.even, 0, True), (Q.integer, 0, True), (Q.integer, 1, True))),
             (True, ((Q.integer, 0, True), (Q.even, 1, True), (Q.integer, 1, True))),
             (False, ((Q.even, 0, False), (Q.integer, 0, True), (Q.even, 1, False), (Q.integer, 1, True))),
@@ -100,8 +128,15 @@ ASK_RULES = {
             (True, ((Q.irrational, 0, True), (Q.rational, 1, True), (Q.zero, 1, False))),
             (True, ((Q.rational, 0, True), (Q.zero, 0, False), (Q.irrational, 1, True))),
         ),
+        Q.odd: (
+            (True, ((Q.odd, 0, True), (Q.odd, 1, True))),
+        ),
         Q.positive: (
             (True, ((Q.positive, 0, True), (Q.positive, 1, True))),
+        ),
+        Q.prime: (
+            (False, ((Q.composite, 0, True), (Q.integer, 1, True))),
+            (False, ((Q.integer, 0, True), (Q.composite, 1, True))),
         ),
         Q.rational: (
             (True, ((Q.rational, 0, True), (Q.rational, 1, True))),
@@ -118,6 +153,9 @@ ASK_RULES = {
         ),
     },
     (Pow, 2): {
+        Q.even: (
+            (True, ((Q.even, 0, True), (Q.integer, 1, True), (Q.positive, 1, True))),
+        ),
         Q.nonnegative: (
             (True, ((Q.nonnegative, 0, True), (Q.nonnegative, 1, True), (Q.odd, 1, True))),
             (True, ((Q.real, 0, True), (Q.even, 1, True), (Q.nonnegative, 1, True))),
@@ -125,11 +163,35 @@ ASK_RULES = {
         Q.nonpositive: (
             (True, ((Q.nonpositive, 0, True), (Q.nonnegative, 1, True), (Q.odd, 1, True))),
         ),
+        Q.odd: (
+            (True, ((Q.odd, 0, True), (Q.integer, 1, True), (Q.negative, 1, False))),
+        ),
+        Q.prime: (
+            (True, ((Q.prime, 0, True), (Q.composite, 1, False), (Q.integer, 1, True), (Q.positive, 1, True), (Q.prime, 1, False))),
+            (False, ((Q.integer, 0, True), (Q.composite, 1, True))),
+            (False, ((Q.integer, 0, True), (Q.prime, 1, True))),
+            (False, ((Q.integer, 0, True), (Q.prime, 0, False), (Q.integer, 1, True))),
+            (False, ((Q.integer, 0, True), (Q.integer, 1, True), (Q.positive, 1, False))),
+        ),
         Q.zero: (
             (True, ((Q.zero, 0, True), (Q.positive, 1, True))),
             (False, ((Q.zero, 0, False), (Q.positive, 1, True))),
             (False, ((Q.finite, 0, True), (Q.zero, 0, False), (Q.finite, 1, True))),
             (False, ((Q.finite, 0, True), (Q.positive, 1, False), (Q.real, 1, True))),
+        ),
+    },
+    (im, 1): {
+        Q.even: (
+            (True, ((Q.real, 0, True),)),
+        ),
+    },
+    (re, 1): {
+        Q.even: (
+            (True, ((Q.even, 0, True),)),
+            (False, ((Q.even, 0, False), (Q.real, 0, True))),
+        ),
+        Q.odd: (
+            (True, ((Q.odd, 0, True),)),
         ),
     },
 }

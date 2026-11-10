@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import threading
 
+from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.ask_rules_generated import ASK_RULES
 from sympy.assumptions.assume import AppliedPredicate
@@ -33,7 +34,9 @@ FIRST_AND_REST = (Add, Mul)
 
 # The predicates which :func:`evaluate` uses the compiled rules for. The
 # others still have hand-written handlers for the classes of the rules.
-RULE_PREDICATES: frozenset = frozenset()
+RULE_PREDICATES: frozenset = frozenset({
+    Q.prime, Q.composite, Q.even, Q.odd,
+})
 
 _sat_rules: dict = {}
 _ask_rules: dict = {}

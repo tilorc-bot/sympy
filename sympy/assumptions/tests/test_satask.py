@@ -390,6 +390,8 @@ def test_get_relevant_clsfacts():
         {frozenset({Literal(Q.extended_nonnegative(Abs(x*y)), False)}),
          frozenset({Literal(Q.nonnegative(Abs(x*y)), False), Literal(Q.finite(x*y), True)}),
          frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
+         frozenset({Literal(Q.even(Abs(x*y)), True), Literal(Q.even(x*y), False),
+                    Literal(Q.real(x*y), True)}),
          frozenset({Literal(Q.integer(Abs(x*y)), False), Literal(Q.integer(x*y), True)}),
          frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)}),
          frozenset({Literal(Q.zero(Abs(x*y)), False), Literal(Q.zero(x*y), True)}),

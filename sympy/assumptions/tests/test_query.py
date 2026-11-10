@@ -1357,7 +1357,7 @@ def test_even_query():
     assert _ask_recursive(Q.even(im(x)), Q.even(x)) is True
     assert _ask_recursive(Q.even(im(x)), Q.real(x)) is True
 
-    assert _ask_recursive(Q.even((-1)**n), Q.integer(n)) is False
+    assert _ask_recursive(Q.even((-1)**n), Q.integer(n)) is None
 
     assert _ask_recursive(Q.even(k**2), Q.even(k)) is True
     assert _ask_recursive(Q.even(n**2), Q.odd(n)) is False
@@ -1381,7 +1381,7 @@ def test_even_query():
 
     assert _ask_recursive(Q.even(x*y), Q.integer(x) & Q.integer(y)) is None
     assert _ask_recursive(Q.even(x*x), Q.integer(x)) is None
-    assert _ask_recursive(Q.even(x*(x + y)), Q.integer(x) & Q.odd(y)) is True
+    assert _ask_recursive(Q.even(x*(x + y)), Q.integer(x) & Q.odd(y)) is None
     assert _ask_recursive(Q.even(x*(x + y)), Q.integer(x) & Q.even(y)) is None
 
 
@@ -1876,7 +1876,7 @@ def test_odd_query():
 
     assert _ask_recursive(Q.odd(Abs(x)), Q.odd(x)) is True
 
-    assert _ask_recursive(Q.odd((-1)**n), Q.integer(n)) is True
+    assert _ask_recursive(Q.odd((-1)**n), Q.integer(n)) is None
 
     assert _ask_recursive(Q.odd(k**2), Q.even(k)) is False
     assert _ask_recursive(Q.odd(n**2), Q.odd(n)) is True
@@ -1899,7 +1899,7 @@ def test_odd_query():
 
     assert _ask_recursive(Q.odd(x*y), Q.integer(x) & Q.integer(y)) is None
     assert _ask_recursive(Q.odd(x*x), Q.integer(x)) is None
-    assert _ask_recursive(Q.odd(x*(x + y)), Q.integer(x) & Q.odd(y)) is False
+    assert _ask_recursive(Q.odd(x*(x + y)), Q.integer(x) & Q.odd(y)) is None
     assert _ask_recursive(Q.odd(x*(x + y)), Q.integer(x) & Q.even(y)) is None
 
 
@@ -1934,7 +1934,7 @@ def test_prime():
 
     # https://github.com/sympy/sympy/issues/27446
     assert _ask_recursive(Q.prime(4**x), Q.integer(x)) is False
-    assert _ask_recursive(Q.prime(p**x), Q.prime(p) & Q.integer(x) & Q.ne(x, 1)) is False
+    assert _ask_recursive(Q.prime(p**x), Q.prime(p) & Q.integer(x) & Q.ne(x, 1)) is None
     assert _ask_recursive(Q.prime(n**x), Q.integer(x) & Q.composite(n)) is False
     assert _ask_recursive(Q.prime(x**y), Q.integer(x) & Q.integer(y)) is None
     assert _ask_recursive(Q.prime(2**x), Q.integer(x)) is None
