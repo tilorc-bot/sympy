@@ -650,6 +650,15 @@ def test_relations_by_size_evaluated():
     assert integer(number, a, b, assumptions=Q.gt(b, 1)) is None
     assert integer(number, oo, b) is True
     assert integer(number, Rational(1, 2), b) is None
+    # by arithmetic, between expressions which are known to be real
+    r = Symbol('r', real=True)
+    assert integer(number, r, b, assumptions=Q.gt(r, 2)) is True
+    assert integer(number, r, b, assumptions=Q.ge(r, 1)) is None
+    assert integer(number, a, b, assumptions=Q.gt(a, 2) & Q.real(a)) is True
+    assert integer(number, a, b, assumptions=Q.gt(a, c) & Q.gt(c, 1) & Q.real(a) & Q.real(c)) is True
+    assert integer(number, a, b, assumptions=Q.gt(a, c) & Q.gt(c, 1) & Q.real(a)) is None
+    assert integer(gt, a, b, assumptions=~Q.le(a, b) & Q.real(a) & Q.real(b)) is True
+    assert integer(ne, a, b, assumptions=~Q.ge(a, b) & Q.real(a) & Q.real(b)) is True
 
 
 def test_relations_assumed():
@@ -672,6 +681,8 @@ def test_relations_assumed():
 
 def test_comparisons():
     one, two = Integer(1), Integer(2)
+    r, s = Symbol('r', real=True), Symbol('s', real=True)
+    n = Symbol('n', integer=True)
 
     def decide(assumptions, relation, *args):
         return Comparisons(unit_literals(assumptions)).decide(relation, *args)
@@ -692,7 +703,48 @@ def test_comparisons():
     assert decide(Q.gt(a, 1), Q.eq, one, a) is False
     assert decide(Q.ge(a, 1), Q.gt, a, one) is None
     assert decide(Q.gt(a, 2), Q.gt, a, one) is None
-    assert decide(Q.positive(a - 1), Q.gt, a, one) is None
+    # by arithmetic: a symbol is real by its old assumptions,
+    assert decide(Q.gt(r, 2), Q.gt, r, one) is True
+    assert decide(Q.gt(r, 2), Q.eq, r, one) is False
+    assert decide(Q.gt(r, 2), Q.gt, r, Integer(3)) is None
+    assert decide(Q.gt(r, s) & Q.gt(s, 1), Q.gt, r, one) is True
+    assert decide(Q.ge(r, 1) & Q.ne(r, 1), Q.gt, r, one) is True
+    assert decide(~Q.le(r, 1), Q.gt, r, one) is True
+    # by an assumption,
+    assert decide(Q.gt(a, 2) & Q.real(a), Q.gt, a, one) is True
+    assert decide(Q.gt(a, 2) & Q.rational(a), Q.gt, a, one) is True
+    assert decide(Q.gt(a, 2) & Q.extended_real(a), Q.gt, a, one) is None
+    assert decide(Q.gt(a, 2) & ~Q.real(a), Q.gt, a, one) is None
+    assert decide(Q.gt(a, b) & Q.gt(b, 1) & Q.real(a), Q.gt, a, one) is None
+    # or because a sum of it and a rational number is real
+    assert decide(Q.positive(a - 1), Q.gt, a, one) is True
+    assert decide(Q.negative(a - 1), Q.gt, one, a) is True
+    assert decide(Q.zero(a - 1), Q.eq, a, one) is True
+    assert decide(Q.nonzero(a - 1), Q.eq, a, one) is False
+    assert decide(Q.nonnegative(2*a - 2), Q.ge, a, one) is True
+    assert decide(~Q.zero(a - 1), Q.eq, a, one) is None
+    assert decide(~Q.zero(a - 1) & Q.real(a), Q.eq, a, one) is False
+    assert decide(Q.positive(a + b + 1), Q.gt, a, one) is None
+    # the other assumptions about its symbols are used with it
+    assert decide(Q.gt(r, s) & Q.positive(s), Q.gt, r, Integer(0)) is True
+    assert decide(Q.gt(r, s) & Q.positive(s) & Q.integer(b), Q.gt, r, Integer(0)) is True
+    assert decide(Q.gt(r + 1, 3), Q.gt, r, one) is True
+    # an assumption about the sign of a symbol alone does not start it
+    assert decide(Q.positive(r), Q.gt, r, Integer(-1)) is None
+    assert decide(Q.positive(r) & Q.gt(s, 1), Q.gt, r, Integer(-1)) is None
+    # what the arithmetic does not handle is not decided
+    assert decide(Q.gt(n, 2), Q.gt, n, one) is None
+    assert decide(Q.gt(r, pi), Q.gt, r, one) is None
+    assert decide(Q.gt(r*s, 2), Q.gt, r*s, one) is True
+    assert decide(Q.gt(r*s, 2) & Q.gt(r, 1), Q.gt, r*s, one) is None
+    raises(ValueError, lambda: decide(Q.gt(r, 2) & Q.lt(r, 1), Q.gt, r, one))
+
+    compared = Comparisons(unit_literals(Q.gt(r, 2)))
+    assert compared.facts is None and not compared.solved
+    assert compared.decide(Q.gt, r, one) is True
+    assert compared.solved == {(Q.gt, r, one): True}
+    assert not Comparisons(unit_literals(Q.positive(r))).arithmetic
+    assert not Comparisons().arithmetic
 
 
 def test_relations_decided_once():
@@ -733,6 +785,16 @@ def test_relations_decided_once():
         truths = {slots[index]: truth
                   for index, truth in enumerate(query.truths[power(a, b)])}
         assert truths[Q.eq, (1, Integer(1))] is False
+
+        # what the arithmetic finds is kept for the next query under the
+        # same assumptions
+        assumptions = Q.integer(a) & Q.integer(b) & Q.gt(b, 2)
+        query = rule_engine._Query(assumptions)
+        assert query.ask_about(Q.prime, power(a, b)) is False
+        assert query.compared.solved[Q.eq, b, Integer(1)] is False
+        assert rule_engine._Query(Q.integer(a) & Q.integer(b) & Q.gt(b, 2)
+                                  ).compared is query.compared
+        assert rule_engine._Query(Q.integer(a) & Q.gt(b, 2)).compared is not query.compared
 
 
 def test_relations_kept_in_satask():
@@ -778,6 +840,8 @@ def test_relations_kept_in_satask():
         assert satask(Q.finite(power(a, b)), ~Q.le(a, 1) & Q.extended_negative(b)) is None
         assert satask(Q.finite(power(a, b)), Q.ge(a, 1) & Q.extended_negative(b)) is None
         assert satask(Q.finite(power(a, b)), Q.gt(a, 2) & Q.extended_negative(b)) is None
+        assert satask(Q.finite(power(a, b)),
+                      Q.gt(a, 2) & Q.real(a) & Q.extended_negative(b)) is True
         assert satask(Q.positive(arccosine(a)), Q.le(-1, a) & Q.gt(1, a)) is True
         assert satask(Q.prime(power(a, b)), Q.integer(a) & Q.integer(b) & Q.gt(b, 1)) is False
         assert satask(Q.rational(power(a, b)), Q.rational(b) & Q.eq(a, 1)) is True
@@ -792,6 +856,32 @@ def test_relations_kept_in_satask():
         assert satask(Q.ne(a, 1), Q.integer(b) & Q.even(power(a, b))) is True
         assert satask(Q.finite(power(a, b)),
                       (Q.lt(1, a) | Q.finite(power(a, b))) & Q.extended_negative(b)) is True
+
+
+def test_relations_by_arithmetic():
+    with installed(POWER, LOGARITHM, ARCCOSINE):
+        ask = lambda *args: _with_rules(
+            [Q.positive, Q.rational, Q.finite, Q.real], lambda: _ask_recursive(*args))
+        for engine in (satask, ask):
+            assert engine(Q.positive(logarithm(a)), Q.real(a) & Q.gt(a, 2)) is True
+            assert engine(Q.positive(logarithm(a)), Q.gt(a, 2)) is None
+            assert engine(Q.positive(logarithm(a)),
+                          Q.real(a) & Q.real(b) & Q.gt(a, b) & Q.ge(b, 1)) is True
+            assert engine(Q.positive(logarithm(a)), Q.real(a) & Q.positive(a - 1)) is True
+            assert engine(Q.positive(logarithm(a)), Q.real(a) & ~Q.nonpositive(a - 1)) is True
+            assert engine(Q.positive(logarithm(a)), Q.real(a) & Q.negative(a - 1)) is False
+            assert engine(Q.positive(logarithm(a + 1)), Q.real(a) & Q.gt(a, 0)) is True
+            assert engine(Q.positive(arccosine(a)),
+                          Q.negative(a - 1) & Q.nonnegative(a + 1)) is True
+            assert engine(Q.positive(arccosine(a)),
+                          Q.nonpositive(a - 1) & Q.nonnegative(a + 1)) is None
+            assert engine(Q.rational(logarithm(a)), Q.rational(a) & Q.nonzero(a - 1)) is False
+            assert engine(Q.rational(logarithm(a)), Q.rational(a) & ~Q.zero(a - 1)) is False
+            assert engine(Q.rational(logarithm(a)), Q.rational(a) & ~Q.zero(a - 2)) is None
+            assert engine(Q.finite(power(b, a)),
+                          Q.positive(b - 1) & Q.extended_negative(a)) is True
+            raises(ValueError, lambda: engine(
+                Q.positive(logarithm(a)), Q.real(a) & Q.gt(a, 2) & Q.lt(a, 1)))
 
 
 def test_relations_in_satask():
