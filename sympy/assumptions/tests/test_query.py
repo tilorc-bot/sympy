@@ -1204,8 +1204,7 @@ def test_issue_27447():
         & Q.finite(z)) is None
 
 
-@XFAIL
-def test_issue_27662_xfail():
+def test_issue_27662():
     assert ask(Q.finite(x*y), ~Q.finite(x)
         & Q.zero(y)) is None
 

@@ -10,7 +10,6 @@ from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.satask import (satask, extract_predargs,
     get_relevant_clsfacts)
-from sympy.assumptions.sathandlers import class_fact_registry
 
 from sympy.testing.pytest import raises, XFAIL
 
@@ -35,7 +34,8 @@ def test_satask():
     assert satask(Q.positive(x), Q.zero(x)) is False
     assert satask(Q.real(x), Q.zero(x)) is True
     assert satask(Q.zero(x), Q.zero(x*y)) is None
-    assert satask(Q.zero(x*y), Q.zero(x))
+    assert satask(Q.zero(x*y), Q.zero(x) & Q.finite(y)) is True
+    assert satask(Q.zero(x*y), Q.zero(x)) is None # 0*oo is nan
 
 
 def test_zero():
@@ -46,9 +46,12 @@ def test_zero():
 
     """
     assert satask(Q.zero(x) | Q.zero(y), Q.zero(x*y)) is True
-    assert satask(Q.zero(x*y), Q.zero(x) | Q.zero(y)) is True
+    assert satask(Q.zero(x*y), Q.zero(x) | Q.zero(y)) is None # 0*oo is nan
+    assert satask(Q.zero(x*y),
+        (Q.zero(x) | Q.zero(y)) & Q.finite(x) & Q.finite(y)) is True
 
-    assert satask(Implies(Q.zero(x), Q.zero(x*y))) is True
+    assert satask(Implies(Q.zero(x), Q.zero(x*y))) is None
+    assert satask(Implies(Q.zero(x), Q.zero(x*y)), Q.finite(y)) is True
 
     # This one in particular requires computing the fixed-point of the
     # relevant facts, because going from Q.nonzero(x*y) -> ~Q.zero(x*y) and
@@ -78,7 +81,8 @@ def test_zero_pow():
     assert satask(Q.zero(x**y), Q.zero(x) & Q.positive(y)) is True
     assert satask(Q.zero(x**y), Q.nonzero(x) & Q.zero(y)) is False
 
-    assert satask(Q.zero(x), Q.zero(x**y)) is True
+    assert satask(Q.zero(x), Q.zero(x**y)) is None # oo**-1 is 0
+    assert satask(Q.zero(x), Q.zero(x**y) & Q.finite(x) & Q.finite(y)) is True
 
     assert satask(Q.zero(x**y), Q.zero(x)) is None
 
@@ -245,8 +249,12 @@ def test_integer():
 
 
 def test_abs():
-    assert satask(Q.nonnegative(abs(x))) is True
-    assert satask(Q.positive(abs(x)), ~Q.zero(x)) is True
+    assert satask(Q.nonnegative(abs(x))) is None # abs(oo) is oo
+    assert satask(Q.nonnegative(abs(x)), Q.finite(x)) is True
+    assert satask(Q.extended_nonnegative(abs(x))) is True
+    assert satask(Q.positive(abs(x)), ~Q.zero(x)) is None
+    assert satask(Q.positive(abs(x)), ~Q.zero(x) & Q.finite(x)) is True
+    assert satask(Q.extended_positive(abs(x)), ~Q.zero(x)) is True
     assert satask(Q.zero(x), ~Q.zero(abs(x))) is False
     assert satask(Q.zero(x), Q.zero(abs(x))) is True
     assert satask(Q.nonzero(x), ~Q.zero(abs(x))) is None # x could be complex
@@ -379,7 +387,8 @@ def test_get_relevant_clsfacts():
     exprs, facts = get_relevant_clsfacts(exprs)
     assert exprs == {x*y}
     assert facts.clauses == \
-        {frozenset({Literal(Q.nonnegative(Abs(x*y)), False)}),
+        {frozenset({Literal(Q.extended_nonnegative(Abs(x*y)), False)}),
+         frozenset({Literal(Q.nonnegative(Abs(x*y)), False), Literal(Q.finite(x*y), True)}),
          frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
          frozenset({Literal(Q.integer(Abs(x*y)), False), Literal(Q.integer(x*y), True)}),
          frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)}),
@@ -387,8 +396,10 @@ def test_get_relevant_clsfacts():
          frozenset({Literal(Q.zero(Abs(x*y)), True), Literal(Q.zero(x*y), False)})}
 
 def test_issue_27467():
-    s = sum(Dummy() for _ in range(10))
-    assert all(len(CNF.to_CNF(f).clauses) < 1000 for f in class_fact_registry(s))
+    exprs, facts = {sum(Dummy() for _ in range(10))}, CNF()
+    while exprs:
+        exprs, facts = get_relevant_clsfacts(exprs, facts)
+    assert len(facts.clauses) < 1000
 
 def test_issue_29433():
     assert satask(Q.infinite(x+y*pi), Q.zero(y)) is None

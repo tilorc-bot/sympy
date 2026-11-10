@@ -8,6 +8,9 @@ is changed.
 This must be run each time ``_generate_assumption_rules()`` in
 ``sympy.core.assumptions`` module is changed.
 
+This must be run each time a rule in ``sympy.assumptions.rules`` package is
+changed. It updates the ``*_rules_generated.py`` files.
+
 Should be run from sympy root directory.
 
 $ python bin/ask_update.py
@@ -30,6 +33,7 @@ from sympy.core.assumptions import _generate_assumption_rules
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.facts import (get_known_facts,
     generate_known_facts_dict, get_known_facts_keys, get_matrix_facts, get_number_facts)
+from sympy.assumptions.rules.compiler import GENERATED
 from sympy.core import Symbol
 from textwrap import dedent, wrap
 
@@ -148,3 +152,6 @@ Instead, run ./bin/ask_update.py.
 ''')
 code = code_string % (representation,)
 Path('sympy/core/assumptions_generated.py').write_text(code, encoding='utf-8')
+
+for name, source in GENERATED.items():
+    Path('sympy/assumptions', name).write_text(source())
