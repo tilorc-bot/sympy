@@ -51,7 +51,8 @@ def ask_by_rules(
         predicate: Predicate,
         expr: Basic,
         assumptions: Boolean | bool,
-        rules: Mapping[tuple[type[Basic], Predicate, bool], Sequence[Sequence[Condition]]],
+        rules: Mapping[tuple[type[Basic], Predicate, bool],
+                       Sequence[Sequence[Condition]]],
 ) -> bool | None:
     """
     The truth value of ``predicate(expr)`` under *assumptions*, or ``None``
