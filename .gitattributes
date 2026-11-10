@@ -3,3 +3,4 @@
 
 # auto-collapse generated files in github diffs
 sympy/parsing/*/_antlr/*.py    linguist-generated=true
+sympy/assumptions/*_rules_generated.py    linguist-generated=true
