@@ -10,7 +10,7 @@ from sympy.core.mul import Mul
 from sympy.core.singleton import S
 
 
-def lra_satask(proposition, assumptions=True):
+def lra_satask(proposition, assumptions=True, known_real=frozenset()):
     """
     Function to evaluate the proposition with assumptions using SAT algorithm
     in conjunction with an Linear Real Arithmetic theory solver.
@@ -18,6 +18,19 @@ def lra_satask(proposition, assumptions=True):
     Used to handle inequalities. Should eventually be depreciated and combined
     into satask, but infinity handling and other things need to be implemented
     before that can happen.
+
+    Every expression has to be real. *known_real* holds the expressions which
+    the caller has found to be real by other means than their old assumptions.
+
+    Examples
+    ========
+
+    >>> from sympy import Q
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.lra_satask import lra_satask
+    >>> lra_satask(Q.gt(x, 1), Q.gt(x, 2), known_real={x})
+    True
+
     """
     props = CNF.from_prop(proposition)
     _props = CNF.from_prop(~proposition)
@@ -26,7 +39,7 @@ def lra_satask(proposition, assumptions=True):
     assumptions = EncodedCNF()
     assumptions.from_cnf(cnf)
 
-    return check_satisfiability(props, _props, assumptions)
+    return check_satisfiability(props, _props, assumptions, known_real)
 
 # Some predicates such as Q.prime can't be handled by lra_satask.
 # For example, (x > 0) & (x < 1) & Q.prime(x) is unsat but lra_satask would think it was sat.
@@ -37,7 +50,7 @@ WHITE_LIST = ALLOWED_PRED.keys() | {Q.positive, Q.negative, Q.zero, Q.nonzero, Q
                                     Q.positive_infinite}
 
 
-def check_satisfiability(prop, _prop, factbase):
+def check_satisfiability(prop, _prop, factbase, known_real=frozenset()):
     sat_true = factbase.copy()
     sat_false = factbase.copy()
     sat_true.add_from_cnf(prop)
@@ -56,7 +69,7 @@ def check_satisfiability(prop, _prop, factbase):
 
     # convert old assumptions into predicates and add them to sat_true and sat_false
     # also check for unhandled predicates
-    for assm in extract_pred_from_old_assum(all_exprs):
+    for assm in extract_pred_from_old_assum(all_exprs, known_real):
         n = len(sat_true.encoding)
         if assm not in sat_true.encoding:
             sat_true.encoding[assm] = n+1
@@ -217,13 +230,14 @@ def get_all_pred_and_expr_from_enc_cnf(enc_cnf):
 
     return all_pred, all_exprs
 
-def extract_pred_from_old_assum(all_exprs):
+def extract_pred_from_old_assum(all_exprs, known_real=frozenset()):
     """
     Returns a list of relevant new assumption predicate
     based on any old assumptions.
 
     Raises an UnhandledInput exception if any of the assumptions are
-    unhandled.
+    unhandled. An expression has to be real by its old assumptions or be
+    one of *known_real*.
 
     Ignored predicate:
     - commutative
@@ -251,10 +265,11 @@ def extract_pred_from_old_assum(all_exprs):
         if len(expr.free_symbols) == 0:
             continue
 
-        if expr.is_real is not True:
+        if expr.is_real is not True and expr not in known_real:
             raise UnhandledInput(f"LRASolver: {expr} must be real")
         # test for I times imaginary variable; such expressions are considered real
-        if isinstance(expr, Mul) and any(arg.is_real is not True for arg in expr.args):
+        if isinstance(expr, Mul) and any(
+                arg.is_real is not True and arg not in known_real for arg in expr.args):
             raise UnhandledInput(f"LRASolver: {expr} must be real")
 
         if expr.is_integer == True and expr.is_zero != True:

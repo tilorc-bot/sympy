@@ -78,6 +78,30 @@ def test_old_assumptions():
     assert lra_satask(Q.lt(w, 0)) is False
 
 
+def test_known_real():
+    v, w = symbols("v w")
+    im = Symbol("im", imaginary=True)
+    raises(UnhandledInput, lambda: lra_satask(Q.gt(w, 1), Q.gt(w, 2)))
+    assert lra_satask(Q.gt(w, 1), Q.gt(w, 2), known_real={w}) is True
+    assert lra_satask(Q.gt(w, 3), Q.gt(w, 2), known_real={w}) is None
+    assert lra_satask(Q.eq(w, 1), Q.gt(w, 2), known_real={w}) is False
+    assert lra_satask(Q.gt(w, 1), Q.gt(w, v) & Q.gt(v, 1), known_real={v, w}) is True
+    raises(UnhandledInput,
+           lambda: lra_satask(Q.gt(w, 1), Q.gt(w, v) & Q.gt(v, 1), known_real={w}))
+
+    # an expression is known to be real as a whole, or its terms are
+    assert lra_satask(Q.gt(w, 1), Q.positive(w - 1), known_real={w, w - 1}) is True
+    raises(UnhandledInput,
+           lambda: lra_satask(Q.gt(w, 1), Q.positive(w - 1), known_real={w}))
+    assert lra_satask(Q.gt(2*w, 2), Q.gt(w, 1), known_real={w, 2*w}) is True
+    raises(UnhandledInput,
+           lambda: lra_satask(Q.gt(2*w, 2), Q.gt(w, 1), known_real={2*w}))
+
+    # a real product of factors which are not real is still not handled
+    raises(UnhandledInput,
+           lambda: lra_satask(Q.gt(im*I, 0), Q.gt(im*I, 0), known_real={im*I}))
+
+
 def test_rel_queries():
     assert ask(Q.lt(x, 2) & Q.gt(x, 3)) is False
     assert ask(Q.positive(x - z), (x > y) & (y > z)) is True
