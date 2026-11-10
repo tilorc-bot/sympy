@@ -62,11 +62,6 @@ RULES = (
         (Q.negative(x) & Q.nonpositive(y)) >> Q.negative(f(x, y)),
         (Q.nonpositive(x) & Q.negative(y)) >> Q.negative(f(x, y))),
 
-    # A real number plus an imaginary number is not real
-    for_all((Add,),
-        (Q.real(x) & Q.imaginary(y)) >> ~Q.extended_real(f(x, y)),
-        (Q.imaginary(x) & Q.real(y)) >> ~Q.extended_real(f(x, y))),
-
     # A sum of terms which are not negative is not negative
     for_all((Add,),
         closed(f(x, y), Q.nonnegative, Q.nonpositive)),
@@ -140,6 +135,24 @@ RULES = (
     # A positive number to a real power is positive
     for_all((Pow,),
         (Q.positive(base) & Q.real(exponent)) >> Q.positive(f(base, exponent))),
+
+    # A positive number or oo to a real power is not negative
+    #     oo**-1 is 0 and oo**2 is oo
+    for_all((Pow,),
+        (Q.extended_positive(base) & Q.real(exponent))
+        >> Q.extended_nonnegative(f(base, exponent))),
+
+    # A number which is not negative to a positive power is not negative
+    #     0**2 is 0 and oo**2 is oo
+    for_all((Pow,),
+        (Q.extended_nonnegative(base) & Q.positive(exponent))
+        >> Q.extended_nonnegative(f(base, exponent))),
+
+    # A positive number other than 1 to an extended real power is not negative
+    #     2**-oo is 0 and 2**oo is oo; 1**oo is nan
+    for_all((Pow,),
+        (Q.positive(base) & Q.ne(base, 1) & Q.extended_real(exponent))
+        >> Q.extended_nonnegative(f(base, exponent))),
 
     # A nonzero real number to an even power is positive
     for_all((Pow,),
@@ -225,6 +238,10 @@ RULES = (
     for_all((log,),
         Q.lt(x, 1) >> ~Q.positive(f(x))),
 
+    # The logarithm of 1 is zero
+    for_all((log,),
+        Q.eq(x, 1) >> Q.zero(f(x))),
+
     # --- factorial ---
 
     # The factorial of a natural number is positive
@@ -276,10 +293,10 @@ RULES = (
         ~Q.negative(f(x)),
         Q.zero(x) >> Q.positive(f(x))),
 
-    # The arccosine is positive on [-1, 1)
-    #     acos(1) is zero
+    # The arccosine is positive on [-1, 1), and zero at 1
     for_all((acos,),
-        (Q.ge(x, -1) & Q.lt(x, 1)) >> Q.positive(f(x))),
+        (Q.ge(x, -1) & Q.lt(x, 1)) >> Q.positive(f(x)),
+        Q.eq(x, 1) >> Q.zero(f(x))),
 
     # --- Determinant, Trace ---
 

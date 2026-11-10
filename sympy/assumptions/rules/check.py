@@ -55,8 +55,9 @@ from sympy.matrices.matrixbase import MatrixBase
 
 NUMBERS = (
     S.Zero, S.One, S.NegativeOne, Integer(2), Integer(-2), Integer(3),
-    Integer(4), Rational(1, 2), Rational(-1, 2), Rational(3, 2), sqrt(2),
-    -sqrt(2), pi, E, I, -I, 2*I, 1 + I, oo, -oo, zoo, oo*I,
+    Integer(4), Rational(1, 2), Rational(-1, 2), Rational(3, 2),
+    Rational(-3, 2), sqrt(2), -sqrt(2), pi, E, I, -I, 2*I, 1 + I, oo, -oo,
+    zoo, oo*I,
 )
 
 MATRICES = (

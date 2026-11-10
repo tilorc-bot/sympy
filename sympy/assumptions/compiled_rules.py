@@ -75,18 +75,19 @@ def equal(a, b):
     They are equal if they are the same expression, other than ``nan``, and
     not equal if they are different explicit numbers (rational numbers,
     ``I`` and ``-I``) or tuples of rational numbers, such as the ranges of a
-    matrix slice. No expression is built.
+    matrix slice, or numbers of which :func:`greater` finds one greater than
+    the other. No expression is built.
 
     Examples
     ========
 
-    >>> from sympy import I, S, Tuple
+    >>> from sympy import I, S, Tuple, pi
     >>> from sympy.abc import i, j
     >>> from sympy.assumptions.compiled_rules import equal
     >>> equal(i, i), equal(S(1), S(2)), equal(Tuple(0, 2, 1), Tuple(0, 3, 1))
     (True, False, False)
-    >>> equal(I, S(1)), equal(I, -I)
-    (False, False)
+    >>> equal(I, S(1)), equal(I, -I), equal(pi, S(1))
+    (False, False, False)
     >>> print(equal(i, j), equal(i, S(1)))
     None None
 
@@ -95,10 +96,14 @@ def equal(a, b):
     if a_number or isinstance(b, Rational):
         if a_number and isinstance(b, Rational):
             return a.p == b.p and a.q == b.q
-        return False if (b if a_number else a) in _UNITS else None
-    if a == b:
+        if (b if a_number else a) in _UNITS:
+            return False
+    elif a == b:
         return None if a is S.NaN else True
-    if _explicit(a) and _explicit(b):
+    elif _explicit(a) and _explicit(b):
+        return False
+    if (getattr(a, 'is_number', False) and getattr(b, 'is_number', False)
+            and (_compared(a, b, gt) or _compared(b, a, gt))):
         return False
     return None
 
@@ -398,9 +403,11 @@ def _ways(cls, nargs, predicate):
     in any way for *cls* and *nargs*; a cache, for each tuple of those truth
     values, of the others which they let apply; those conditions, grouped by
     the slot which is compared with a number, or ``None`` for two slots, as
-    pairs ``(slot, conditions)`` with each condition as ``(index, slots,
-    decide, deciders)`` with the functions of :data:`RELATIONS`; and their
-    number.
+    tuples ``(slot, conditions, numbers, indices, rest)`` with each
+    condition as ``(index, slots, decide, deciders)`` with the functions of
+    :data:`RELATIONS`, the conditions ``Q.eq`` of the slot with an explicit
+    number as ``numbers``, ``{number: index}``, and their indices, and the
+    other conditions as ``rest``; and their number.
     """
     key = (cls, nargs, predicate)
     entry = _ask_rules.get(key)
@@ -425,9 +432,13 @@ def _ways(cls, nargs, predicate):
         rules = tuple(dict.fromkeys(found))
         index = {relation: i for i, relation in enumerate(relations)}
         groups: dict = {}
+        numbers: dict = {}
         for (relation, (a, b)), i in index.items():
             slot = None if type(a) is type(b) is int else a if type(a) is int else b
             groups.setdefault(slot, []).append((i, (a, b), *RELATIONS[relation]))
+            other = b if type(a) is int else a
+            if slot is not None and relation is Q.eq and _explicit_number(other):
+                numbers.setdefault(slot, {})[other] = i
         plain = []
         related = []
         for answer, conditions in rules:
@@ -440,8 +451,24 @@ def _ways(cls, nargs, predicate):
                 plain.append((answer, conditions))
         entry = _ask_rules[key] = (
             rules, tuple(plain), tuple(related), {},
-            tuple((slot, tuple(found)) for slot, found in groups.items()), len(index))
+            tuple(_group(slot, found, numbers.get(slot)) for slot, found in groups.items()),
+            len(index))
     return entry
+
+
+def _explicit_number(a):
+    return isinstance(a, Rational) or a in _UNITS
+
+
+def _group(slot, conditions, numbers):
+    """
+    The conditions between two arguments which compare *slot* with
+    something, as a group of :func:`_ways`.
+    """
+    if not numbers:
+        return (slot, tuple(conditions), None, (), ())
+    rest = tuple(c for c in conditions if c[0] not in numbers.values())
+    return (slot, tuple(conditions), numbers, tuple(numbers.values()), rest)
 
 
 def _decided_ways(related, truths):
@@ -670,18 +697,27 @@ class _Query:
 
         A comparison of an argument with a number is decided from the form
         only if the argument is a number, and from the assumptions only if
-        they are about the argument.
+        they are about the argument. An argument which is an explicit
+        number equals only the number which it is.
         """
         relations = self.relations
         related = self.related
         found = [None] * count
-        for slot, conditions in groups:
+        for slot, conditions, numbers, indices, rest in groups:
             number = True
             if slot is not None:
                 target = targets[slot]
                 number = getattr(target, 'is_number', False)
-                if not number and target not in related:
-                    continue
+                if not number:
+                    if target not in related:
+                        continue
+                elif numbers is not None and _explicit_number(target):
+                    for index in indices:
+                        found[index] = False
+                    index = numbers.get(target)
+                    if index is not None:
+                        found[index] = True
+                    conditions = rest
             for index, (a, b), decide, deciders in conditions:
                 if type(a) is int:
                     a = targets[a]

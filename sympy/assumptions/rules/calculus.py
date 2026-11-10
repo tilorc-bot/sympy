@@ -10,7 +10,7 @@ from sympy.core.expr import Expr
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
-from sympy.functions.elementary.complexes import sign
+from sympy.functions.elementary.complexes import Abs, sign
 from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.trigonometric import cos, sin
 
@@ -143,6 +143,36 @@ RULES = (
         (Q.gt(base, 1) & Q.positive_infinite(exponent))
         >> Q.positive_infinite(f(base, exponent))),
 
+    # A number above 1 to the power -oo is zero
+    for_all((Pow,),
+        (Q.gt(base, 1) & Q.negative_infinite(exponent))
+        >> Q.zero(f(base, exponent))),
+
+    # A number between -1 and 1 to the power oo is zero
+    for_all((Pow,),
+        (Q.gt(base, -1) & Q.lt(base, 1) & Q.positive_infinite(exponent))
+        >> Q.zero(f(base, exponent))),
+
+    # A number between 0 and 1 to the power -oo is oo
+    #     (-1/2)**-oo is nan
+    for_all((Pow,),
+        (Q.positive(base) & Q.lt(base, 1) & Q.negative_infinite(exponent))
+        >> Q.positive_infinite(f(base, exponent))),
+
+    # A number below -1 to the power oo is infinite
+    #     (-2)**oo is zoo; (-2)**-oo is 0, but (-3/2)**-oo is nan
+    for_all((Pow,),
+        (Q.negative(base) & Q.lt(base, -1) & Q.positive_infinite(exponent))
+        >> Q.infinite(f(base, exponent))),
+
+    # A power of finite numbers is not oo or -oo
+    #     0**-1 is zoo
+    for_all((Pow,),
+        (Q.finite(base) & Q.finite(exponent))
+        >> ~Q.positive_infinite(f(base, exponent)),
+        (Q.finite(base) & Q.finite(exponent))
+        >> ~Q.negative_infinite(f(base, exponent))),
+
     # --- exp ---
 
     # The exponential of a finite number is finite
@@ -154,6 +184,13 @@ RULES = (
     for_all((exp,),
         Q.positive_infinite(x) >> Q.positive_infinite(f(x)),
         Q.negative_infinite(x) >> Q.zero(f(x))),
+
+    # The exponential is zero only at -oo and oo only at oo, and never -oo
+    #     exp(zoo) and exp(oo*I) are nan
+    for_all((exp,),
+        Q.zero(f(x)) >> Q.negative_infinite(x),
+        Q.positive_infinite(f(x)) >> Q.positive_infinite(x),
+        ~Q.negative_infinite(f(x))),
 
     # --- log ---
 
@@ -171,12 +208,31 @@ RULES = (
     for_all((log,),
         Q.positive_infinite(x) >> Q.positive_infinite(f(x))),
 
+    # The logarithm is never -oo, and it is oo only at an infinite number
+    #     log(0) is zoo, and log(oo), log(-oo) and log(oo*I) are oo
+    for_all((log,),
+        ~Q.negative_infinite(f(x)),
+        Q.finite(x) >> ~Q.positive_infinite(f(x))),
+
     # --- sin, cos ---
 
     # The sine and the cosine of a finite number are finite
     #     sin(oo*I) is oo*I and sin(zoo) is nan
     for_all((sin, cos),
         Q.finite(x) >> Q.finite(f(x))),
+
+    # The sine is never oo or -oo, and the cosine never -oo
+    #     sin(oo*I) is oo*I and cos(oo*I) is oo
+    for_all((sin, cos),
+        ~Q.negative_infinite(f(x))),
+    for_all((sin,),
+        ~Q.positive_infinite(f(x))),
+
+    # --- Abs ---
+
+    # The absolute value of an infinite number is oo
+    for_all((Abs,),
+        Q.infinite(x) >> Q.positive_infinite(f(x))),
 
     # --- sign ---
 

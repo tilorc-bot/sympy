@@ -8,9 +8,10 @@ from sympy.assumptions.ask import Q
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
+from sympy.core.numbers import Rational
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.functions.elementary.complexes import Abs, im, re
+from sympy.functions.elementary.complexes import Abs, im, re, sign
 from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, sin, tan)
@@ -55,6 +56,10 @@ RULES = (
     for_all((Abs,),
         closed(f(x), Q.integer, Q.rational, Q.algebraic)),
 
+    # The absolute value of an irrational number is irrational
+    for_all((Abs,),
+        Q.irrational(x) >> Q.irrational(f(x))),
+
     # --- Abs, re, im ---
 
     # The absolute value, the real part and the imaginary part of a complex
@@ -66,6 +71,11 @@ RULES = (
     # The real part of an extended real number is itself
     for_all((re,),
         closed(f(x), Q.extended_real)),
+
+    # A real part and an imaginary part are not imaginary
+    #     they are extended real, or nan
+    for_all((re, im),
+        ~Q.imaginary(f(x))),
 
     # --- Add ---
 
@@ -100,13 +110,12 @@ RULES = (
         (Q.real(x) & ~Q.real(y)) >> ~Q.real(f(x, y)),
         (~Q.real(x) & Q.real(y)) >> ~Q.real(f(x, y))),
 
-    # A real number plus a number which is not extended real is not
-    # extended real
-    #     the difference of a real and an extended real number is extended
-    #     real
+    # An extended real number plus a number which is not extended real is
+    # not extended real
+    #     oo + I is not extended real, and oo + zoo is nan
     for_all((Add,),
-        (Q.real(x) & ~Q.extended_real(y)) >> ~Q.extended_real(f(x, y)),
-        (~Q.extended_real(x) & Q.real(y)) >> ~Q.extended_real(f(x, y))),
+        (Q.extended_real(x) & ~Q.extended_real(y)) >> ~Q.extended_real(f(x, y)),
+        (~Q.extended_real(x) & Q.extended_real(y)) >> ~Q.extended_real(f(x, y))),
 
     # A real number plus an extended real number is extended real
     #     oo - oo is nan
@@ -218,18 +227,27 @@ RULES = (
         (Q.real(x) & Q.imaginary(y)) >> Equivalent(Q.real(f(x, y)), Q.zero(f(x, y))),
         (Q.imaginary(x) & Q.real(y)) >> Equivalent(Q.real(f(x, y)), Q.zero(f(x, y)))),
 
-    # Half an even number is an integer, half an odd number is not
+    # Half a number is an integer exactly when the number is even
     #     an even number is twice an integer, and a number factor of a
-    #     product is its first argument
+    #     product is its first argument; a row cannot say "half of an odd
+    #     integer", so 3*x/2 is not covered
     for_all((Mul,),
         (Q.eq(x, S.Half) & Q.even(y)) >> Q.integer(f(x, y)),
-        (Q.eq(x, S.Half) & Q.odd(y)) >> ~Q.integer(f(x, y))),
+        (Q.eq(x, S.Half) & ~Q.even(y)) >> ~Q.integer(f(x, y)),
+        (Q.eq(x, -S.Half) & Q.even(y)) >> Q.integer(f(x, y)),
+        (Q.eq(x, -S.Half) & ~Q.even(y)) >> ~Q.integer(f(x, y))),
 
     # A product of nonzero extended real numbers is extended real
     #     0*oo is nan
     for_all((Mul,),
         (Q.extended_real(x) & ~Q.zero(x) & Q.extended_real(y) & ~Q.zero(y))
         >> Q.extended_real(f(x, y))),
+
+    # A nonzero real number times an extended real number is extended real
+    #     0*oo is nan
+    for_all((Mul,),
+        (Q.nonzero(x) & Q.extended_real(y)) >> Q.extended_real(f(x, y)),
+        (Q.extended_real(x) & Q.nonzero(y)) >> Q.extended_real(f(x, y))),
 
     # A product of hermitian or antihermitian factors which commute is
     # hermitian or antihermitian
@@ -299,6 +317,14 @@ RULES = (
         (Q.algebraic(base) & Q.rational(exponent) & ~Q.negative(exponent))
         >> Q.algebraic(f(base, exponent))),
 
+    # An algebraic number other than 0 and 1 to an algebraic power which is
+    # not rational is transcendental
+    #     the Gelfond-Schneider theorem
+    for_all((Pow,),
+        (Q.algebraic(base) & ~Q.zero(base) & Q.ne(base, 1)
+         & Q.algebraic(exponent) & ~Q.rational(exponent))
+        >> Q.transcendental(f(base, exponent))),
+
     # A complex power of a nonzero complex number is complex
     #     0**-1 is zoo and 0**I is nan
     for_all((Pow,),
@@ -363,6 +389,19 @@ RULES = (
         (Q.negative(base) & Q.rational(exponent) & ~Q.integer(exponent))
         >> ~Q.real(f(base, exponent))),
 
+    # A negative number to the power 1/2, -1/2, 3/2 or -3/2 is imaginary
+    #     sqrt(-a) is I*sqrt(a); a row cannot say "half of an odd integer",
+    #     so other such exponents are not covered
+    for_all((Pow,),
+        (Q.negative(base) & Q.eq(exponent, S.Half))
+        >> Q.imaginary(f(base, exponent)),
+        (Q.negative(base) & Q.eq(exponent, -S.Half))
+        >> Q.imaginary(f(base, exponent)),
+        (Q.negative(base) & Q.eq(exponent, Rational(3, 2)))
+        >> Q.imaginary(f(base, exponent)),
+        (Q.negative(base) & Q.eq(exponent, Rational(-3, 2)))
+        >> Q.imaginary(f(base, exponent))),
+
     # A prime to a power which is a rational number but not an integer is
     # irrational
     #     the root of a prime is irrational
@@ -410,13 +449,38 @@ RULES = (
     for_all((log,),
         (Q.complex(x) & ~Q.zero(x)) >> Q.complex(f(x))),
 
-    # --- acos, log ---
+    # The logarithm of a finite number which is not positive is not extended
+    # real
+    #     log(0) is zoo and log(-1) is I*pi; log(-oo) is oo
+    for_all((log,),
+        (Q.finite(x) & ~Q.positive(x)) >> ~Q.extended_real(f(x))),
 
-    # acos and log of an algebraic number other than 1 are not algebraic
-    #     Lindemann: cos(b) and exp(b) are transcendental for an algebraic b
-    #     other than 0, and acos and log are 0 only at 1; log(0) is zoo
-    for_all((acos, log),
+    # log of an algebraic number other than 0 and 1 is transcendental
+    #     Lindemann: exp(b) is transcendental for an algebraic b other
+    #     than 0, and log is 0 only at 1
+    for_all((log,),
+        (Q.algebraic(x) & ~Q.zero(x) & Q.ne(x, 1)) >> Q.transcendental(f(x)),
+        (Q.algebraic(x) & ~Q.zero(x) & ~Q.positive(x))
+        >> Q.transcendental(f(x))),
+
+    # log of an algebraic number other than 1 is not algebraic
+    #     log(0) is zoo
+    for_all((log,),
         (Q.algebraic(x) & Q.ne(x, 1)) >> ~Q.algebraic(f(x))),
+
+    # log of an algebraic number which is not positive is not algebraic
+    #     such a number is not 1
+    for_all((log,),
+        (Q.algebraic(x) & ~Q.positive(x)) >> ~Q.algebraic(f(x))),
+
+    # --- acos ---
+
+    # acos of an algebraic number other than 1 is transcendental
+    #     it is not zero, and the cosine of an algebraic number other than
+    #     zero is transcendental (Lindemann-Weierstrass)
+    for_all((acos,),
+        (Q.algebraic(x) & Q.ne(x, 1)) >> Q.transcendental(f(x)),
+        (Q.algebraic(x) & ~Q.positive(x)) >> Q.transcendental(f(x))),
 
     # --- sin, cos, tan, cot ---
 
@@ -476,6 +540,13 @@ RULES = (
     #     acot(I) is -oo*I
     for_all((acot,),
         (Q.algebraic(x) & ~Q.imaginary(x)) >> Q.transcendental(f(x))),
+
+    # --- sign ---
+
+    # A sign is a complex number
+    #     it is 0 or x/Abs(x)
+    for_all((sign,),
+        Q.complex(f(x))),
 
     # --- Determinant, Trace ---
 
