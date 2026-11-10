@@ -1133,6 +1133,7 @@ def test_bounded():
     assert _ask_recursive(Q.finite(y**x), Q.gt(y, 1) & Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(y**x), Q.lt(1, y) & Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(y**x), Q.ge(y, 1) & Q.extended_negative(x)) is None
+    assert _ask_recursive(Q.finite(y**x), Q.positive(y - 1) & Q.extended_negative(x)) is True
     assert _ask_recursive(Q.finite(x**2), ~Q.finite(x)) is False
 
     # https://github.com/sympy/sympy/issues/27707
@@ -1493,7 +1494,7 @@ def test_rational():
         assert _ask_recursive(Q.rational(g(7, evaluate=False))) is False
         assert _ask_recursive(Q.rational(g(1, evaluate=False))) is True
         assert _ask_recursive(Q.rational(g(x)), Q.rational(x)) is None
-        assert _ask_recursive(Q.rational(g(x)), Q.rational(x) & Q.nonzero(x - 1)) is None
+        assert _ask_recursive(Q.rational(g(x)), Q.rational(x) & Q.nonzero(x - 1)) is False
         assert _ask_recursive(Q.rational(g(x)), Q.rational(x) & Q.ne(x, 1)) is False
 
     for h in [cot, acot]:
@@ -1758,7 +1759,7 @@ def test_integer():
     assert _ask_recursive(Q.integer(pi**x), Q.zero(x)) is True
     assert _ask_recursive(Q.integer(x**y), Q.imaginary(x) & Q.zero(y)) is True
     assert _ask_recursive(Q.integer(x**y), Q.integer(x) & Q.integer(y) & ~Q.negative(y)) is True
-    assert _ask_recursive(Q.integer(x**y), Q.integer(x) & Q.integer(y) & Q.negative(y) & ~Q.zero(x - 1) & ~Q.zero(x + 1)) is None
+    assert _ask_recursive(Q.integer(x**y), Q.integer(x) & Q.integer(y) & Q.negative(y) & ~Q.zero(x - 1) & ~Q.zero(x + 1)) is False
     assert _ask_recursive(Q.integer(x**y), Q.integer(x) & Q.integer(y) & Q.negative(y) & Q.ne(x, 1) & Q.ne(x, -1)) is False
 
 
@@ -2053,6 +2054,8 @@ def test_positive():
     assert _ask_recursive(Q.positive(log(x)), Q.gt(x, 1)) is None
     assert _ask_recursive(Q.positive(log(x)), Q.lt(x, 1)) is False
     assert _ask_recursive(Q.negative(log(x)), Q.positive(x) & Q.lt(x, 1)) is True
+    assert _ask_recursive(Q.positive(log(x)), Q.real(x) & Q.positive(x - 1)) is True
+    assert _ask_recursive(Q.positive(log(x)), Q.real(x) & Q.negative(x - 1)) is False
 
     # factorial
     assert _ask_recursive(Q.positive(factorial(x)), Q.integer(x) & Q.positive(x)) is True
@@ -2246,7 +2249,7 @@ def test_algebraic():
         assert _ask_recursive(Q.algebraic(g(7, evaluate=False))) is False
         assert _ask_recursive(Q.algebraic(g(1, evaluate=False))) is True
         assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x)) is None
-        assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x) & Q.nonzero(x - 1)) is None
+        assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x) & Q.nonzero(x - 1)) is False
         assert _ask_recursive(Q.algebraic(g(x)), Q.algebraic(x) & Q.ne(x, 1)) is False
 
     for h in [cot, acot]:
@@ -2445,7 +2448,7 @@ def test_issue_7246():
     assert _ask_recursive(Q.positive(asin(p)), Q.positive(p)) is None
     assert _ask_recursive(Q.positive(asin(p)), Q.zero(p)) is False
     assert _ask_recursive(Q.positive(asin(Rational(1, 7)))) is True
-    assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1)) is None
+    assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1)) is True
     assert _ask_recursive(Q.positive(asin(x)), Q.negative(x) & Q.nonnegative(x + 1)) is False
     assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.le(x, 1)) is True
     assert _ask_recursive(Q.negative(asin(x)), Q.negative(x) & Q.ge(x, -1)) is True
@@ -2457,6 +2460,7 @@ def test_issue_7246():
     assert _ask_recursive(Q.positive(acos(x)), Q.zero(x)) is True
     assert _ask_recursive(Q.positive(acos(x)), Q.ge(x, -1) & Q.lt(x, 1)) is True
     assert _ask_recursive(Q.positive(acos(x)), Q.ge(x, -1) & Q.le(x, 1)) is None
+    assert _ask_recursive(Q.positive(acos(x)), Q.negative(x - 1) & Q.nonnegative(x + 1)) is True
 
     assert _ask_recursive(Q.positive(acot(x)), Q.positive(x)) is True
     assert _ask_recursive(Q.positive(acot(x)), Q.real(x)) is None  # acot(-1) is -pi/4
