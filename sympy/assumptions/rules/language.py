@@ -24,7 +24,22 @@ predicates of ``Q`` and the operators ``&``, ``|``, ``~``, ``>>`` and
 A sum or a product has any number of arguments. A row about one is written
 for ``f(x, y)``, where ``x`` is its first argument and ``y`` is the sum or
 the product of the others. A row about a power is written for
-``f(base, exponent)``.
+``f(base, exponent)``. A block diagonal matrix is read in the same way, as
+its first block and the block diagonal matrix of the others.
+
+A row about an entry ``X[i, j]`` of a matrix is written for ``f(x, i, j)``,
+and a row about a slice ``X[1:3, 0:2]`` for ``f(x, rows, columns)``, where
+``rows`` and ``columns`` are the ranges ``(start, stop, step)``.
+
+A condition can also say that two arguments are equal, or that an argument
+is equal to a rational number, with ``Q.eq``::
+
+    # The diagonal entries of a positive definite matrix are positive
+    for_all((MatrixElement,),
+        (Q.positive_definite(x) & Q.eq(i, j)) >> Q.positive(f(x, i, j))),
+
+Two arguments are equal when they are the same number or the same range.
+No other predicate of two arguments may be used.
 
 A row can also be about one expression alone. It is then written with ``x``
 and without ``f``, and holds for every instance ``x`` of the classes::
@@ -48,8 +63,10 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from sympy.assumptions.ask import Q
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.core.function import AppliedUndef, Function
+from sympy.core.numbers import Rational
 from sympy.core.symbol import Symbol
 from sympy.logic.boolalg import And, Boolean, Implies
 
@@ -57,7 +74,14 @@ x = Symbol('x')
 y = Symbol('y')
 base = Symbol('base')
 exponent = Symbol('exponent')
+i = Symbol('i')
+j = Symbol('j')
+rows = Symbol('rows')
+columns = Symbol('columns')
 f = Function('f')
+
+# The predicates of two arguments which a row can use as a condition
+RELATIONS = frozenset({Q.eq})
 
 
 class ForAll(NamedTuple):
@@ -137,8 +161,24 @@ def node(row):
     if not all(isinstance(arg, Symbol) for arg in args) or len(set(args)) != len(args):
         raise ValueError(f"the arguments of {expr} must be distinct symbols")
     for literal in row.atoms(AppliedPredicate):
-        if len(literal.arguments) != 1 or literal.arg not in (expr, *args):
+        if len(literal.arguments) == 2:
+            _check_relation(literal, row, args)
+        elif len(literal.arguments) != 1 or literal.arg not in (expr, *args):
             raise ValueError(
                 f"{literal} in the row {row} is not about {expr} or one of "
                 "its arguments")
     return expr
+
+
+def _check_relation(literal, row, args):
+    if literal.function not in RELATIONS:
+        raise ValueError(
+            f"{literal} in the row {row}: the predicates of two arguments "
+            f"which a row can use are {', '.join(map(str, RELATIONS))}")
+    a, b = literal.arguments
+    numbers = [isinstance(arg, Rational) for arg in (a, b)]
+    if all(numbers) or a == b or not all(
+            number or arg in args for number, arg in zip(numbers, (a, b))):
+        raise ValueError(
+            f"{literal} in the row {row} must be about two distinct "
+            "arguments, or an argument and a rational number")

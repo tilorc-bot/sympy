@@ -7,16 +7,19 @@ from __future__ import annotations
 from sympy.assumptions.ask import Q
 from sympy.core.expr import Expr
 from sympy.logic.boolalg import Equivalent
+from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 from sympy.matrices.expressions.determinant import Determinant
 from sympy.matrices.expressions.hadamard import HadamardProduct
 from sympy.matrices.expressions.inverse import Inverse
 from sympy.matrices.expressions.matadd import MatAdd
 from sympy.matrices.expressions.matmul import MatMul
 from sympy.matrices.expressions.matpow import MatPow
+from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.expressions.trace import Trace
 from sympy.matrices.expressions.transpose import Transpose
 
-from .language import base, closed, exponent, f, for_all, x, y
+from .language import (base, closed, columns, exponent, f, for_all, rows, x,
+    y)
 
 RULES = (
     # --- any expression ---
@@ -218,5 +221,49 @@ RULES = (
     # The trace and the determinant are sums of products of the entries
     for_all((Trace, Determinant),
         closed(f(x), Q.integer_elements, Q.real_elements, Q.complex_elements)),
+
+    # --- MatrixSlice ---
+
+    # A slice with the same range of rows and columns of a symmetric,
+    # diagonal or positive definite matrix is one too
+    #     its entry (a, b) is the entry (r[a], r[b]) of the matrix, for the
+    #     distinct indices r[a] of the range; invertible, orthogonal, unitary
+    #     and full rank matrices are not (X[0:1, 0:1] of [[0, 1], [1, 0]]),
+    #     nor triangular ones, as a range downwards reverses the order
+    for_all((MatrixSlice,),
+        (Q.eq(rows, columns) & Q.symmetric(x)) >> Q.symmetric(f(x, rows, columns)),
+        (Q.eq(rows, columns) & Q.diagonal(x)) >> Q.diagonal(f(x, rows, columns)),
+        (Q.eq(rows, columns) & Q.positive_definite(x))
+        >> Q.positive_definite(f(x, rows, columns))),
+
+    # The entries of a slice are entries of the matrix
+    for_all((MatrixSlice,),
+        Q.integer_elements(x) >> Q.integer_elements(f(x, rows, columns)),
+        Q.real_elements(x) >> Q.real_elements(f(x, rows, columns)),
+        Q.complex_elements(x) >> Q.complex_elements(f(x, rows, columns))),
+
+    # --- BlockDiagMatrix ---
+
+    # A block diagonal matrix is invertible exactly when each block is
+    #     x is the first block and y the block diagonal matrix of the others;
+    #     the rank is the sum of the ranks of the blocks, so blocks which are
+    #     not square make a matrix which is not invertible
+    for_all((BlockDiagMatrix,),
+        Equivalent(Q.invertible(f(x)), Q.invertible(x)),
+        Equivalent(Q.invertible(f(x, y)), Q.invertible(x) & Q.invertible(y))),
+
+    # A block diagonal matrix has integer, real or complex entries exactly
+    # when each block has
+    #     its other entries are zeros
+    for_all((BlockDiagMatrix,),
+        Equivalent(Q.integer_elements(f(x)), Q.integer_elements(x)),
+        Equivalent(Q.real_elements(f(x)), Q.real_elements(x)),
+        Equivalent(Q.complex_elements(f(x)), Q.complex_elements(x)),
+        Equivalent(Q.integer_elements(f(x, y)),
+            Q.integer_elements(x) & Q.integer_elements(y)),
+        Equivalent(Q.real_elements(f(x, y)),
+            Q.real_elements(x) & Q.real_elements(y)),
+        Equivalent(Q.complex_elements(f(x, y)),
+            Q.complex_elements(x) & Q.complex_elements(y))),
 
 )

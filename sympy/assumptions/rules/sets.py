@@ -15,9 +15,10 @@ from sympy.functions.elementary.trigonometric import (acot, asin, atan, cos,
     cot, sin, tan)
 from sympy.logic.boolalg import Equivalent
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.matrices.expressions.trace import Trace
 
-from .language import base, closed, exponent, f, for_all, x, y
+from .language import base, closed, exponent, f, for_all, i, j, x, y
 
 RULES = (
     # --- any expression ---
@@ -456,4 +457,13 @@ RULES = (
         Q.integer_elements(x) >> Q.integer(f(x)),
         Q.real_elements(x) >> Q.real(f(x)),
         Q.complex_elements(x) >> Q.complex(f(x))),
+
+    # --- MatrixElement ---
+
+    # An entry of a matrix of integers, of reals or of complex numbers is an
+    # integer, a real or a complex number
+    for_all((MatrixElement,),
+        Q.integer_elements(x) >> Q.integer(f(x, i, j)),
+        Q.real_elements(x) >> Q.real(f(x, i, j)),
+        Q.complex_elements(x) >> Q.complex(f(x, i, j))),
 )

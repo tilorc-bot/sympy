@@ -19,7 +19,15 @@ sum or the product of all the arguments but the first, and that can be
 tests of those rows.
 
 Matrix expressions are also tested with numbers for some of their arguments
-and explicit matrices for the others, as in ``2*X`` or ``X**2``.
+and explicit matrices for the others, as in ``2*X`` or ``X**2``. An entry
+``X[i, j]`` is tested with each entry of explicit matrices, and a slice
+``X[rows, columns]`` with each pair of ranges ``(start, stop, step)`` which
+:class:`~.MatrixSlice` accepts and which are in the matrix: with any step of
+size one or two, upwards and downwards.
+
+A condition ``Q.eq(a, b)`` holds when the two values are equal: the same
+number, or the same range. Ranges with different numbers in them are not
+equal even if they have the same entries: ``(0, 3, 2)`` and ``(0, 4, 2)``.
 """
 from __future__ import annotations
 
@@ -28,6 +36,7 @@ from itertools import product
 from sympy.assumptions.ask import Q
 from sympy.assumptions.rules.compiler import clauses, nargs
 from sympy.core.add import Add
+from sympy.core.containers import Tuple
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, Integer, Rational, oo, pi, zoo
 from sympy.core.singleton import S
@@ -36,7 +45,8 @@ from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.matrices.exceptions import ShapeError
 from sympy.matrices.immutable import ImmutableMatrix
 from sympy.matrices.dense import eye
-from sympy.matrices.expressions.matexpr import MatrixExpr
+from sympy.matrices.expressions.matexpr import MatrixElement, MatrixExpr
+from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.matrixbase import MatrixBase
 
 NUMBERS = (
@@ -70,6 +80,22 @@ MATRICES = (
     ImmutableMatrix([[1, 1], [0, -1]]),
     ImmutableMatrix([[I, 1], [1, 0]]),
     ImmutableMatrix([[1, I], [0, 2]]),
+)
+
+# More matrices for entries and slices, so that slices with a step of two
+# and slices inside the matrix, away from its borders, are tried
+SLICED = MATRICES + (
+    ImmutableMatrix([[1, 2, 3], [0, 4, 5], [0, 0, 6]]),
+    ImmutableMatrix([[1, 0, 0], [2, 3, 0], [4, 5, 6]]),
+    ImmutableMatrix([[2, 1, 0], [1, 2, 1], [0, 1, 2]]),
+    ImmutableMatrix([[1, 2, 3], [2, 0, 4], [3, 4, 5]]),
+    ImmutableMatrix([[0, 0, 1], [0, 1, 0], [1, 0, 0]]),
+    ImmutableMatrix([[1, 0, 0], [0, 2, 0], [0, 0, -1]]),
+    ImmutableMatrix([[1, 2, 3], [4, 5, 6], [7, 8, 10]]),
+    ImmutableMatrix([[1, I, 0], [0, 2, I], [3, 0, 1]]),
+    ImmutableMatrix(4, 4, lambda i, j: 1 if i == j else 0),
+    ImmutableMatrix(4, 4, lambda i, j: 3 if i == j else (1 if abs(i - j) == 1 else 0)),
+    ImmutableMatrix(4, 4, lambda i, j: i + 1 if i <= j else 0),
 )
 
 SCALARS = (
@@ -112,8 +138,13 @@ MATRIX_TRUTH = {
     Q.complex_elements: lambda value: all(entry.is_complex for entry in value),
 }
 
+RELATION_TRUTH = {
+    Q.eq: lambda a, b: a is not S.NaN and b is not S.NaN and a == b,
+}
+
 _truth: dict = {}
 _values: dict = {}
+_class_samples: dict = {}
 
 
 def truth(predicate, value):
@@ -173,8 +204,42 @@ def value_of(cls, values):
     return _values[key]
 
 
+def _ranges(size):
+    for step in (1, 2, -1, -2):
+        for start in range(size + 1):
+            for stop in range(-size - 1, size + 1):
+                indices = range(start, stop, step)
+                if indices and all(0 <= index < size for index in indices):
+                    yield Tuple(start, stop, step), list(indices)
+
+
+def _element_samples():
+    for matrix in SLICED:
+        for i, j in product(range(matrix.rows), range(matrix.cols)):
+            yield (matrix, Integer(i), Integer(j), matrix[i, j])
+
+
+def _slice_samples():
+    for matrix in SLICED:
+        for (rows, row_indices), (columns, column_indices) in product(
+                _ranges(matrix.rows), _ranges(matrix.cols)):
+            yield (matrix, rows, columns, matrix.extract(row_indices, column_indices))
+
+
+SAMPLES = {
+    MatrixElement: _element_samples,
+    MatrixSlice: _slice_samples,
+}
+
+
 def _samples(cls, row):
     number = nargs(row)
+    if cls in SAMPLES:
+        if number == 3:
+            if cls not in _class_samples:
+                _class_samples[cls] = tuple(SAMPLES[cls]())
+            yield from _class_samples[cls]
+        return
     if number is None:
         pool = NUMBERS if issubclass(cls, Symbol) else NUMBERS + MATRICES
         yield from ((value,) for value in pool
@@ -219,11 +284,18 @@ def counterexamples(cls, row):
                    for clause in row_clauses)]
 
 
+def _truth_in(sample, predicate, slot):
+    if isinstance(slot, tuple):
+        a, b = (sample[s] if isinstance(s, int) else s for s in slot)
+        return RELATION_TRUTH[predicate](a, b)
+    return truth(predicate, sample[slot])
+
+
 def _is_false(literal, sample):
     predicate, slot, value = literal
     if slot == -1 and sample[slot] is S.NaN and predicate in (Q.finite, Q.infinite):
         return True
-    return truth(predicate, sample[slot]) is (not value)
+    return _truth_in(sample, predicate, slot) is (not value)
 
 
 def untested(cls, row):
@@ -261,7 +333,7 @@ def untested(cls, row):
 
 
 def _tests(sample, clause):
-    truths = [truth(predicate, sample[slot]) for predicate, slot, _ in clause]
+    truths = [_truth_in(sample, predicate, slot) for predicate, slot, _ in clause]
     if None in truths:
         return False
     return sum(found is value for found, (_, _, value) in zip(truths, clause)) == 1

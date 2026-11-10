@@ -13,7 +13,6 @@ from sympy.core.logic import fuzzy_bool, fuzzy_not
 from sympy.core.relational import Eq
 from sympy.functions.elementary.complexes import conjugate
 from sympy.matrices import MatrixBase
-from sympy.matrices.expressions.matexpr import MatrixElement
 
 from sympy.multipledispatch import MDNotImplementedError
 
@@ -52,11 +51,6 @@ def _(expr, assumptions):
     if ret is None:
         raise MDNotImplementedError
     return ret
-
-@IntegerPredicate.register(MatrixElement)
-def _(expr, assumptions):
-    if _ask_recursive(Q.integer_elements(expr.args[0]), assumptions):
-        return True
 
 
 # RationalPredicate
@@ -137,11 +131,6 @@ def _(expr, assumptions):
         raise MDNotImplementedError
     return ret
 
-@RealPredicate.register(MatrixElement)
-def _(expr, assumptions):
-    if _ask_recursive(Q.real_elements(expr.args[0]), assumptions):
-        return True
-
 
 # ExtendedRealPredicate
 
@@ -208,11 +197,6 @@ def _(expr, assumptions):
 @ComplexPredicate.register(NaN) # type:ignore
 def _(expr, assumptions):
     return None
-
-@ComplexPredicate.register(MatrixElement) # type:ignore
-def _(expr, assumptions):
-    if _ask_recursive(Q.complex_elements(expr.args[0]), assumptions):
-        return True
 
 
 # ImaginaryPredicate
