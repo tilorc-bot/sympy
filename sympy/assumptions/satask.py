@@ -8,9 +8,11 @@ from sympy.core.symbol import Symbol
 from sympy.core.kind import NumberKind, UndefinedKind
 from sympy.assumptions.ask_generated import get_all_known_matrix_facts, get_all_known_number_facts
 from sympy.assumptions.assume import AppliedPredicate
+from sympy.assumptions.rule_engine import (RELATIONS, WRITTEN, canonical,
+    rule_arguments, split_sat_rules, stated_comparisons)
 from sympy.assumptions.sathandlers import class_fact_registry
 from sympy.core import oo
-from sympy.assumptions.cnf import CNF, EncodedCNF
+from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.matrices.kind import MatrixKind
 from sympy.assumptions.reasoning_engine import ReasoningEngine
 
@@ -155,10 +157,18 @@ def find_symbols(pred):
     return pred.atoms(Symbol)
 
 
-def get_relevant_clsfacts(exprs, relevant_facts=None):
+def get_relevant_clsfacts(exprs, relevant_facts=None, relations=None):
     """
-    Extract relevant facts from the items in *exprs*. Facts are defined in
+    Extract relevant facts from the items in *exprs*. Facts come from the
+    rules in ``assumptions.rules`` package, in their compiled form, and from
     ``assumptions.sathandlers`` module.
+
+    A condition of a rule between two arguments, such as ``Q.eq(i, j)``, is
+    decided from the form of the arguments if it can be. Otherwise the rule
+    is kept only if one of the relations which can make the condition false,
+    such as ``Q.eq(i, j)``, ``Q.eq(j, i)`` and ``Q.gt(i, j)`` for
+    ``Q.eq(i, j)``, is in *relations*. The condition is then kept as a
+    predicate of the two, which is linked to those relations.
 
     This function is recursively called by ``get_all_relevant_facts()``.
 
@@ -169,7 +179,13 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
         Expressions whose relevant facts are searched.
 
     relevant_facts : sympy.assumptions.cnf.CNF, optional.
-        Pre-discovered relevant facts.
+        Pre-discovered relevant facts. They are updated in place.
+
+    relations : dict, optional.
+        The relations of two expressions which the query is about, as
+        ``{(relation, a, b): clauses}``, with each relation one of
+        ``Q.eq``, ``Q.gt`` and ``Q.ge``, and the clauses which link it to
+        the predicates of the query that state it.
 
     Returns
     =======
@@ -189,26 +205,16 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     candidates for next run, and ``CNF()`` instance containing facts
     which are relevant to ``Abs`` and its argument.
 
-    >>> from sympy import Abs
+    >>> from sympy import Abs, Q
+    >>> from sympy.assumptions.cnf import Literal
     >>> from sympy.assumptions.satask import get_relevant_clsfacts
     >>> from sympy.abc import x, y
     >>> exprs = {Abs(x*y)}
     >>> exprs, facts = get_relevant_clsfacts(exprs)
     >>> exprs
     {x*y}
-    >>> facts.clauses #doctest: +SKIP
-    {frozenset({Literal(Q.odd(Abs(x*y)), False), Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), False), Literal(Q.zero(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False), Literal(Q.even(x*y), True)}),
-    frozenset({Literal(Q.zero(Abs(x*y)), True), Literal(Q.zero(x*y), False)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.odd(Abs(x*y)), False),
-                Literal(Q.odd(x*y), True)}),
-    frozenset({Literal(Q.even(Abs(x*y)), False),
-                Literal(Q.even(x*y), True),
-                Literal(Q.odd(Abs(x*y)), False)}),
-    frozenset({Literal(Q.positive(Abs(x*y)), False),
-                Literal(Q.zero(Abs(x*y)), False)})}
+    >>> frozenset({Literal(Q.even(x*y), True), Literal(Q.even(Abs(x*y)), False)}) in facts.clauses
+    True
 
     We pass the first run's results to the second run, and get the expressions
     for next run and updated facts.
@@ -227,9 +233,23 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
     """
     if not relevant_facts:
         relevant_facts = CNF()
+    if relations is None:
+        relations = {}
 
     newexprs = set()
     for expr in exprs:
+        args = rule_arguments(expr)
+        rules, related = split_sat_rules(type(expr), len(args))
+        if rules or related:
+            targets = (*args, expr)
+            relevant_facts.clauses.update(
+                frozenset(Literal(predicate(targets[slot]), not value)
+                          for predicate, slot, value in clause)
+                for clause in rules)
+            if related:
+                relevant_facts.clauses.update(
+                    _related_clauses(related, targets, relations))
+            newexprs.update(args)
         for fact in class_fact_registry(expr):
             newfact = CNF.to_CNF(fact)
             relevant_facts = relevant_facts._and(newfact)
@@ -238,6 +258,68 @@ def get_relevant_clsfacts(exprs, relevant_facts=None):
                     newexprs |= set(key.arguments)
 
     return newexprs - exprs, relevant_facts
+
+
+def _related_clauses(clauses, targets, relations):
+    found = set()
+    for clause in clauses:
+        literals = []
+        links = []
+        for predicate, slot, value in clause:
+            if type(slot) is not tuple:
+                literals.append(Literal(predicate(targets[slot]), not value))
+                continue
+            a, b = (targets[s] if type(s) is int else s for s in slot)
+            decide, deciders = RELATIONS[predicate]
+            known = decide(a, b)
+            if known is value:
+                break
+            if known is None:
+                atom = predicate(a, b)
+                kept = False
+                for assumed, swapped, assumed_value, answer in deciders:
+                    key = (assumed, b, a) if swapped else (assumed, a, b)
+                    if answer is value or key not in relations:
+                        continue
+                    kept = True
+                    links.extend(relations[key])
+                    other = assumed(*key[1:])
+                    if other != atom:
+                        links.append(frozenset((Literal(other, assumed_value),
+                                                Literal(atom, not answer))))
+                if not kept:
+                    break
+                literals.append(Literal(atom, not value))
+        else:
+            found.add(frozenset(literals))
+            found.update(links)
+    return found
+
+
+def _relations(atoms):
+    """
+    The relations of two expressions which *atoms* state, as the argument
+    *relations* of :func:`get_relevant_clsfacts`. A predicate of a sum such
+    as ``Q.nonzero(x - 1)`` states a relation of ``x`` and ``1``, as
+    :func:`~sympy.assumptions.rule_engine.stated_comparisons` says.
+    """
+    relations: dict = {}
+    for atom in atoms:
+        if not isinstance(atom, AppliedPredicate):
+            continue
+        arguments = atom.arguments
+        if len(arguments) == 2 and atom.function in WRITTEN:
+            key, same = canonical(atom.function, *arguments)
+            linked = relations.setdefault(key, set())
+            other = key[0](*key[1:])
+            if other != atom:
+                linked.add(frozenset((Literal(atom, True), Literal(other, not same))))
+                linked.add(frozenset((Literal(atom, False), Literal(other, same))))
+        elif len(arguments) == 1:
+            for value, key, answer in stated_comparisons(atom):
+                relations.setdefault(key, set()).add(frozenset(
+                    (Literal(atom, value), Literal(key[0](*key[1:]), not answer))))
+    return relations
 
 
 def get_all_relevant_facts(proposition, assumptions,
@@ -291,11 +373,12 @@ def get_all_relevant_facts(proposition, assumptions,
     i = 0
     relevant_facts = CNF()
     all_exprs = set()
+    relations = _relations(proposition.all_predicates() | assumptions.all_predicates())
     while True:
         if i == 0:
             exprs = extract_predargs(proposition, assumptions)
         all_exprs |= exprs
-        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts)
+        exprs, relevant_facts = get_relevant_clsfacts(exprs, relevant_facts, relations)
         i += 1
         if i >= iterations:
             break

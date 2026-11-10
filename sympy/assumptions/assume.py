@@ -151,7 +151,8 @@ class AppliedPredicate(Boolean):
         return self._args[1:]
 
     def _eval_ask(self, assumptions):
-        return self.function.eval(self.arguments, assumptions)
+        from sympy.assumptions.rule_engine import evaluate
+        return evaluate(self.function, self.arguments, assumptions)
 
     @property
     def binary_symbols(self):
