@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sympy.abc import x, y
 from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
@@ -7,66 +9,54 @@ from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
     FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _ask_single_fact,
-    _local_facts, ask_by_rules, index_rules)
+    _local_facts, ask_by_rules)
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
 
-RULES = index_rules([
-    (Abs, Q.integer,
-        (TRUE_IF, FIRST_ARG, Q.integer)),
-    (Abs, Q.even,
-        (TRUE_IF, FIRST_ARG, Q.even),
-        (FALSE_IF, FIRST_ARG, Q.odd)),
-    (Abs, Q.negative,
-        ALWAYS_FALSE),
-    (Abs, Q.zero,
-        (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
-    (exp, Q.positive,
-        (TRUE_IF, FIRST_ARG, Q.real)),
-    (Pow, Q.positive,
-        (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real),
-        (TRUE_IF, FIRST_ARG, Q.negative, SECOND_ARG, Q.even)),
-    (Expr, Q.real,
-        (TRUE_IF, SELF, Q.positive)),
-    (Expr, Q.zero,
-        (FALSE_IF, SELF, Q.positive)),
-    (Expr, Q.nonnegative,
-        (TRUE_IF, SELF, Q.positive)),
-    (Expr, Q.positive,
-        (TRUE_IF, SELF, Q.nonnegative, SELF, Q.nonzero)),
-])
+if TYPE_CHECKING:
+    from sympy.assumptions.rule_engine import Rules
+
+RULES: Rules = {
+    (Abs, Q.integer): [
+        (TRUE_IF, [(FIRST_ARG, Q.integer)]),
+    ],
+    (Abs, Q.even): [
+        (TRUE_IF, [(FIRST_ARG, Q.even)]),
+        (FALSE_IF, [(FIRST_ARG, Q.odd)]),
+    ],
+    (Abs, Q.negative): [
+        ALWAYS_FALSE,
+    ],
+    (Abs, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG, Q.zero)]),
+    ],
+    (exp, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG, Q.real)]),
+    ],
+    (Pow, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG, Q.positive), (SECOND_ARG, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG, Q.negative), (SECOND_ARG, Q.even)]),
+    ],
+    (Expr, Q.real): [
+        (TRUE_IF, [(SELF, Q.positive)]),
+    ],
+    (Expr, Q.zero): [
+        (FALSE_IF, [(SELF, Q.positive)]),
+    ],
+    (Expr, Q.nonnegative): [
+        (TRUE_IF, [(SELF, Q.positive)]),
+    ],
+    (Expr, Q.positive): [
+        (TRUE_IF, [(SELF, Q.nonnegative), (SELF, Q.nonzero)]),
+    ],
+}
 
 
 def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
-
-
-def test_index_rules():
-    assert index_rules([
-        (Abs, Q.even,
-            (TRUE_IF, FIRST_ARG, Q.even),
-            (FALSE_IF, FIRST_ARG, Q.odd),
-            (TRUE_IF, FIRST_ARG, Q.zero)),
-        (Abs, Q.negative,
-            ALWAYS_FALSE),
-        (Abs, Q.zero,
-            (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
-        (Pow, Q.positive,
-            (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real)),
-        (Expr, Q.zero,
-            (FALSE_IF, SELF, Q.positive)),
-    ]) == {
-        (Abs, Q.even, True): [((0, Q.even, True),), ((0, Q.zero, True),)],
-        (Abs, Q.even, False): [((0, Q.odd, True),)],
-        (Abs, Q.negative, False): [()],
-        (Abs, Q.zero, True): [((0, Q.zero, True),)],
-        (Abs, Q.zero, False): [((0, Q.zero, False),)],
-        (Pow, Q.positive, True): [((0, Q.positive, True), (1, Q.real, True))],
-        (Expr, Q.zero, False): [((SELF, Q.positive, True),)],
-    }
 
 
 def test_local_facts():
@@ -112,10 +102,7 @@ def test_rule_about_an_argument():
 
 def test_rule_without_conditions():
     assert ask(Q.negative, Abs(x)) is False
-    rules = index_rules([
-        (exp, Q.complex,
-            ALWAYS_TRUE),
-    ])
+    rules = {(exp, Q.complex): [ALWAYS_TRUE]}
     assert ask_by_rules(Q.complex, exp(x), True, rules) is True
 
 
@@ -175,14 +162,17 @@ def test_no_answer_below_a_cycle_is_not_kept():
     # is tested. The first rule of real leads to positive, which leads back
     # to real: a cycle, so positive has no answer there. The second rule
     # then answers real, and positive has an answer after that.
-    rules = index_rules([
-        (g, Q.real,
-            (TRUE_IF, SELF, Q.positive),
-            (TRUE_IF, FIRST_ARG, Q.integer)),
-        (g, Q.positive,
-            (TRUE_IF, SELF, Q.real)),
-        (g, Q.nonzero,
-            (TRUE_IF, SELF, Q.real, SELF, Q.positive)),
-    ])
+    rules = {
+        (g, Q.real): [
+            (TRUE_IF, [(SELF, Q.positive)]),
+            (TRUE_IF, [(FIRST_ARG, Q.integer)]),
+        ],
+        (g, Q.positive): [
+            (TRUE_IF, [(SELF, Q.real)]),
+        ],
+        (g, Q.nonzero): [
+            (TRUE_IF, [(SELF, Q.real), (SELF, Q.positive)]),
+        ],
+    }
     assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
     assert ask_by_rules(Q.nonzero, g(x), True, rules) is None

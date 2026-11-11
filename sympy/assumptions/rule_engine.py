@@ -8,75 +8,31 @@ from sympy.assumptions.assume import AppliedPredicate
 from sympy.logic.boolalg import And, Not
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from sympy.assumptions.assume import Predicate
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
 
     RuleKind = int
-    # (argument, predicate, the value which the predicate must have for it)
-    Condition = tuple[int, Predicate, bool]
+    # (argument, the predicate which must be true of it)
+    Condition = tuple[int, Predicate]
     # all of the conditions must hold
-    Rule = tuple[Condition, ...]
-    # (class, predicate, answer) -> the rules which give that answer
-    Rules = dict[tuple[type[Basic], Predicate, bool], list[Rule]]
+    Rule = tuple[RuleKind, list[Condition]]
+    Rules = dict[tuple[type[Basic], Predicate], list[Rule]]
     # (predicate, whether it is true), about one expression
     LocalFacts = list[tuple[Predicate, bool]]
 
-# (Abs, Q.even,
-#     (TRUE_IF, FIRST_ARG, Q.even)),
-# Abs(x) is even if x is
 FALSE_IF: RuleKind = 0
 TRUE_IF: RuleKind = 1
+# also false if a condition is false
 IF_AND_ONLY_IF: RuleKind = 2
 
-ALWAYS_FALSE = (FALSE_IF,)
-ALWAYS_TRUE = (TRUE_IF,)
+ALWAYS_FALSE: Rule = (FALSE_IF, [])
+ALWAYS_TRUE: Rule = (TRUE_IF, [])
 
 FIRST_ARG = 0
 SECOND_ARG = 1
 # the expression itself
 SELF = -1
-
-
-def index_rules(rows: Iterable[tuple]) -> Rules:
-    """
-    Index rows ``(class, predicate, (TRUE_IF, argument, predicate), ...)``
-    for :func:`ask_by_rules`.
-
-    Examples
-    ========
-
-    >>> from sympy import Abs, Q
-    >>> from sympy.abc import x
-    >>> from sympy.assumptions.rule_engine import (ALWAYS_FALSE, FIRST_ARG,
-    ...     TRUE_IF, ask_by_rules, index_rules)
-    >>> rules = index_rules([
-    ...     (Abs, Q.even,
-    ...         (TRUE_IF, FIRST_ARG, Q.even)),
-    ...     (Abs, Q.negative,
-    ...         ALWAYS_FALSE),
-    ... ])
-    >>> ask_by_rules(Q.even, Abs(x), Q.even(x), rules)
-    True
-    >>> ask_by_rules(Q.negative, Abs(x), True, rules)
-    False
-
-    """
-    rules: Rules = {}
-    kind: RuleKind
-    for cls, predicate, *cases in rows:
-        for kind, *pairs in cases:
-            conditions = tuple(
-                (argument, condition, True)
-                for argument, condition in zip(pairs[::2], pairs[1::2]))
-            rules.setdefault((cls, predicate, kind != FALSE_IF), []).append(conditions)
-            if kind == IF_AND_ONLY_IF:
-                for argument, condition, _ in conditions:
-                    rules.setdefault((cls, predicate, False), []).append(
-                        ((argument, condition, False),))
-    return rules
 
 
 def _literal(literal):
@@ -133,7 +89,33 @@ def ask_by_rules(
         assumptions: Boolean | bool,
         rules: Rules,
 ) -> bool | None:
-    """Answer ``predicate(expr)`` by a depth-first search over *rules*."""
+    """
+    Answer ``predicate(expr)`` by a depth-first search over *rules*.
+
+    Examples
+    ========
+
+    >>> from sympy import Abs, Q
+    >>> from sympy.abc import x
+    >>> from sympy.assumptions.rule_engine import (ALWAYS_FALSE, FALSE_IF,
+    ...     FIRST_ARG, TRUE_IF, ask_by_rules)
+    >>> rules = {
+    ...     (Abs, Q.even): [
+    ...         (TRUE_IF, [(FIRST_ARG, Q.even)]),
+    ...         (FALSE_IF, [(FIRST_ARG, Q.odd)]),
+    ...     ],
+    ...     (Abs, Q.negative): [
+    ...         ALWAYS_FALSE,
+    ...     ],
+    ... }
+    >>> ask_by_rules(Q.even, Abs(x), Q.even(x), rules)
+    True
+    >>> ask_by_rules(Q.even, Abs(x), Q.odd(x), rules)
+    False
+    >>> ask_by_rules(Q.negative, Abs(x), True, rules)
+    False
+
+    """
     return _Search(assumptions, rules).visit(predicate, expr)
 
 
@@ -170,13 +152,18 @@ class _Search:
 
     def _from_rules(self, predicate, expr):
         for cls in type(expr).__mro__:
-            for answer in (True, False):
-                for conditions in self.rules.get((cls, predicate, answer), ()):
-                    if all(self._holds(condition, expr) for condition in conditions):
-                        return answer
+            for kind, conditions in self.rules.get((cls, predicate), ()):
+                answer = self._apply(kind, conditions, expr)
+                if answer is not None:
+                    return answer
         return None
 
-    def _holds(self, condition, expr):
-        argument, predicate, value = condition
-        target = expr if argument == SELF else expr.args[argument]
-        return self.visit(predicate, target) is value
+    def _apply(self, kind, conditions, expr):
+        for argument, predicate in conditions:
+            target = expr if argument == SELF else expr.args[argument]
+            value = self.visit(predicate, target)
+            if value is not True:
+                if value is False and kind == IF_AND_ONLY_IF:
+                    return False
+                return None
+        return kind != FALSE_IF
