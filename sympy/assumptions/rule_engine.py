@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
     Rules = dict[tuple[type[Basic], Predicate, bool],
                  list[tuple[tuple[int, Predicate, bool], ...]]]
+    # (predicate, whether it is true), about one expression
+    LocalFacts = list[tuple[Predicate, bool]]
 
 # As the argument of a condition: the expression itself
 SELF = -1
@@ -54,41 +56,46 @@ def _literal(literal):
     return literal, True
 
 
-def _local_facts(assumptions):
+def _local_facts(assumptions: Boolean | bool) -> dict[Basic, LocalFacts]:
     """
-    ``{expr: [(predicate, value), ...]}`` for the assumptions which are a
-    predicate of one expression or the negation of one.
+    For each expression, the predicates which *assumptions* say are true or
+    false of it. Only a predicate, its negation and a conjunction of these
+    are read.
     """
-    local_facts: dict = {}
+    local_facts: dict[Basic, LocalFacts] = {}
     literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
     for literal in literals:
-        predicate, value = _literal(literal)
-        if isinstance(predicate, AppliedPredicate) and len(predicate.arguments) == 1:
-            local_facts.setdefault(predicate.arg, []).append((predicate.function, value))
+        applied, is_true = _literal(literal)
+        if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
+            local_facts.setdefault(applied.arg, []).append((applied.function, is_true))
     return local_facts
 
 
-def _ask_single_fact(key, local_facts):
+def _ask_single_fact(key: Predicate, local_facts: LocalFacts | None) -> bool | None:
     """
-    Whether one of *local_facts*, ``[(predicate, value), ...]`` about one
-    expression, implies or refutes the predicate *key* by itself.
+    Whether one of *local_facts*, which are about one expression, decides
+    the predicate *key* for that expression by itself.
     """
     if not local_facts:
         return None
+    # predicate -> (the predicates which it implies, the ones which it excludes)
+    known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
     known_facts = get_known_facts_dict()
-    for predicate, value in local_facts:
-        if value:
-            implied, rejected = known_facts.get(predicate, _NOTHING)
+    implied_by_key, _ = known_facts.get(key, _NOTHING)
+    for predicate, is_true in local_facts:
+        if is_true:
+            implied, excluded = known_facts.get(predicate, _NOTHING)
             if key in implied:
                 return True
-            if key in rejected:
+            if key in excluded:
                 return False
-        elif predicate in known_facts.get(key, _NOTHING)[0]:
+        elif predicate in implied_by_key:
+            # key would imply predicate, which is false
             return False
     return None
 
 
-_NOTHING: tuple = ((), ())
+_NOTHING: tuple[set, set] = (set(), set())
 
 
 def ask_by_rules(
