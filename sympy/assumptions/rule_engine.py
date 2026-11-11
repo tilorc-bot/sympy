@@ -1,7 +1,7 @@
 """Depth-first search over rules about expressions and their arguments."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NewType
+from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.assume import AppliedPredicate
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
 
+    RuleKind = int
     # (argument, predicate, the value which the predicate must have for it)
     Condition = tuple[int, Predicate, bool]
     # all of the conditions must hold
@@ -26,10 +27,9 @@ if TYPE_CHECKING:
 # (Abs, Q.even,
 #     (TRUE_IF, FIRST_ARG, Q.even)),
 # Abs(x) is even if x is
-RuleKind = NewType('RuleKind', int)
-FALSE_IF = RuleKind(0)
-TRUE_IF = RuleKind(1)
-IF_AND_ONLY_IF = RuleKind(2)
+FALSE_IF: RuleKind = 0
+TRUE_IF: RuleKind = 1
+IF_AND_ONLY_IF: RuleKind = 2
 
 ALWAYS_FALSE = (FALSE_IF,)
 ALWAYS_TRUE = (TRUE_IF,)
