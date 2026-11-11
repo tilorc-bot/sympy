@@ -260,7 +260,9 @@ def test_elementary_functions():
     assert ask_generated(Q.finite, cot(x), Q.imaginary(x)) is True
     # cot(0) and sec(pi/2) are zoo
     assert ask_generated(Q.extended_real, cot(x), Q.real(x)) is None
-    assert ask_generated(Q.zero, sec(x)) is False
+    # sec(oo*I) is zero
+    assert ask_generated(Q.zero, sec(x)) is None
+    assert ask_generated(Q.zero, sec(x), Q.finite(x)) is False
     assert ask_generated(Q.algebraic, sec(x), Q.algebraic(x) & ~Q.zero(x)) is False
     assert ask_generated(Q.positive, cosh(x), Q.real(x)) is True
     assert ask_generated(Q.negative, sinh(x), Q.negative(x)) is True

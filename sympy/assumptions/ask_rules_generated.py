@@ -5885,7 +5885,7 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (csc, Q.zero): [
-        ALWAYS_FALSE,
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (csch, Q.commutative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
@@ -7835,7 +7835,7 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (sec, Q.zero): [
-        ALWAYS_FALSE,
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (sech, Q.commutative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
