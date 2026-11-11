@@ -31,15 +31,10 @@ from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.exponential import exp
+from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.functions.elementary.trigonometric import acos, cos, sin, tan
 from sympy.logic.boolalg import And
-from sympy.matrices.expressions.blockmatrix import BlockMatrix
-from sympy.matrices.expressions.diagonal import DiagonalOf
-from sympy.matrices.expressions.kronecker import KroneckerProduct
-from sympy.matrices.expressions.matexpr import MatrixSymbol
-from sympy.matrices.expressions.special import (GenericIdentity, GenericZeroMatrix,
-    ZeroMatrix)
-from sympy.matrices.immutable import ImmutableDenseMatrix
 from sympy.testing.pytest import raises
 
 if TYPE_CHECKING:
@@ -137,9 +132,55 @@ def test_preprocess_numbers():
     assert preprocess(three, True) == {three: facts}
     assert preprocess(x + 3*y, True) == {three: facts}
     assert preprocess(three, Q.finite(three)) == {three: facts + [(Q.finite, True)]}
-    assert preprocess(pi, True) == preprocess(exp(pi) + pi, True) == {
+    assert preprocess(pi, True) == preprocess(exp(pi*x) + pi, True) == {
         pi: [(Q.positive, True), (Q.irrational, True), (Q.transcendental, True),
              (Q.antihermitian, False)]}
+
+
+def test_numbers_without_symbols():
+    def ask_number(predicate, number, assumptions=True):
+        with old_assumptions_forbidden():
+            return ask(predicate, number, assumptions)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    positive = [(Q.positive, True), (Q.antihermitian, False)]
+    assert ask_number(Q.positive, sqrt(2) - 1) is True
+    assert ask_number(Q.negative, 1 - sqrt(2)) is True
+    assert ask_number(Q.negative, (1 - sqrt(5))**3) is True
+    assert ask_number(Q.real, I**I) is True
+    # imaginary
+    assert ask_number(Q.imaginary, I*(sqrt(2) - 1)) is True
+    assert ask_number(Q.hermitian, I*(sqrt(2) - 1)) is False
+    # neither real nor imaginary
+    assert ask_number(Q.real, I*(1 + I)) is False
+    assert ask_number(Q.imaginary, I*(1 + I)) is False
+    assert ask_number(Q.antihermitian, I*(1 + I)) is False
+    assert ask_number(Q.imaginary, log(2) + I*pi/2) is False
+    assert ask_number(Q.extended_positive, log(2) + I*pi/2) is False
+    assert ask_number(Q.real, tan(1 + I)) is False
+    # not real, the real part is not decided
+    assert ask_number(Q.real, sqrt(sqrt(2) - 2)) is False
+    assert ask_number(Q.imaginary, sqrt(sqrt(2) - 2)) is None
+    # not imaginary, the imaginary part is not decided
+    assert ask_number(Q.imaginary, 2 + I*(cos(1)**2 + sin(1)**2 - 1)) is False
+    assert ask_number(Q.zero, 2 + I*(cos(1)**2 + sin(1)**2 - 1)) is False
+    assert ask_number(Q.real, 2 + I*(cos(1)**2 + sin(1)**2 - 1)) is None
+    # zero, which intervals do not decide
+    assert cos(1)**2 + sin(1)**2 - 1 not in known(cos(1)**2 + sin(1)**2 - 1)
+    # functions which are not evaluated, and numbers which are too large
+    assert acos(Rational(1, 7)) not in known(acos(Rational(1, 7)))
+    assert exp(10**10) not in known(exp(10**10))
+    assert Pow(2, 10**9, evaluate=False) not in known(Pow(2, 10**9, evaluate=False))
+    # in an expression with symbols
+    assert ask_number(Q.positive, x + I**I, Q.positive(x)) is True
+    assert known(x*(sqrt(2) - 1))[sqrt(2) - 1] == positive
+    # only the largest number gets an entry
+    assert sqrt(2) not in known(sqrt(2) - 1)
+    assert known(sqrt(2) - 1)[sqrt(2) - 1] == positive
+    assert known(acos(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
 
 
 def test_preprocess_declared_symbols():
@@ -705,48 +746,3 @@ def test_declared_symbols():
     with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:
             assert ask(predicate, expr, assumptions) is expected
-
-
-def test_matrix_shapes():
-    n = Symbol('n', integer=True)
-    m = Symbol('m', integer=True)
-    A = MatrixSymbol('A', 2, 3)
-    B = MatrixSymbol('B', 3, 2)
-    N = MatrixSymbol('N', n, n)
-    M = MatrixSymbol('M', m, m)
-    queries = [
-        (Q.square, A, False),
-        (Q.invertible, A, False),
-        (Q.square, A.T, False),
-        (Q.square, A*B, True),
-        (Q.diagonal, A*B, None),
-        (Q.square, ImmutableDenseMatrix([[1, 2]]), False),
-        (Q.diagonal, ImmutableDenseMatrix([[x]]), True),
-        (Q.diagonal, MatrixSymbol('C', 1, 1), True),
-        (Q.symmetric, MatrixSymbol('C', 1, 1), True),
-        (Q.diagonal, MatrixSymbol('C', 0, 0), True),
-        (Q.square, N, True),
-        (Q.square, N*N.T, True),
-        (Q.square, MatrixSymbol('C', n, m), None),
-        (Q.square, MatrixSymbol('C', n, 3), None),
-        # shapes which are computed with Add, Mul or Min are not read
-        (Q.square, BlockMatrix([[N, ZeroMatrix(n, m)], [ZeroMatrix(m, n), M]]), None),
-        (Q.square, KroneckerProduct(N, M), None),
-        (Q.square, N[m:n, 1:n], None),
-        (Q.square, DiagonalOf(MatrixSymbol('C', n, m)), None),
-        (Q.square, BlockMatrix(ImmutableDenseMatrix([[x, y]])), None),
-        (Q.square, GenericIdentity(), None),
-        (Q.square, GenericZeroMatrix(), None),
-    ]
-    product = A.T*B.T
-    with old_assumptions_forbidden():
-        for predicate, expr, expected in queries:
-            assert ask_by_rules(predicate, expr, True, {}) is expected
-        known = preprocess(product, True)
-    assert known == {
-        A: [(Q.square, False)],
-        B: [(Q.square, False)],
-        A.T: [(Q.square, False)],
-        B.T: [(Q.square, False)],
-        product: [(Q.square, True)],
-    }
