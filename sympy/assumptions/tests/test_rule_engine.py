@@ -8,7 +8,7 @@ from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
-    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _SingleFacts,
+    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _AssumedPredicates,
     ask_by_rules)
 from sympy.core.expr import Expr
 from sympy.core.function import Function
@@ -59,20 +59,20 @@ def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
 
 
-def test_single_facts():
-    assert _SingleFacts(True).facts == {}
-    assert _SingleFacts(Q.even(x)).facts == {x: [(Q.even, True)]}
-    facts = _SingleFacts(~Q.even(x) & Q.real(y) & Q.zero(x)).facts
+def test_assumed_predicates():
+    assert _AssumedPredicates(True).facts == {}
+    assert _AssumedPredicates(Q.even(x)).facts == {x: [(Q.even, True)]}
+    facts = _AssumedPredicates(~Q.even(x) & Q.real(y) & Q.zero(x)).facts
     assert set(facts) == {x, y}
     assert set(facts[x]) == {(Q.zero, True), (Q.even, False)}
     assert facts[y] == [(Q.real, True)]
-    assert _SingleFacts(Q.even(x) | Q.odd(x)).facts == {}
-    assert _SingleFacts(Q.gt(x, y) & Q.real(x)).facts == {x: [(Q.real, True)]}
+    assert _AssumedPredicates(Q.even(x) | Q.odd(x)).facts == {}
+    assert _AssumedPredicates(Q.gt(x, y) & Q.real(x)).facts == {x: [(Q.real, True)]}
 
 
 def test_ask_single_fact():
     def ask_single_fact(key, assumptions):
-        return _SingleFacts(assumptions).ask_single_fact(key, x)
+        return _AssumedPredicates(assumptions).ask_single_fact(key, x)
 
     assert ask_single_fact(Q.zero, ~Q.zero(x)) is False
     assert ask_single_fact(Q.zero, ~Q.even(x)) is False
@@ -92,7 +92,7 @@ def test_ask_single_fact_agrees_with_the_one_of_ask():
                 assumption = predicate(x) if value else ~predicate(x)
                 expected = _ask_single_fact_of_ask(
                     key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
-                assert _SingleFacts(assumption).ask_single_fact(key, x) is expected
+                assert _AssumedPredicates(assumption).ask_single_fact(key, x) is expected
 
 
 def test_rule_about_an_argument():
