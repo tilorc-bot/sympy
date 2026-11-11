@@ -117,6 +117,16 @@ def test_conditions_about_a_number():
     assert ask_generated(Q.algebraic, acos(x), Q.algebraic(x)) is None
 
 
+def test_power_of_what_is_not_finite():
+    c = Symbol('c', commutative=False)
+    assert ask_generated(Q.infinite, x**2, Q.infinite(x)) is True
+    assert ask_generated(Q.finite, x**2, ~Q.finite(x)) is False
+    # not finite is not infinite: c, nan
+    assert ask_generated(Q.infinite, x**2, ~Q.finite(x)) is None
+    assert ask_generated(Q.commutative, x**2, ~Q.commutative(x)) is None
+    assert ask_generated(Q.commutative, c**2) is None
+
+
 def test_log():
     assert ask_generated(Q.finite, log(x), Q.infinite(x)) is False
     assert ask_generated(Q.finite, log(x), Q.zero(x)) is False

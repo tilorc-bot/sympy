@@ -455,6 +455,7 @@ RULES: Rules = {
             (FIRST_ARG_IS_NOT, Q.zero),
             (SECOND_ARG_IS, Q.finite),
         ]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.finite), (SECOND_ARG_IS, Q.positive)]),
     ],
     (Pow, Q.hermitian): [
         (TRUE_IF, [
@@ -484,7 +485,7 @@ RULES: Rules = {
         (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.irrational)]),
     ],
     (Pow, Q.infinite): [
-        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.finite), (SECOND_ARG_IS, Q.positive)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite), (SECOND_ARG_IS, Q.positive)]),
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.extended_negative)]),
     ],
     (Pow, Q.integer): [
