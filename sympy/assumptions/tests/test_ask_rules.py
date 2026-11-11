@@ -17,11 +17,13 @@ from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
 from sympy.core.function import Function
 from sympy.core.mul import Mul
+from sympy.core.numbers import I, pi
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, im, re, sign
-from sympy.functions.elementary.exponential import exp
+from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, sin, tan)
 from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
@@ -224,6 +226,83 @@ def test_matrix_classes():
     assert ask_generated(Q.real_elements, EigenValues(A), real_symmetric) is True
     assert ask_generated(Q.orthogonal, EigenVectors(A), Q.real_elements(A)) is None
     assert ask_generated(Q.orthogonal, EigenVectors(A), real_symmetric) is True
+
+
+def test_wrong_answers_of_ask():
+    # ask gives an answer for each of these, and it is wrong
+    N = MatrixSymbol('N', Symbol('n', integer=True), Symbol('m', integer=True))
+    real_and_two_imaginary = Q.real(x) & Q.imaginary(y) & Q.imaginary(z)
+
+    # a factor or a term may be zero
+    assert ask_generated(Q.imaginary, x*y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.imaginary, I*x, Q.real(x)) is None
+    assert ask_generated(Q.imaginary, x + I, Q.real(x)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.imaginary, x + y + z, real_and_two_imaginary) is None
+    assert ask_generated(Q.antihermitian, x, Q.real(x)) is None
+    assert ask_generated(Q.antihermitian, I*x, Q.antihermitian(x)) is None
+    assert ask_generated(Q.antihermitian, x + I, Q.real(x)) is None
+    assert ask_generated(Q.antihermitian, x + y, Q.antihermitian(x) & Q.real(y)) is None
+    assert ask_generated(Q.antihermitian, x + y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.antihermitian, x + y + z, real_and_two_imaginary) is None
+    assert ask_generated(Q.hermitian, I*x, Q.hermitian(x)) is None
+    assert ask_generated(Q.hermitian, I*x, Q.real(x)) is None
+    assert ask_generated(Q.hermitian, x*y, Q.real(x) & Q.zero(y)) is True
+    assert ask_generated(Q.extended_real, x*y, Q.imaginary(x) & Q.zero(y)) is True
+    assert ask_generated(Q.rational, x*y, Q.irrational(x) & Q.zero(y)) is True
+    assert ask_generated(Q.irrational, x*y, Q.zero(x) & Q.irrational(y)) is False
+    assert ask_generated(Q.transcendental, x*y,
+                         Q.zero(x) & Q.transcendental(y)) is False
+    assert ask_generated(Q.integer, sqrt(2)*x, Q.integer(x)) is None
+    assert ask_generated(Q.nonzero, 5**(2*I*pi*x), Q.integer(x)) is None
+    assert ask_generated(Q.imaginary, x**y,
+                         Q.negative(x) & Q.rational(y) & Q.integer(2*y)) is None
+    assert ask_generated(Q.zero, x*y, Q.zero(x)) is None
+
+    # the terms may cancel
+    assert ask_generated(Q.imaginary, x + I, Q.imaginary(x)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+
+    # the argument may be infinite
+    assert ask_generated(Q.real, Abs(x)) is None
+    assert ask_generated(Q.complex, Abs(x)) is None
+    assert ask_generated(Q.real, re(x)) is None
+    assert ask_generated(Q.complex, re(x)) is None
+    assert ask_generated(Q.real, im(x)) is None
+    assert ask_generated(Q.complex, im(x)) is None
+    assert ask_generated(Q.complex, exp(x)) is None
+    assert ask_generated(Q.complex, sin(x)) is None
+    assert ask_generated(Q.complex, cos(x)) is None
+    assert ask_generated(Q.finite, sin(x)) is None
+    assert ask_generated(Q.finite, sin(x), ~Q.finite(x)) is None
+    assert ask_generated(Q.finite, cos(x)) is None
+    assert ask_generated(Q.finite, cos(x), ~Q.finite(x)) is None
+    assert ask_generated(Q.finite, 2*sin(x)) is None
+    assert ask_generated(Q.finite, sin(x)**2) is None
+    assert ask_generated(Q.finite, cos(x)**2) is None
+    assert ask_generated(Q.finite, log(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.finite, 2**x, ~Q.finite(x)) is None
+
+    # a power of zero may be infinite
+    assert ask_generated(Q.algebraic, x**y, Q.algebraic(x) & Q.rational(y)) is None
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.complex(y)) is None
+
+    # acos(1) is zero, acot(-1) is negative, (2*I)**(I*pi/(2*log(2))) is imaginary
+    assert ask_generated(Q.positive, acos(x),
+                         Q.nonnegative(x + 1) & Q.nonpositive(x - 1)) is None
+    assert ask_generated(Q.positive, acot(x), Q.real(x)) is None
+    assert ask_generated(Q.imaginary, (2*I)**x, Q.imaginary(x)) is None
+
+    # the dimensions n and m may be equal
+    assert ask_generated(Q.invertible, N) is None
+
+    # a product of symmetric matrices need not be symmetric, and a sum may be
+    assert ask_generated(Q.symmetric, A*B, Q.symmetric(A) & Q.symmetric(B)) is None
+    assert ask_generated(Q.symmetric, A + B) is None
+
+    # a part of an invertible matrix need not be invertible
+    assert ask_generated(Q.invertible, A[1:, 1:], Q.invertible(A)) is None
+    assert ask_generated(Q.orthogonal, A[1:, 1:], Q.orthogonal(A)) is None
 
 
 def test_old_assumptions_are_not_used():
