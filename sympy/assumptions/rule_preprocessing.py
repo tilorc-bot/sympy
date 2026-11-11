@@ -78,13 +78,16 @@ def _assumed(assumptions: Boolean | bool, known: Known) -> None:
         is_true = not isinstance(literal, Not)
         if not isinstance(applied, AppliedPredicate):
             continue
-        if len(applied.arguments) == 1:
-            expr, facts = applied.arg, [(applied.function, is_true)]
-        elif applied.function in _EQUALITY:
-            expr, number = applied.arguments
+        # (predicate, expr) or (predicate, expr, number)
+        args = applied.args
+        if len(args) == 2:
+            predicate, expr = args
+            facts = [(predicate, is_true)]
+        elif args[0] in _EQUALITY:
+            predicate, expr, number = args
             if not (number.is_Rational or number is I):
                 continue
-            is_equal = is_true is _EQUALITY[applied.function]
+            is_equal = is_true is _EQUALITY[predicate]
             facts = [(number, is_equal)]
             if is_equal:
                 facts += number_facts(number)
@@ -93,4 +96,3 @@ def _assumed(assumptions: Boolean | bool, known: Known) -> None:
         before = known.get(expr)
         # not changed in place: the list of a number is shared between calls
         known[expr] = facts if before is None else before + facts
-
