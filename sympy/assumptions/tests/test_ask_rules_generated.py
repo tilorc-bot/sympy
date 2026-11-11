@@ -146,8 +146,8 @@ def test_answers_which_only_the_generated_rules_give():
     assert ask_by_rules(Q.nonzero, exp(x), Q.real(x), GENERATED_RULES) is True
     assert ask_by_rules(Q.negative, exp(x), Q.real(x), RULES) is None
     assert ask_by_rules(Q.negative, exp(x), Q.real(x), GENERATED_RULES) is False
-    assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), RULES) is None
-    assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), GENERATED_RULES) is True
+    assert ask_by_rules(Q.finite, acot(x), Q.nonnegative(x), RULES) is None
+    assert ask_by_rules(Q.finite, acot(x), Q.nonnegative(x), GENERATED_RULES) is True
 
 
 def test_same_answers_as_the_source_rules():
