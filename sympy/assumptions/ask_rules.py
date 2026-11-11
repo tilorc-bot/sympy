@@ -242,7 +242,7 @@ RULES: Rules = {
     ],
     (Mul, Q.complex): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.complex)]),
-        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
+        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
     ],
     (Mul, Q.composite): [
         (TRUE_IF, [
