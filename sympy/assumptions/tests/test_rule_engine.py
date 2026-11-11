@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from importlib import import_module
 from itertools import permutations
 from typing import TYPE_CHECKING
@@ -17,10 +18,12 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
     SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules)
 from sympy.core.add import Add
+from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
 from sympy.core.function import Function
 from sympy.core.mul import Mul
+from sympy.core.numbers import Integer
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
@@ -483,10 +486,58 @@ def test_check_no_cycles():
     check_no_cycles({(Abs, Q.even): [(TRUE_IF, [(FIRST_ARG_IS, Q.even)])]})
 
 
-def test_old_assumptions_are_not_used():
+def _subclasses(cls, seen):
+    for subclass in cls.__subclasses__():
+        if subclass not in seen:
+            seen.add(subclass)
+            _subclasses(subclass, seen)
+    return seen
+
+
+@contextmanager
+def old_assumptions_forbidden():
+    """
+    Inside it, every ``is_<fact>`` attribute of the old assumptions, the
+    function which runs the ``_eval_is_`` handlers, and
+    ``FactKB.deduce_all_facts`` raise.
+    """
     def forbidden(*args):
         raise AssertionError('the old assumptions were used')
 
+    # sympy.core.assumptions is also the name of a function
+    core_assumptions = import_module('sympy.core.assumptions')
+    names = ['is_' + fact for fact in core_assumptions._assume_defined]
+    attributes = [(cls, name, vars(cls)[name])
+                  for cls in _subclasses(Basic, {Basic})
+                  for name in names if name in vars(cls)]
+    functions = core_assumptions._ask, FactKB.deduce_all_facts
+    for cls, name, _ in attributes:
+        setattr(cls, name, property(forbidden))
+    core_assumptions._ask = FactKB.deduce_all_facts = forbidden
+    try:
+        yield
+    finally:
+        for cls, name, value in attributes:
+            setattr(cls, name, value)
+        core_assumptions._ask, FactKB.deduce_all_facts = functions
+
+
+def test_old_assumptions_forbidden():
+    p = Symbol('p', positive=True)
+    q = Symbol('q', real=True)
+    three = Integer(3)
+    with old_assumptions_forbidden():
+        raises(AssertionError, lambda: p.is_positive)
+        raises(AssertionError, lambda: (q + 1).is_real)
+        raises(AssertionError, lambda: three.is_odd)
+        raises(AssertionError, lambda: x.is_commutative)
+    assert p.is_positive is True
+    assert (q + 1).is_real is True
+    assert three.is_odd is True
+    assert x.is_commutative is True
+
+
+def test_old_assumptions_are_not_used():
     p = Symbol('p', positive=True)
     queries = [
         (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
@@ -499,12 +550,6 @@ def test_old_assumptions_are_not_used():
         (Q.odd, x + y + p, Q.odd(x) & Q.odd(y) & Q.odd(p), True),
         (Q.zero, x*p, Q.positive(x), None),
     ]
-    # sympy.core.assumptions is also the name of a function
-    core_assumptions = import_module('sympy.core.assumptions')
-    originals = core_assumptions._ask, FactKB.deduce_all_facts
-    core_assumptions._ask = FactKB.deduce_all_facts = forbidden
-    try:
+    with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:
             assert ask(predicate, expr, assumptions) is expected
-    finally:
-        core_assumptions._ask, FactKB.deduce_all_facts = originals
