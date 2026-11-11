@@ -34,6 +34,7 @@ from sympy.assumptions import rule_engine
 from sympy.assumptions.ask_rules import RULES
 from sympy.assumptions.rule_closing import close_rules, remove_implied_rules
 from sympy.assumptions.rule_engine import FALSE_IF, TRUE_IF
+from sympy.core.singleton import S
 
 KIND_NAMES = {FALSE_IF: 'FALSE_IF', TRUE_IF: 'TRUE_IF'}
 SELECTOR_NAMES = {getattr(rule_engine, name): name for name in [
@@ -43,6 +44,8 @@ SELECTOR_NAMES = {getattr(rule_engine, name): name for name in [
     'EVEN_NUMBER_OF_ARGS_ARE_NOT', 'ODD_NUMBER_OF_ARGS_ARE',
     'ODD_NUMBER_OF_ARGS_ARE_NOT', 'OTHER_ARGS_ARE', 'OTHER_ARGS_ARE_NOT',
 ]}
+NUMBER_NAMES = {S.One: 'S.One', S.NegativeOne: 'S.NegativeOne', S.Half: 'S.Half',
+                S.ImaginaryUnit: 'S.ImaginaryUnit'}
 INDENT = ' ' * 8
 
 
@@ -61,7 +64,7 @@ def rule_lines(rule, used):
             name = repr(selector)
         else:
             used.add(name)
-        texts.append(f'({name}, {predicate})')
+        texts.append(f'({name}, {NUMBER_NAMES.get(predicate, predicate)})')
     line = f'{INDENT}({kind_name}, [{", ".join(texts)}]),'
     if len(line) <= 88:
         return [line]
@@ -76,7 +79,8 @@ def generate_code():
     for cls in dict.fromkeys(cls for cls, _ in RULES):
         predicates = sorted((p for c, p in rules if c is cls), key=str)
         for predicate in predicates:
-            lines.append(f'    ({cls.__name__}, {predicate}): [')
+            lines.append(
+                f'    ({cls.__name__}, {NUMBER_NAMES.get(predicate, predicate)}): [')
             for rule in rules[(cls, predicate)]:
                 lines.extend(rule_lines(rule, used))
             lines.append('    ],')
@@ -88,6 +92,8 @@ def generate_code():
                ('sympy.assumptions.rule_engine',
                 '\n'.join(wrap(engine_import, width=88, subsequent_indent='    ',
                                break_on_hyphens=False)))]
+    if any(name in line for line in lines for name in NUMBER_NAMES.values()):
+        imports.append(('sympy.core.singleton', 'from sympy.core.singleton import S'))
     imports += [(cls.__module__, f'from {cls.__module__} import {cls.__name__}')
                 for cls in dict.fromkeys(cls for cls, _ in rules)]
     header = [

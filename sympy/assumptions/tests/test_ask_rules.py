@@ -1,24 +1,23 @@
 from __future__ import annotations
 
-from importlib import import_module
-
 from sympy.abc import w, x, y, z
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_rules import RULES
 from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
+from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
 from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
     FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF, TRUE_IF,
     ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
-from sympy.core.facts import FactKB
 from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.numbers import I, pi
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, im, re, sign
@@ -30,6 +29,7 @@ from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
 VARYING = (Add, Mul)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
                   OTHER_ARGS)
+NUMBERS = (S.One, S.NegativeOne, S.Half, S.ImaginaryUnit)
 
 
 def ask(predicate, expr, assumptions=True):
@@ -57,7 +57,7 @@ def test_no_cycles():
 def test_rules_are_well_formed():
     for (cls, predicate), rules in RULES.items():
         assert isinstance(cls, type) and issubclass(cls, Basic)
-        assert isinstance(predicate, Predicate)
+        assert isinstance(predicate, Predicate) or predicate in NUMBERS
         assert rules
         for kind, conditions in rules:
             assert kind in (FALSE_IF, TRUE_IF, IF_AND_ONLY_IF)
@@ -68,7 +68,8 @@ def test_rules_are_well_formed():
                     assert argument in ABOUT_ALL_ARGS
                 else:
                     assert argument == SELF or 0 <= argument < number_of_arguments(cls)
-                assert isinstance(condition_predicate, Predicate)
+                assert (isinstance(condition_predicate, Predicate)
+                        or condition_predicate in NUMBERS)
 
 
 def test_numbers():
@@ -95,6 +96,52 @@ def test_numbers():
     assert ask(Q.real, im(x), Q.complex(x)) is True
     assert ask(Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)) is True
     assert ask(Q.finite, sign(x)) is True
+
+
+def test_conditions_about_a_number():
+    assert ask_generated(Q.odd, (-1)**x, Q.integer(x)) is True
+    assert ask_generated(Q.odd, (-1)**x) is None
+    assert ask_generated(Q.even, (-1)**x + 1, Q.integer(x)) is True
+    assert ask_generated(Q.odd, y**x, Q.integer(x) & Q.eq(y, -1)) is True
+    assert ask_generated(Q.integer, x/2, Q.odd(x)) is False
+    assert ask_generated(Q.odd, (-1)**x/2, Q.integer(x)) is False
+    assert ask_generated(Q.irrational, 1/x, Q.irrational(x)) is True
+    assert ask_generated(Q.rational, y/x, Q.irrational(x) & Q.nonzero(y) & Q.rational(y)
+                         ) is False
+    assert ask_generated(Q.positive, I**x, Q.imaginary(x)) is True
+    assert ask_generated(Q.imaginary, I**x, Q.imaginary(x)) is False
+    assert ask_generated(Q.prime, x**y, Q.prime(x) & Q.integer(y) & Q.ne(y, 1)) is False
+    assert ask_generated(Q.prime, x**y, Q.prime(x) & Q.integer(y)) is None
+    assert ask_generated(Q.algebraic, acos(x), Q.algebraic(x) & Q.ne(x, 1)) is False
+    assert ask_generated(Q.algebraic, acos(x), Q.algebraic(x) & Q.negative(x)) is False
+    assert ask_generated(Q.algebraic, acos(x), Q.prime(x)) is False
+    assert ask_generated(Q.algebraic, acos(x), Q.algebraic(x)) is None
+
+
+def test_hermitian():
+    c = Symbol('c', commutative=False)
+    assert ask_generated(Q.commutative, x) is True
+    assert ask_generated(Q.commutative, c) is False
+    assert ask_generated(Q.hermitian, x*y, Q.hermitian(x) & Q.real(y)) is True
+    assert ask_generated(Q.hermitian, c*y, Q.hermitian(c) & Q.real(y)) is True
+    assert ask_generated(Q.hermitian, I*x, Q.antihermitian(x)) is True
+
+
+def test_log():
+    assert ask_generated(Q.finite, log(x), Q.infinite(x)) is False
+    assert ask_generated(Q.finite, log(x), Q.zero(x)) is False
+    assert ask_generated(Q.complex, log(x), Q.nonzero(x)) is True
+    assert ask_generated(Q.real, log(x), Q.positive(x)) is True
+    assert ask_generated(Q.real, log(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.imaginary, log(x), Q.positive(x)) is False
+    assert ask_generated(Q.positive, log(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.positive, log(x), Q.negative(x)) is False
+    assert ask_generated(Q.zero, log(x), Q.eq(x, 1)) is True
+    assert ask_generated(Q.zero, log(x), Q.ne(x, 1)) is False
+    assert ask_generated(Q.rational, log(x), Q.rational(x) & Q.ne(x, 1)) is False
+    assert ask_generated(Q.transcendental, log(x),
+                         Q.algebraic(x) & ~Q.zero(x) & Q.ne(x, 1)) is True
+    assert ask_generated(Q.transcendental, log(x), Q.algebraic(x) & ~Q.zero(x)) is None
 
 
 def test_sums_and_products():
@@ -188,6 +235,8 @@ def test_wrong_answers_of_ask():
     assert ask_generated(Q.finite, sin(x)**2) is None
     assert ask_generated(Q.finite, cos(x)**2) is None
     assert ask_generated(Q.finite, log(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.finite, log(x), ~Q.extended_real(x)) is None
+    assert ask_generated(Q.complex, log(x)) is None
     assert ask_generated(Q.finite, 2**x, ~Q.finite(x)) is None
 
     # a power of zero may be infinite
@@ -200,27 +249,18 @@ def test_wrong_answers_of_ask():
     assert ask_generated(Q.positive, acot(x), Q.real(x)) is None
     assert ask_generated(Q.imaginary, (2*I)**x, Q.imaginary(x)) is None
 
+    # log(oo) is oo; log(-1) and log(3/5 + 4*I/5) are imaginary
+    assert ask_generated(Q.positive_infinite, log(x), Q.positive_infinite(x)) is True
+    assert ask_generated(Q.imaginary, log(x), ~Q.imaginary(x)) is None
+
 
 def test_old_assumptions_are_not_used():
-    def forbidden(*args):
-        raise AssertionError('the old assumptions were used')
-
     p = Symbol('p', positive=True)
-    queries = [
-        (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
-        (Q.even, Abs(Abs(x)), Q.even(x), True),
-        (Q.zero, Abs(x), ~Q.zero(x), False),
-        (Q.positive, x, True, None),
-        (Q.positive, p, True, None),
-        (Q.zero, Abs(p), True, None),
-        (Q.positive, exp(p), True, None),
-    ]
-    # sympy.core.assumptions is also the name of a function
-    core_assumptions = import_module('sympy.core.assumptions')
-    originals = core_assumptions._ask, FactKB.deduce_all_facts
-    core_assumptions._ask = FactKB.deduce_all_facts = forbidden
-    try:
-        for predicate, expr, assumptions, expected in queries:
-            assert ask(predicate, expr, assumptions) is expected
-    finally:
-        core_assumptions._ask, FactKB.deduce_all_facts = originals
+    # making an expression uses the old assumptions
+    power, number, product = exp(x)**y, sqrt(2) - 1, p*x
+    with old_assumptions_forbidden():
+        assert ask(Q.positive, power, Q.real(x) & Q.real(y)) is True
+        assert ask(Q.positive, x) is None
+        assert ask(Q.positive, p) is True
+        assert ask(Q.zero, product, Q.positive(x)) is False
+        assert ask(Q.positive, number) is True
