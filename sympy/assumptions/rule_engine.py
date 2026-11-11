@@ -14,24 +14,30 @@ if TYPE_CHECKING:
     from sympy.logic.boolalg import Boolean
 
     RuleKind = int
-    # (argument, the predicate which must be true of it)
-    Condition = tuple[int, Predicate]
+    # (FIRST_ARG_IS, Q.even): Q.even is true of the first argument
+    Condition = tuple[tuple[int, bool], Predicate]
     # all of the conditions must hold
     Rule = tuple[RuleKind, list[Condition]]
     Rules = dict[tuple[type[Basic], Predicate], list[Rule]]
 
 FALSE_IF: RuleKind = 0
 TRUE_IF: RuleKind = 1
-# also false if a condition is false
+# also false if a condition does not hold
 IF_AND_ONLY_IF: RuleKind = 2
 
 ALWAYS_FALSE: Rule = (FALSE_IF, [])
 ALWAYS_TRUE: Rule = (TRUE_IF, [])
 
-FIRST_ARG = 0
-SECOND_ARG = 1
-# the expression itself
+# As an argument: the expression itself
 SELF = -1
+
+# (argument, whether the predicate is true of it)
+FIRST_ARG_IS = (0, True)
+FIRST_ARG_IS_NOT = (0, False)
+SECOND_ARG_IS = (1, True)
+SECOND_ARG_IS_NOT = (1, False)
+SELF_IS = (SELF, True)
+SELF_IS_NOT = (SELF, False)
 
 
 class _UnaryFactsEngine:
@@ -90,11 +96,11 @@ def ask_by_rules(
     >>> from sympy import Abs, Q
     >>> from sympy.abc import x
     >>> from sympy.assumptions.rule_engine import (ALWAYS_FALSE, FALSE_IF,
-    ...     FIRST_ARG, TRUE_IF, ask_by_rules)
+    ...     FIRST_ARG_IS, TRUE_IF, ask_by_rules)
     >>> rules = {
     ...     (Abs, Q.even): [
-    ...         (TRUE_IF, [(FIRST_ARG, Q.even)]),
-    ...         (FALSE_IF, [(FIRST_ARG, Q.odd)]),
+    ...         (TRUE_IF, [(FIRST_ARG_IS, Q.even)]),
+    ...         (FALSE_IF, [(FIRST_ARG_IS, Q.odd)]),
     ...     ],
     ...     (Abs, Q.negative): [
     ...         ALWAYS_FALSE,
@@ -117,7 +123,7 @@ def check_no_cycles(rules: Rules) -> None:
         (predicate, condition_predicate)
         for (_, predicate), rules_for_predicate in rules.items()
         for _, conditions in rules_for_predicate
-        for argument, condition_predicate in conditions
+        for (argument, _), condition_predicate in conditions
         if argument == SELF
     }
     vertices = {vertex for edge in edges for vertex in edge}
@@ -159,11 +165,11 @@ class _RuleEngine:
             conditions: list[Condition],
             expr: Basic,
     ) -> bool | None:
-        for argument, predicate in conditions:
+        for (argument, expected), predicate in conditions:
             target = expr if argument == SELF else expr.args[argument]
             value = self.visit(predicate, target)
-            if value is not True:
-                if value is False and kind == IF_AND_ONLY_IF:
+            if value is not expected:
+                if value is not None and kind == IF_AND_ONLY_IF:
                     return False
                 return None
         return kind != FALSE_IF

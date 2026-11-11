@@ -9,10 +9,11 @@ from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
-    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _UnaryFactsEngine,
-    ask_by_rules, check_no_cycles)
+    FIRST_ARG_IS, FIRST_ARG_IS_NOT, IF_AND_ONLY_IF, SECOND_ARG_IS, SELF_IS,
+    SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules, check_no_cycles)
 from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
+from sympy.core.function import Function
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
@@ -24,33 +25,36 @@ if TYPE_CHECKING:
 
 RULES: Rules = {
     (Abs, Q.integer): [
-        (TRUE_IF, [(FIRST_ARG, Q.integer)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer)]),
     ],
     (Abs, Q.even): [
-        (TRUE_IF, [(FIRST_ARG, Q.even)]),
-        (FALSE_IF, [(FIRST_ARG, Q.odd)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.even)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.odd)]),
     ],
     (Abs, Q.negative): [
         ALWAYS_FALSE,
     ],
     (Abs, Q.zero): [
-        (IF_AND_ONLY_IF, [(FIRST_ARG, Q.zero)]),
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (Abs, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (exp, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
     (Pow, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG, Q.positive), (SECOND_ARG, Q.real)]),
-        (TRUE_IF, [(FIRST_ARG, Q.negative), (SECOND_ARG, Q.even)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative), (SECOND_ARG_IS, Q.even)]),
     ],
     (Expr, Q.real): [
-        (TRUE_IF, [(SELF, Q.positive)]),
+        (TRUE_IF, [(SELF_IS, Q.positive)]),
     ],
     (Expr, Q.zero): [
-        (FALSE_IF, [(SELF, Q.positive)]),
+        (FALSE_IF, [(SELF_IS, Q.positive)]),
     ],
     (Expr, Q.nonnegative): [
-        (TRUE_IF, [(SELF, Q.positive)]),
+        (TRUE_IF, [(SELF_IS, Q.positive)]),
     ],
 }
 
@@ -110,6 +114,32 @@ def test_rule_without_conditions():
     assert ask_by_rules(Q.complex, exp(x), True, rules) is True
 
 
+def test_condition_which_must_not_hold():
+    assert ask(Q.positive, Abs(x), Q.complex(x) & ~Q.zero(x)) is True
+    assert ask(Q.positive, Abs(x), Q.negative(x)) is True
+    assert ask(Q.positive, Abs(x), Q.complex(x)) is None
+    assert ask(Q.positive, Abs(x), Q.zero(x)) is None
+    assert ask(Q.positive, Abs(x), ~Q.zero(x)) is None
+    rules = {
+        (Expr, Q.positive): [
+            (TRUE_IF, [(SELF_IS, Q.nonnegative), (SELF_IS_NOT, Q.zero)]),
+        ],
+    }
+    assert ask_by_rules(Q.positive, x, Q.nonnegative(x) & ~Q.zero(x), rules) is True
+    assert ask_by_rules(Q.positive, x, Q.nonnegative(x), rules) is None
+
+
+def test_if_and_only_if_with_a_condition_which_must_not_hold():
+    class g(Function):
+        pass
+
+    # not true of anything: only the shape is tested
+    rules = {(g, Q.even): [(IF_AND_ONLY_IF, [(FIRST_ARG_IS_NOT, Q.odd)])]}
+    assert ask_by_rules(Q.even, g(x), ~Q.odd(x), rules) is True
+    assert ask_by_rules(Q.even, g(x), Q.odd(x), rules) is False
+    assert ask_by_rules(Q.even, g(x), True, rules) is None
+
+
 def test_several_rules_for_one_predicate():
     assert ask(Q.even, Abs(x), Q.even(x)) is True
     assert ask(Q.even, Abs(x), Q.odd(x)) is False
@@ -154,18 +184,18 @@ def test_rules_of_a_base_class():
 def test_check_no_cycles():
     check_no_cycles(RULES)
     loop = {
-        (Expr, Q.nonnegative): [(TRUE_IF, [(SELF, Q.positive)])],
-        (Expr, Q.positive): [(TRUE_IF, [(SELF, Q.nonnegative), (SELF, Q.nonzero)])],
+        (Expr, Q.nonnegative): [(TRUE_IF, [(SELF_IS, Q.positive)])],
+        (Expr, Q.positive): [(TRUE_IF, [(SELF_IS, Q.nonnegative), (SELF_IS, Q.nonzero)])],
     }
     error = raises(ValueError, lambda: check_no_cycles(loop))
     assert 'Q.nonnegative, Q.positive' in str(error.value)
     raises(ValueError, lambda: check_no_cycles(
-        {(Abs, Q.even): [(TRUE_IF, [(SELF, Q.even)])]}))
+        {(Abs, Q.even): [(TRUE_IF, [(SELF_IS, Q.even)])]}))
     raises(ValueError, lambda: check_no_cycles({
-        (Abs, Q.nonnegative): [(TRUE_IF, [(SELF, Q.positive)])],
-        (Expr, Q.positive): [(TRUE_IF, [(SELF, Q.nonnegative)])],
+        (Abs, Q.nonnegative): [(TRUE_IF, [(SELF_IS, Q.positive)])],
+        (Expr, Q.positive): [(TRUE_IF, [(SELF_IS, Q.nonnegative)])],
     }))
-    check_no_cycles({(Abs, Q.even): [(TRUE_IF, [(FIRST_ARG, Q.even)])]})
+    check_no_cycles({(Abs, Q.even): [(TRUE_IF, [(FIRST_ARG_IS, Q.even)])]})
 
 
 def test_old_assumptions_are_not_used():
