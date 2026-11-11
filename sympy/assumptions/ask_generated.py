@@ -418,3 +418,43 @@ def get_known_facts_dict():
         Q.negative, Q.negative_infinite, Q.nonzero, Q.odd, Q.positive,
         Q.positive_infinite, Q.prime, Q.transcendental])),
     }
+
+@cacheit
+def get_number_facts_combinations():
+    """
+    For each predicate of the number facts, an integer with one bit for each
+    combination of true and false which they allow, set where it is true.
+    """
+    return {
+        Q.algebraic: 0xfffffffc00000000,
+        Q.antihermitian: 0xffff0003ffff0000,
+        Q.commutative: 0xfffffffffffcfffc,
+        Q.complex: 0xfffffffff000f000,
+        Q.composite: 0xc000c00000000000,
+        Q.even: 0xb800b80000000000,
+        Q.extended_negative: 0x270027020c008c00,
+        Q.extended_nonnegative: 0xd8f0d8f103004300,
+        Q.extended_nonpositive: 0x370037020c008c00,
+        Q.extended_nonzero: 0xeff0eff30f00cf00,
+        Q.extended_positive: 0xc8f0c8f103004300,
+        Q.extended_real: 0xfff0fff30f00cf00,
+        Q.finite: 0xfffffffff0c0f0c0,
+        Q.hermitian: 0xfffcfffbcab2eab2,
+        Q.imaginary: 0x000a0000a0000000,
+        Q.infinite: 0x000000000f280f28,
+        Q.integer: 0xfcc0fcc000000000,
+        Q.irrational: 0x022002230000c000,
+        Q.negative: 0x2700270200008000,
+        Q.negative_infinite: 0x000000000c000c00,
+        Q.nonnegative: 0xd8f0d8f100004000,
+        Q.nonpositive: 0x3700370200008000,
+        Q.nonzero: 0xeff0eff30000c000,
+        Q.odd: 0x44c044c000000000,
+        Q.positive: 0xc8f0c8f100004000,
+        Q.positive_infinite: 0x0000000003000300,
+        Q.prime: 0x0880088000000000,
+        Q.rational: 0xfdd0fdd000000000,
+        Q.real: 0xfff0fff30000c000,
+        Q.transcendental: 0x00000003f000f000,
+        Q.zero: 0x1000100000000000,
+    }

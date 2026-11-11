@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sympy.assumptions.ask_generated import get_known_facts_dict
+from sympy.assumptions.ask_generated import get_number_facts_combinations
 from sympy.assumptions.rule_preprocessing import preprocess
 
 if TYPE_CHECKING:
@@ -71,39 +71,45 @@ class _UnaryFactsEngine:
 
     def __init__(self, known: Known):
         self.known = known
+        self.where_true = get_number_facts_combinations()
+        self.possible: dict[Basic, int] = {}
 
     def ask_single_fact(self, key: Predicate | Basic, expr: Basic) -> bool | None:
-        """Whether one predicate known of *expr* decides *key* by itself."""
-        known = self.known.get(expr)
-        if not known:
+        """Whether what is known of *expr* decides *key*."""
+        possible = self.possible.get(expr)
+        if possible is None:
+            known = self.known.get(expr)
+            possible = self.possible[expr] = self._possible(known) if known else 0
+        if not possible:
             return None
-        # predicate -> (the predicates which it implies, the ones which it excludes)
-        known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
-        known_facts = get_known_facts_dict()
-        facts_of_key = known_facts.get(key)
-        if facts_of_key is None:
-            # a number, as in (FIRST_ARG_IS, S.NegativeOne); it has known facts itself
-            if key is expr:
-                return True
-            for number, is_equal in known:
-                if number is key:
-                    return is_equal
-            return None
-        implied_by_key = facts_of_key[0]
-        for predicate, is_true in known:
-            if is_true:
-                implied, excluded = known_facts.get(predicate, _NOTHING)
-                if key in implied:
-                    return True
-                if key in excluded:
-                    return False
-            elif predicate in implied_by_key:
-                # key would imply predicate, which is false
-                return False
+        where_true = self.where_true.get(key)
+        if where_true is None:
+            return self._about_itself(key, expr)
+        common = possible & where_true
+        if common == possible:
+            return True
+        if not common:
+            return False
         return None
 
+    def _possible(self, known: list[tuple[Predicate | Basic, bool]]) -> int:
+        """The combinations of true and false which the number facts and *known* allow."""
+        # every combination
+        possible = -1
+        for entry, is_true in known:
+            where_true = self.where_true.get(entry)
+            if where_true is not None:
+                possible &= where_true if is_true else ~where_true
+        return possible
 
-_NOTHING: tuple[set, set] = (set(), set())
+    def _about_itself(self, key: Predicate | Basic, expr: Basic) -> bool | None:
+        """What is known of *expr* about the number or predicate *key* itself."""
+        if key is expr:
+            return True
+        for entry, is_true in self.known[expr]:
+            if entry is key:
+                return is_true
+        return None
 
 
 def ask_by_rules(
