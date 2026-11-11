@@ -9,12 +9,13 @@ from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
+from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, ANY_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
     EVEN_NUMBER_OF_ARGS_ARE_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
     IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE, ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
-    SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules, check_no_cycles)
+    SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.facts import FactKB

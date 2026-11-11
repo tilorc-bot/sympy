@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.logic.boolalg import And, Not
-from sympy.utilities.iterables import strongly_connected_components
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -113,7 +112,7 @@ def ask_by_rules(
     """
     Answer ``predicate(expr)`` by a depth-first search over *rules*.
 
-    The rules must pass :func:`check_no_cycles`.
+    The rules must pass :func:`~sympy.assumptions.rule_checks.check_no_cycles`.
 
     Examples
     ========
@@ -140,23 +139,6 @@ def ask_by_rules(
 
     """
     return _RuleEngine(assumptions, rules).visit(predicate, expr)
-
-
-def check_no_cycles(rules: Rules) -> None:
-    """Raise ``ValueError`` if conditions about SELF form a cycle of predicates."""
-    edges = {
-        (predicate, condition_predicate)
-        for (_, predicate), rules_for_predicate in rules.items()
-        for _, conditions in rules_for_predicate
-        for (argument, _), condition_predicate in conditions
-        if argument == SELF
-    }
-    vertices = {vertex for edge in edges for vertex in edge}
-    graph = (sorted(vertices, key=str), sorted(edges, key=str))
-    for component in strongly_connected_components(graph):
-        if len(component) > 1 or (component[0], component[0]) in edges:
-            names = ', '.join(sorted(map(str, component)))
-            raise ValueError(f'the rules have a cycle: {names}')
 
 
 class _RuleEngine:
