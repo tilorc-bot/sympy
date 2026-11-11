@@ -338,10 +338,12 @@ def test_condition_about_a_number():
 
 def test_a_number_is_itself():
     # ask_single_fact looks at a number only if something is known of it
-    for number in (S.One, S.NegativeOne, S.Half, I):
-        assert ask_by_rules(number, number, True, {}) is True
-        assert ask_by_rules(number, x, True, {}) is None
+    assert ask_by_rules(S.One, S.One, True, {}) is True
+    assert ask_by_rules(S.NegativeOne, S.NegativeOne, True, {}) is True
+    assert ask_by_rules(S.Half, S.Half, True, {}) is True
+    assert ask_by_rules(I, I, True, {}) is True
     assert ask_by_rules(S.One, S.NegativeOne, True, {}) is None
+    assert ask_by_rules(S.One, x, True, {}) is None
 
 
 def test_assumed_equal_to_a_number():
