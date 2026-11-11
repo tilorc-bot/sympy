@@ -3740,7 +3740,8 @@ RULES: Rules = {
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (exp, Q.negative_infinite): [
-        ALWAYS_FALSE,
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (exp, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
@@ -3769,7 +3770,8 @@ RULES: Rules = {
     ],
     (exp, Q.positive_infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
-        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.positive_infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
     ],
     (exp, Q.prime): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
@@ -3795,7 +3797,8 @@ RULES: Rules = {
     ],
     (exp, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
-        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.negative_infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
     ],
     (factorial, Q.commutative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),

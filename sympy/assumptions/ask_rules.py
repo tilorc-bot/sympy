@@ -728,14 +728,11 @@ RULES: Rules = {
     (exp, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
-    (exp, Q.negative_infinite): [
-        ALWAYS_FALSE,
-    ],
     (exp, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
     (exp, Q.positive_infinite): [
-        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
     ],
     (exp, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
@@ -744,7 +741,7 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (exp, Q.zero): [
-        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (factorial, Q.positive): [
