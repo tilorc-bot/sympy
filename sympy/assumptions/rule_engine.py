@@ -26,6 +26,9 @@ FALSE_IF = 0
 TRUE_IF = 1
 IF_AND_ONLY_IF = 2
 
+ALWAYS_FALSE = (FALSE_IF,)
+ALWAYS_TRUE = (TRUE_IF,)
+
 FIRST_ARG = 0
 SECOND_ARG = 1
 # the expression itself
@@ -42,13 +45,13 @@ def index_rules(rows: Iterable[tuple]) -> Rules:
 
     >>> from sympy import Abs, Q
     >>> from sympy.abc import x
-    >>> from sympy.assumptions.rule_engine import (FIRST_ARG, TRUE_IF,
-    ...     ask_by_rules, index_rules)
+    >>> from sympy.assumptions.rule_engine import (ALWAYS_FALSE, FIRST_ARG,
+    ...     TRUE_IF, ask_by_rules, index_rules)
     >>> rules = index_rules([
     ...     (Abs, Q.even,
     ...         (TRUE_IF, FIRST_ARG, Q.even)),
     ...     (Abs, Q.negative,
-    ...         False),
+    ...         ALWAYS_FALSE),
     ... ])
     >>> ask_by_rules(Q.even, Abs(x), Q.even(x), rules)
     True
@@ -58,11 +61,7 @@ def index_rules(rows: Iterable[tuple]) -> Rules:
     """
     rules: Rules = {}
     for cls, predicate, *cases in rows:
-        for case in cases:
-            if isinstance(case, bool):
-                rules.setdefault((cls, predicate, case), []).append(())
-                continue
-            kind, *pairs = case
+        for kind, *pairs in cases:
             conditions = tuple(
                 (argument, condition, True)
                 for argument, condition in zip(pairs[::2], pairs[1::2]))

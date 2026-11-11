@@ -5,9 +5,9 @@ from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
-from sympy.assumptions.rule_engine import (FALSE_IF, FIRST_ARG, IF_AND_ONLY_IF,
-    SECOND_ARG, SELF, TRUE_IF, _ask_single_fact, _local_facts, ask_by_rules,
-    index_rules)
+from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
+    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _ask_single_fact,
+    _local_facts, ask_by_rules, index_rules)
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
@@ -21,7 +21,7 @@ RULES = index_rules([
         (TRUE_IF, FIRST_ARG, Q.even),
         (FALSE_IF, FIRST_ARG, Q.odd)),
     (Abs, Q.negative,
-        False),
+        ALWAYS_FALSE),
     (Abs, Q.zero,
         (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
     (exp, Q.positive,
@@ -51,7 +51,7 @@ def test_index_rules():
             (FALSE_IF, FIRST_ARG, Q.odd),
             (TRUE_IF, FIRST_ARG, Q.zero)),
         (Abs, Q.negative,
-            False),
+            ALWAYS_FALSE),
         (Abs, Q.zero,
             (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
         (Pow, Q.positive,
@@ -112,6 +112,11 @@ def test_rule_about_an_argument():
 
 def test_rule_without_conditions():
     assert ask(Q.negative, Abs(x)) is False
+    rules = index_rules([
+        (exp, Q.complex,
+            ALWAYS_TRUE),
+    ])
+    assert ask_by_rules(Q.complex, exp(x), True, rules) is True
 
 
 def test_several_rules_for_one_predicate():
