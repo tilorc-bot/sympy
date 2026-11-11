@@ -18,8 +18,6 @@ if TYPE_CHECKING:
     # all of the conditions must hold
     Rule = tuple[RuleKind, list[Condition]]
     Rules = dict[tuple[type[Basic], Predicate], list[Rule]]
-    # (predicate, whether it is true), about one expression
-    Fact = tuple[Predicate, bool]
 
 FALSE_IF: RuleKind = 0
 TRUE_IF: RuleKind = 1
@@ -41,13 +39,15 @@ def _literal(literal):
     return literal, True
 
 
-def _local_facts(assumptions: Boolean | bool) -> dict[Basic, list[Fact]]:
+def _local_facts(
+        assumptions: Boolean | bool,
+) -> dict[Basic, list[tuple[Predicate, bool]]]:
     """
     For each expression, the predicates which *assumptions* say are true or
-    false of it. Only a predicate, its negation and a conjunction of these
-    are read.
+    false of it, as ``(predicate, whether it is true)``. Only a predicate,
+    its negation and a conjunction of these are read.
     """
-    local_facts: dict[Basic, list[Fact]] = {}
+    local_facts: dict[Basic, list[tuple[Predicate, bool]]] = {}
     literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
     for literal in literals:
         applied, is_true = _literal(literal)
@@ -56,7 +56,10 @@ def _local_facts(assumptions: Boolean | bool) -> dict[Basic, list[Fact]]:
     return local_facts
 
 
-def _ask_single_fact(key: Predicate, local_facts: list[Fact] | None) -> bool | None:
+def _ask_single_fact(
+        key: Predicate,
+        local_facts: list[tuple[Predicate, bool]] | None,
+) -> bool | None:
     """
     Whether one of *local_facts*, which are about one expression, decides
     the predicate *key* for that expression by itself.
