@@ -7,10 +7,10 @@ from __future__ import annotations
 from sympy.assumptions import Q, AppliedPredicate
 from sympy.assumptions.ask import _ask_recursive
 from sympy.core import Basic, Symbol
-from sympy.core.logic import _fuzzy_group, fuzzy_and
-from sympy.core.numbers import NaN
-from sympy.logic.boolalg import (And, BooleanTrue, BooleanFalse, Equivalent,
-    Implies, Not, Or)
+from sympy.core.logic import _fuzzy_group, fuzzy_and, fuzzy_or
+from sympy.core.numbers import NaN, Number
+from sympy.logic.boolalg import (And, BooleanTrue, BooleanFalse, conjuncts,
+    Equivalent, Implies, Not, Or)
 
 from ..predicates.common import CommutativePredicate, IsTruePredicate
 
@@ -20,6 +20,13 @@ from ..predicates.common import CommutativePredicate, IsTruePredicate
 @CommutativePredicate.register(Symbol)
 def _(expr, assumptions):
     """Objects are expected to be commutative unless otherwise stated"""
+    assumps = conjuncts(assumptions)
+    if expr.is_commutative is not None:
+        return expr.is_commutative and not ~Q.commutative(expr) in assumps
+    if Q.commutative(expr) in assumps:
+        return True
+    elif ~Q.commutative(expr) in assumps:
+        return False
     return True
 
 @CommutativePredicate.register(Basic)
@@ -29,6 +36,9 @@ def _(expr, assumptions):
             return False
     return True
 
+@CommutativePredicate.register(Number)
+def _(expr, assumptions):
+    return True
 
 @CommutativePredicate.register(NaN)
 def _(expr, assumptions):
@@ -115,4 +125,8 @@ def test_closed_group(expr, assumptions, key):
 
 def ask_all(*queries, assumptions):
     return fuzzy_and(
+        (_ask_recursive(query, assumptions) for query in queries))
+
+def ask_any(*queries, assumptions):
+    return fuzzy_or(
         (_ask_recursive(query, assumptions) for query in queries))

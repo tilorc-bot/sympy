@@ -5,7 +5,6 @@ from sympy.assumptions.assume import (global_assumptions, Predicate,
         AppliedPredicate)
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.core import sympify
-from sympy.core.expr import Expr
 from sympy.core.kind import BooleanKind
 from sympy.core.relational import Eq, Ne, Gt, Lt, Ge, Le
 from sympy.logic.inference import satisfiable
@@ -46,7 +45,7 @@ class AssumptionKeys:
 
     @memoize_property
     def extended_real(self):
-        from .predicates.sets import ExtendedRealPredicate
+        from .handlers.sets import ExtendedRealPredicate
         return ExtendedRealPredicate()
 
     @memoize_property
@@ -66,7 +65,7 @@ class AssumptionKeys:
 
     @memoize_property
     def transcendental(self):
-        from .predicates.sets import TranscendentalPredicate
+        from .handlers.sets import TranscendentalPredicate
         return TranscendentalPredicate()
 
     @memoize_property
@@ -86,7 +85,7 @@ class AssumptionKeys:
 
     @memoize_property
     def irrational(self):
-        from .predicates.sets import IrrationalPredicate
+        from .handlers.sets import IrrationalPredicate
         return IrrationalPredicate()
 
     @memoize_property
@@ -101,12 +100,12 @@ class AssumptionKeys:
 
     @memoize_property
     def positive_infinite(self):
-        from .predicates.calculus import PositiveInfinitePredicate
+        from .handlers.calculus import PositiveInfinitePredicate
         return PositiveInfinitePredicate()
 
     @memoize_property
     def negative_infinite(self):
-        from .predicates.calculus import NegativeInfinitePredicate
+        from .handlers.calculus import NegativeInfinitePredicate
         return NegativeInfinitePredicate()
 
     @memoize_property
@@ -116,72 +115,72 @@ class AssumptionKeys:
 
     @memoize_property
     def negative(self):
-        from .predicates.order import NegativePredicate
+        from .handlers.order import NegativePredicate
         return NegativePredicate()
 
     @memoize_property
     def zero(self):
-        from .predicates.order import ZeroPredicate
+        from .handlers.order import ZeroPredicate
         return ZeroPredicate()
 
     @memoize_property
     def extended_positive(self):
-        from .predicates.order import ExtendedPositivePredicate
+        from .handlers.order import ExtendedPositivePredicate
         return ExtendedPositivePredicate()
 
     @memoize_property
     def extended_negative(self):
-        from .predicates.order import ExtendedNegativePredicate
+        from .handlers.order import ExtendedNegativePredicate
         return ExtendedNegativePredicate()
 
     @memoize_property
     def nonzero(self):
-        from .predicates.order import NonZeroPredicate
+        from .handlers.order import NonZeroPredicate
         return NonZeroPredicate()
 
     @memoize_property
     def nonpositive(self):
-        from .predicates.order import NonPositivePredicate
+        from .handlers.order import NonPositivePredicate
         return NonPositivePredicate()
 
     @memoize_property
     def nonnegative(self):
-        from .predicates.order import NonNegativePredicate
+        from .handlers.order import NonNegativePredicate
         return NonNegativePredicate()
 
     @memoize_property
     def extended_nonzero(self):
-        from .predicates.order import ExtendedNonZeroPredicate
+        from .handlers.order import ExtendedNonZeroPredicate
         return ExtendedNonZeroPredicate()
 
     @memoize_property
     def extended_nonpositive(self):
-        from .predicates.order import ExtendedNonPositivePredicate
+        from .handlers.order import ExtendedNonPositivePredicate
         return ExtendedNonPositivePredicate()
 
     @memoize_property
     def extended_nonnegative(self):
-        from .predicates.order import ExtendedNonNegativePredicate
+        from .handlers.order import ExtendedNonNegativePredicate
         return ExtendedNonNegativePredicate()
 
     @memoize_property
     def even(self):
-        from .predicates.ntheory import EvenPredicate
+        from .handlers.ntheory import EvenPredicate
         return EvenPredicate()
 
     @memoize_property
     def odd(self):
-        from .predicates.ntheory import OddPredicate
+        from .handlers.ntheory import OddPredicate
         return OddPredicate()
 
     @memoize_property
     def prime(self):
-        from .predicates.ntheory import PrimePredicate
+        from .handlers.ntheory import PrimePredicate
         return PrimePredicate()
 
     @memoize_property
     def composite(self):
-        from .predicates.ntheory import CompositePredicate
+        from .handlers.ntheory import CompositePredicate
         return CompositePredicate()
 
     @memoize_property
@@ -539,10 +538,6 @@ def ask(proposition, assumptions=True, context=global_assumptions):
     if res is not None:
         return res
 
-    res = _ask_rules(key, args, assumptions)
-    if res is not None:
-        return res
-
     # direct resolution method, no logic
     res = key(*args)._eval_ask(assumptions)
     if res is not None:
@@ -661,23 +656,9 @@ def _ask_recursive(proposition, assumptions=True):
     if res is not None:
         return res
 
-    res = _ask_rules(key, args, assumptions)
-    if res is not None:
-        return res
-
     res = key(*args)._eval_ask(assumptions)
     if res is not None:
         return bool(res)
-
-
-def _ask_rules(key, args, assumptions):
-    """Answer a unary predicate of an expression which is not a matrix by the rules."""
-    from sympy.assumptions.ask_rules_generated import RULES
-    from sympy.assumptions.rule_engine import ask_by_rules
-
-    if len(args) != 1 or not isinstance(args[0], Expr) or args[0].is_Matrix:
-        return None
-    return ask_by_rules(key, args[0], assumptions, RULES)
 
 
 from sympy.assumptions.ask_generated import (get_all_known_facts,

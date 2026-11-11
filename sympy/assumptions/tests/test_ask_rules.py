@@ -190,7 +190,7 @@ def test_sums_and_products():
 
 
 def test_wrong_answers_of_ask():
-    # each of these has a tempting answer which is wrong
+    # ask gives an answer for each of these, and it is wrong
     real_and_two_imaginary = Q.real(x) & Q.imaginary(y) & Q.imaginary(z)
 
     # a factor or a term may be zero

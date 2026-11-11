@@ -6,13 +6,30 @@ from __future__ import annotations
 
 from sympy.assumptions import Q
 from sympy.assumptions.ask import _ask_recursive
-from sympy.core import Expr, Add, Mul
+from sympy.core import Expr, Add, Mul, Pow, Symbol
+from sympy.core.numbers import (NegativeInfinity, GoldenRatio,
+    Infinity, Exp1, ComplexInfinity, ImaginaryUnit, NaN, Number, Pi, E,
+    TribonacciConstant)
+from sympy.functions import cos, exp, log, sign, sin
+from sympy.logic.boolalg import conjuncts
 
-from ..predicates.calculus import FinitePredicate, InfinitePredicate
+from ..predicates.calculus import (FinitePredicate, InfinitePredicate,
+    PositiveInfinitePredicate, NegativeInfinitePredicate)
 
 
 # FinitePredicate
 
+
+@FinitePredicate.register(Symbol)
+def _(expr, assumptions):
+    """
+    Handles Symbol.
+    """
+    if expr.is_finite is not None:
+        return expr.is_finite
+    if Q.finite(expr) in conjuncts(assumptions):
+        return True
+    return None
 
 @FinitePredicate.register(Add)
 def _(expr, assumptions):
@@ -157,6 +174,69 @@ def _(expr, assumptions):
             result = False
     return result
 
+@FinitePredicate.register(Pow)
+def _(expr, assumptions):
+    """
+    * Unbounded ** NonZero -> Unbounded
+
+    * Bounded ** Bounded -> Bounded
+
+    * Abs()<=1 ** Positive -> Bounded
+
+    * Abs()>=1 ** Negative -> Bounded
+
+    * Otherwise unknown
+    """
+    if expr.base == E:
+        return _ask_recursive(Q.finite(expr.exp), assumptions)
+
+    base_bounded = _ask_recursive(Q.finite(expr.base), assumptions)
+    exp_bounded = _ask_recursive(Q.finite(expr.exp), assumptions)
+    if base_bounded is None and exp_bounded is None:  # Common Case
+        return None
+    if base_bounded is False and _ask_recursive(Q.extended_nonzero(expr.exp), assumptions):
+        return False
+    if base_bounded and exp_bounded:
+        is_base_zero = _ask_recursive(Q.zero(expr.base), assumptions)
+        is_exp_negative = _ask_recursive(Q.negative(expr.exp), assumptions)
+        if is_base_zero is True and is_exp_negative is True:
+            return False
+        if is_base_zero is not False and is_exp_negative is not False:
+            return None
+        return True
+    if (abs(expr.base) <= 1) == True and _ask_recursive(Q.extended_positive(expr.exp), assumptions):
+        return True
+    if (abs(expr.base) >= 1) == True and _ask_recursive(Q.extended_negative(expr.exp), assumptions):
+        return True
+    if (abs(expr.base) >= 1) == True and exp_bounded is False:
+        return False
+    return None
+
+@FinitePredicate.register(exp)
+def _(expr, assumptions):
+    return _ask_recursive(Q.finite(expr.exp), assumptions)
+
+@FinitePredicate.register(log)
+def _(expr, assumptions):
+    # After complex -> finite fact is registered to new assumption system,
+    # querying Q.infinite may be removed.
+    if _ask_recursive(Q.infinite(expr.args[0]), assumptions):
+        return False
+    return _ask_recursive(~Q.zero(expr.args[0]), assumptions)
+
+@FinitePredicate.register_many(cos, sin, Number, Pi, Exp1, GoldenRatio,
+    TribonacciConstant, ImaginaryUnit, sign)
+def _(expr, assumptions):
+    return True
+
+@FinitePredicate.register_many(ComplexInfinity, Infinity, NegativeInfinity)
+def _(expr, assumptions):
+    return False
+
+@FinitePredicate.register(NaN)
+def _(expr, assumptions):
+    return None
+
 
 # InfinitePredicate
 
@@ -167,3 +247,45 @@ def _(expr, assumptions):
     if is_finite is None:
         return None
     return not is_finite
+
+
+# PositiveInfinitePredicate
+
+
+@PositiveInfinitePredicate.register(Infinity)
+def _(expr, assumptions):
+    return True
+
+
+@PositiveInfinitePredicate.register_many(NegativeInfinity, ComplexInfinity)
+def _(expr, assumptions):
+    return False
+
+
+@PositiveInfinitePredicate.register(Expr)
+def _(expr, assumptions):
+    if _ask_recursive(Q.complex(expr), assumptions) is True:
+        return False
+    if _ask_recursive(Q.finite(expr), assumptions) is True:
+        return False
+
+
+# NegativeInfinitePredicate
+
+
+@NegativeInfinitePredicate.register(NegativeInfinity)
+def _(expr, assumptions):
+    return True
+
+
+@NegativeInfinitePredicate.register_many(Infinity, ComplexInfinity)
+def _(expr, assumptions):
+    return False
+
+
+@NegativeInfinitePredicate.register(Expr)
+def _(expr, assumptions):
+    if _ask_recursive(Q.complex(expr), assumptions) is True:
+        return False
+    if _ask_recursive(Q.finite(expr), assumptions) is True:
+        return False
