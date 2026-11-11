@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+from importlib import import_module
+
+from sympy.abc import w, x, y, z
+from sympy.assumptions.ask import Q
+from sympy.assumptions.ask_rules import RULES
+from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
+from sympy.assumptions.assume import Predicate
+from sympy.assumptions.rule_checks import check_no_cycles
+from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
+    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF, TRUE_IF,
+    ask_by_rules)
+from sympy.core.add import Add
+from sympy.core.basic import Basic
+from sympy.core.expr import Expr
+from sympy.core.facts import FactKB
+from sympy.core.function import Function
+from sympy.core.mul import Mul
+from sympy.core.numbers import I, pi
+from sympy.core.power import Pow
+from sympy.core.symbol import Symbol
+from sympy.functions.combinatorial.factorials import factorial
+from sympy.functions.elementary.complexes import Abs, im, re, sign
+from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
+    cos, cot, sin, tan)
+
+VARYING = (Add, Mul)
+ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
+                  OTHER_ARGS)
+
+
+def ask(predicate, expr, assumptions=True):
+    return ask_by_rules(predicate, expr, assumptions, RULES)
+
+
+def ask_generated(predicate, expr, assumptions=True):
+    return ask_by_rules(predicate, expr, assumptions, GENERATED_RULES)
+
+
+def number_of_arguments(cls):
+    if cls in (Basic, Expr, Symbol):
+        return 0
+    if issubclass(cls, Function):
+        return max(cls.nargs)
+    return {
+        Pow: 2,
+    }[cls]
+
+
+def test_no_cycles():
+    check_no_cycles(RULES)
+
+
+def test_rules_are_well_formed():
+    for (cls, predicate), rules in RULES.items():
+        assert isinstance(cls, type) and issubclass(cls, Basic)
+        assert isinstance(predicate, Predicate)
+        assert rules
+        for kind, conditions in rules:
+            assert kind in (FALSE_IF, TRUE_IF, IF_AND_ONLY_IF)
+            for selector, condition_predicate in conditions:
+                argument, expected = selector
+                assert type(argument) is int and type(expected) is bool
+                if cls in VARYING:
+                    assert argument in ABOUT_ALL_ARGS
+                else:
+                    assert argument == SELF or 0 <= argument < number_of_arguments(cls)
+                assert isinstance(condition_predicate, Predicate)
+
+
+def test_numbers():
+    assert ask(Q.positive, Abs(x), Q.positive(x)) is True
+    assert ask(Q.zero, Abs(x), ~Q.zero(x)) is False
+    assert ask(Q.even, Abs(Abs(x)), Q.even(x)) is True
+    assert ask(Q.odd, x, Q.integer(x) & ~Q.even(x)) is True
+    assert ask(Q.hermitian, sin(x), Q.real(x)) is True
+    assert ask(Q.positive, x**y, Q.positive(x) & Q.real(y)) is True
+    assert ask(Q.negative, x**y, Q.negative(x) & Q.odd(y)) is True
+    assert ask(Q.real, x**y, Q.negative(x) & Q.rational(y) & ~Q.integer(y)) is False
+    assert ask(Q.integer, x**y, Q.zero(y)) is True
+    assert ask(Q.positive, exp(x), Q.real(x)) is True
+    assert ask(Q.zero, exp(x), Q.real(x)) is False
+    assert ask(Q.integer, cos(x), Q.zero(x)) is True
+    assert ask(Q.zero, sin(x), Q.zero(x)) is True
+    assert ask(Q.transcendental, tan(x), Q.algebraic(x) & ~Q.zero(x)) is True
+    assert ask(Q.negative, atan(x), Q.negative(x)) is True
+    assert ask(Q.negative, acos(x)) is False
+    assert ask(Q.positive, acot(x), Q.positive(x)) is True
+    assert ask(Q.positive, asin(x), Q.negative(x)) is False
+    assert ask(Q.algebraic, cot(x), Q.algebraic(x)) is False
+    assert ask(Q.imaginary, re(x)) is False
+    assert ask(Q.real, im(x), Q.complex(x)) is True
+    assert ask(Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)) is True
+    assert ask(Q.finite, sign(x)) is True
+
+
+def test_sums_and_products():
+    P, N, R = Q.positive, Q.negative, Q.rational
+    assert ask_generated(P, x + y, P(x) & Q.nonnegative(y)) is True
+    assert ask_generated(P, x + y, Q.nonnegative(x) & P(y)) is True
+    assert ask_generated(P, x + y, P(x) & N(y)) is None
+    assert ask_generated(N, x + y + z, N(x) & Q.nonpositive(y) & N(z)) is True
+    assert ask_generated(Q.even, x + y + z, Q.odd(x) & Q.odd(y) & Q.even(z)) is True
+    assert ask_generated(Q.even, x + y + z, Q.even(x) & Q.odd(y) & Q.odd(z)) is True
+    assert ask_generated(Q.odd, x + y + z, Q.odd(x) & Q.odd(y) & Q.odd(z)) is True
+    assert ask_generated(Q.odd, x + y, Q.odd(x) & Q.odd(y)) is False
+    assert ask_generated(Q.irrational, x + y + z, R(x) & Q.irrational(y) & R(z)) is True
+    assert ask_generated(Q.irrational, x + y, Q.irrational(x) & Q.irrational(y)) is None
+    assert ask_generated(Q.integer, x + y + z,
+                         Q.integer(x) & ~Q.integer(y) & Q.integer(z)) is False
+    assert ask_generated(Q.integer, x + y, ~Q.integer(x) & ~Q.integer(y)) is None
+    assert ask_generated(Q.finite, x + y + z, Q.real(x) & ~Q.finite(y)) is False
+    assert ask_generated(Q.positive_infinite, x + y,
+                         Q.positive_infinite(x) & Q.real(y)) is True
+    assert ask_generated(Q.extended_real, x + y,
+                         Q.positive_infinite(x) & Q.negative_infinite(y)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.nonzero(y)) is False
+    assert ask_generated(P, x*y*z*w, N(x) & N(y) & P(z) & P(w)) is True
+    assert ask_generated(P, x*y*z*w, P(x) & N(y) & P(z) & N(w)) is True
+    assert ask_generated(N, x*y*z, N(x) & N(y) & N(z)) is True
+    assert ask_generated(P, x*y*z, P(x) & N(y) & P(z)) is False
+    assert ask_generated(Q.zero, x*y, Q.zero(x) & Q.finite(y)) is True
+    assert ask_generated(Q.zero, x*y, Q.zero(x)) is None
+    assert ask_generated(Q.zero, x*y*z, ~Q.zero(x) & Q.nonzero(y) & P(z)) is False
+    assert ask_generated(Q.irrational, x*y, Q.irrational(x) & R(y) & ~Q.zero(y)) is True
+    assert ask_generated(Q.irrational, x*y, Q.irrational(x) & R(y)) is None
+    assert ask_generated(Q.even, x*y*z, Q.integer(x) & Q.even(y) & Q.integer(z)) is True
+    assert ask_generated(Q.real, x*y, Q.imaginary(x) & Q.imaginary(y)) is True
+    assert ask_generated(Q.real, x*y, Q.imaginary(x) & P(y)) is False
+    assert ask_generated(Q.composite, x*y, Q.prime(x) & Q.prime(y)) is True
+    assert ask_generated(Q.prime, x*y*z,
+                         Q.integer(x) & Q.composite(y) & Q.integer(z)) is False
+
+
+def test_wrong_answers_of_ask():
+    # ask gives an answer for each of these, and it is wrong
+    real_and_two_imaginary = Q.real(x) & Q.imaginary(y) & Q.imaginary(z)
+
+    # a factor or a term may be zero
+    assert ask_generated(Q.imaginary, x*y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.imaginary, I*x, Q.real(x)) is None
+    assert ask_generated(Q.imaginary, x + I, Q.real(x)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.imaginary, x + y + z, real_and_two_imaginary) is None
+    assert ask_generated(Q.antihermitian, x, Q.real(x)) is None
+    assert ask_generated(Q.antihermitian, I*x, Q.antihermitian(x)) is None
+    assert ask_generated(Q.antihermitian, x + I, Q.real(x)) is None
+    assert ask_generated(Q.antihermitian, x + y, Q.antihermitian(x) & Q.real(y)) is None
+    assert ask_generated(Q.antihermitian, x + y, Q.imaginary(x) & Q.real(y)) is None
+    assert ask_generated(Q.antihermitian, x + y + z, real_and_two_imaginary) is None
+    assert ask_generated(Q.hermitian, I*x, Q.hermitian(x)) is None
+    assert ask_generated(Q.hermitian, I*x, Q.real(x)) is None
+    assert ask_generated(Q.hermitian, x*y, Q.real(x) & Q.zero(y)) is True
+    assert ask_generated(Q.extended_real, x*y, Q.imaginary(x) & Q.zero(y)) is True
+    assert ask_generated(Q.rational, x*y, Q.irrational(x) & Q.zero(y)) is True
+    assert ask_generated(Q.irrational, x*y, Q.zero(x) & Q.irrational(y)) is False
+    assert ask_generated(Q.transcendental, x*y,
+                         Q.zero(x) & Q.transcendental(y)) is False
+    assert ask_generated(Q.integer, sqrt(2)*x, Q.integer(x)) is None
+    assert ask_generated(Q.nonzero, 5**(2*I*pi*x), Q.integer(x)) is None
+    assert ask_generated(Q.imaginary, x**y,
+                         Q.negative(x) & Q.rational(y) & Q.integer(2*y)) is None
+    assert ask_generated(Q.zero, x*y, Q.zero(x)) is None
+
+    # the terms may cancel
+    assert ask_generated(Q.imaginary, x + I, Q.imaginary(x)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+
+    # the argument may be infinite
+    assert ask_generated(Q.real, Abs(x)) is None
+    assert ask_generated(Q.complex, Abs(x)) is None
+    assert ask_generated(Q.real, re(x)) is None
+    assert ask_generated(Q.complex, re(x)) is None
+    assert ask_generated(Q.real, im(x)) is None
+    assert ask_generated(Q.complex, im(x)) is None
+    assert ask_generated(Q.complex, exp(x)) is None
+    assert ask_generated(Q.complex, sin(x)) is None
+    assert ask_generated(Q.complex, cos(x)) is None
+    assert ask_generated(Q.finite, sin(x)) is None
+    assert ask_generated(Q.finite, sin(x), ~Q.finite(x)) is None
+    assert ask_generated(Q.finite, cos(x)) is None
+    assert ask_generated(Q.finite, cos(x), ~Q.finite(x)) is None
+    assert ask_generated(Q.finite, 2*sin(x)) is None
+    assert ask_generated(Q.finite, sin(x)**2) is None
+    assert ask_generated(Q.finite, cos(x)**2) is None
+    assert ask_generated(Q.finite, log(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.finite, 2**x, ~Q.finite(x)) is None
+
+    # a power of zero may be infinite
+    assert ask_generated(Q.algebraic, x**y, Q.algebraic(x) & Q.rational(y)) is None
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.complex(y)) is None
+
+    # acos(1) is zero, acot(-1) is negative, (2*I)**(I*pi/(2*log(2))) is imaginary
+    assert ask_generated(Q.positive, acos(x),
+                         Q.nonnegative(x + 1) & Q.nonpositive(x - 1)) is None
+    assert ask_generated(Q.positive, acot(x), Q.real(x)) is None
+    assert ask_generated(Q.imaginary, (2*I)**x, Q.imaginary(x)) is None
+
+
+def test_old_assumptions_are_not_used():
+    def forbidden(*args):
+        raise AssertionError('the old assumptions were used')
+
+    p = Symbol('p', positive=True)
+    queries = [
+        (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
+        (Q.even, Abs(Abs(x)), Q.even(x), True),
+        (Q.zero, Abs(x), ~Q.zero(x), False),
+        (Q.positive, x, True, None),
+        (Q.positive, p, True, None),
+        (Q.zero, Abs(p), True, None),
+        (Q.positive, exp(p), True, None),
+    ]
+    # sympy.core.assumptions is also the name of a function
+    core_assumptions = import_module('sympy.core.assumptions')
+    originals = core_assumptions._ask, FactKB.deduce_all_facts
+    core_assumptions._ask = FactKB.deduce_all_facts = forbidden
+    try:
+        for predicate, expr, assumptions, expected in queries:
+            assert ask(predicate, expr, assumptions) is expected
+    finally:
+        core_assumptions._ask, FactKB.deduce_all_facts = originals
