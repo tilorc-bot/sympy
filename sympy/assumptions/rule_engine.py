@@ -34,7 +34,7 @@ SELF = -1
 
 
 class _UnaryFactsEngine:
-    """Answers from one assumed predicate and the known unary facts."""
+    """Answers from the assumed predicates and the known unary facts."""
 
     def __init__(self, assumptions: Boolean | bool):
         # expr -> [(predicate, whether it is true)]. Only a predicate, its
