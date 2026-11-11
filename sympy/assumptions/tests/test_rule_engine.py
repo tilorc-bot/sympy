@@ -15,16 +15,28 @@ from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
 
 RULES = index_rules([
-    (Abs, Q.integer, (TRUE_IF, FIRST_ARG, Q.integer)),
-    (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even)),
-    (Abs, Q.negative, (FALSE_IF,)),
-    (Abs, Q.zero, (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
-    (exp, Q.positive, (TRUE_IF, FIRST_ARG, Q.real)),
-    (Pow, Q.positive, (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real)),
-    (Expr, Q.real, (TRUE_IF, SELF, Q.positive)),
-    (Expr, Q.zero, (FALSE_IF, SELF, Q.positive)),
-    (Expr, Q.nonnegative, (TRUE_IF, SELF, Q.positive)),
-    (Expr, Q.positive, (TRUE_IF, SELF, Q.nonnegative, SELF, Q.nonzero)),
+    (Abs, Q.integer,
+        (TRUE_IF, FIRST_ARG, Q.integer)),
+    (Abs, Q.even,
+        (TRUE_IF, FIRST_ARG, Q.even),
+        (FALSE_IF, FIRST_ARG, Q.odd)),
+    (Abs, Q.negative,
+        (FALSE_IF,)),
+    (Abs, Q.zero,
+        (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
+    (exp, Q.positive,
+        (TRUE_IF, FIRST_ARG, Q.real)),
+    (Pow, Q.positive,
+        (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real),
+        (TRUE_IF, FIRST_ARG, Q.negative, SECOND_ARG, Q.even)),
+    (Expr, Q.real,
+        (TRUE_IF, SELF, Q.positive)),
+    (Expr, Q.zero,
+        (FALSE_IF, SELF, Q.positive)),
+    (Expr, Q.nonnegative,
+        (TRUE_IF, SELF, Q.positive)),
+    (Expr, Q.positive,
+        (TRUE_IF, SELF, Q.nonnegative, SELF, Q.nonzero)),
 ])
 
 
@@ -34,13 +46,21 @@ def ask(predicate, expr, assumptions=True):
 
 def test_index_rules():
     assert index_rules([
-        (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even), (TRUE_IF, FIRST_ARG, Q.zero)),
-        (Abs, Q.negative, (FALSE_IF,)),
-        (Abs, Q.zero, (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
-        (Pow, Q.positive, (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real)),
-        (Expr, Q.zero, (FALSE_IF, SELF, Q.positive)),
+        (Abs, Q.even,
+            (TRUE_IF, FIRST_ARG, Q.even),
+            (FALSE_IF, FIRST_ARG, Q.odd),
+            (TRUE_IF, FIRST_ARG, Q.zero)),
+        (Abs, Q.negative,
+            (FALSE_IF,)),
+        (Abs, Q.zero,
+            (IF_AND_ONLY_IF, FIRST_ARG, Q.zero)),
+        (Pow, Q.positive,
+            (TRUE_IF, FIRST_ARG, Q.positive, SECOND_ARG, Q.real)),
+        (Expr, Q.zero,
+            (FALSE_IF, SELF, Q.positive)),
     ]) == {
         (Abs, Q.even, True): [((0, Q.even, True),), ((0, Q.zero, True),)],
+        (Abs, Q.even, False): [((0, Q.odd, True),)],
         (Abs, Q.negative, False): [()],
         (Abs, Q.zero, True): [((0, Q.zero, True),)],
         (Abs, Q.zero, False): [((0, Q.zero, False),)],
@@ -85,13 +105,21 @@ def test_rule_about_an_argument():
     assert ask(Q.integer, Abs(x), Q.integer(x)) is True
     assert ask(Q.integer, Abs(x)) is None
     assert ask(Q.even, Abs(x), Q.even(x)) is True
-    assert ask(Q.even, Abs(x), Q.odd(x)) is None
+    assert ask(Q.even, Abs(x), Q.integer(x)) is None
     assert ask(Q.even, Abs(x)) is None
     assert ask(Q.odd, Abs(x), Q.even(x)) is None
 
 
 def test_rule_without_conditions():
     assert ask(Q.negative, Abs(x)) is False
+
+
+def test_several_rules_for_one_predicate():
+    assert ask(Q.even, Abs(x), Q.even(x)) is True
+    assert ask(Q.even, Abs(x), Q.odd(x)) is False
+    assert ask(Q.positive, x**y, Q.positive(x) & Q.real(y)) is True
+    assert ask(Q.positive, x**y, Q.negative(x) & Q.even(y)) is True
+    assert ask(Q.positive, x**y, Q.negative(x) & Q.real(y)) is None
 
 
 def test_if_and_only_if():
@@ -143,9 +171,13 @@ def test_no_answer_below_a_cycle_is_not_kept():
     # to real: a cycle, so positive has no answer there. The second rule
     # then answers real, and positive has an answer after that.
     rules = index_rules([
-        (g, Q.real, (TRUE_IF, SELF, Q.positive), (TRUE_IF, FIRST_ARG, Q.integer)),
-        (g, Q.positive, (TRUE_IF, SELF, Q.real)),
-        (g, Q.nonzero, (TRUE_IF, SELF, Q.real, SELF, Q.positive)),
+        (g, Q.real,
+            (TRUE_IF, SELF, Q.positive),
+            (TRUE_IF, FIRST_ARG, Q.integer)),
+        (g, Q.positive,
+            (TRUE_IF, SELF, Q.real)),
+        (g, Q.nonzero,
+            (TRUE_IF, SELF, Q.real, SELF, Q.positive)),
     ])
     assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
     assert ask_by_rules(Q.nonzero, g(x), True, rules) is None

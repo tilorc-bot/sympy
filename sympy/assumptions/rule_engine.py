@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     # (predicate, whether it is true), about one expression
     LocalFacts = list[tuple[Predicate, bool]]
 
-# (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even)): Abs(x) is even if x is
+# (Abs, Q.even,
+#     (TRUE_IF, FIRST_ARG, Q.even)),
+# Abs(x) is even if x is
 FALSE_IF = 0
 TRUE_IF = 1
 IF_AND_ONLY_IF = 2
@@ -43,8 +45,10 @@ def index_rules(rows: Iterable[tuple]) -> Rules:
     >>> from sympy.assumptions.rule_engine import (FALSE_IF, FIRST_ARG,
     ...     TRUE_IF, ask_by_rules, index_rules)
     >>> rules = index_rules([
-    ...     (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even)),
-    ...     (Abs, Q.negative, (FALSE_IF,)),
+    ...     (Abs, Q.even,
+    ...         (TRUE_IF, FIRST_ARG, Q.even)),
+    ...     (Abs, Q.negative,
+    ...         (FALSE_IF,)),
     ... ])
     >>> ask_by_rules(Q.even, Abs(x), Q.even(x), rules)
     True
