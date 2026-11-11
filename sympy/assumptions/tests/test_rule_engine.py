@@ -9,7 +9,8 @@ from sympy.abc import w, x, y, z
 from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask import ask as sympy_ask
-from sympy.assumptions.ask_generated import get_known_facts_dict
+from sympy.assumptions.ask_generated import (get_known_facts_dict,
+    get_number_facts_combinations)
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.number_facts import number_facts
 from sympy.assumptions.rule_checks import check_no_cycles
@@ -211,7 +212,7 @@ def test_ask_single_fact():
 
 
 def test_ask_single_fact_agrees_with_the_one_of_ask():
-    predicates = sorted(get_known_facts_dict(), key=str)
+    predicates = sorted(get_number_facts_combinations(), key=str)
     for key in predicates:
         for predicate in predicates:
             for value in (True, False):
@@ -220,6 +221,23 @@ def test_ask_single_fact_agrees_with_the_one_of_ask():
                     key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
                 engine = _UnaryFactsEngine(preprocess(x, assumption))
                 assert engine.ask_single_fact(key, x) is expected
+
+
+def test_ask_single_fact_from_several_facts():
+    r = Symbol('r', real=True, nonnegative=False)
+    power = y**x
+    with old_assumptions_forbidden():
+        assert ask_by_rules(Q.negative, r, True, {}) is True
+        assert ask_by_rules(Q.zero, x, Q.nonnegative(x) & Q.nonpositive(x), {}) is True
+        assert ask_by_rules(Q.irrational, x, Q.real(x) & ~Q.rational(x), {}) is True
+        assert ask_by_rules(Q.infinite, x, Q.extended_real(x) & ~Q.finite(x), {}) is True
+        assert ask_by_rules(Q.irrational, x, Q.real(x) & Q.transcendental(x), {}) is True
+        assert ask_by_rules(Q.composite, x,
+                            Q.positive(x) & Q.even(x) & ~Q.prime(x), {}) is True
+        assert ask_by_rules(Q.infinite, x, ~Q.finite(x), {}) is None
+        assert ask_by_rules(Q.negative, x, ~Q.nonnegative(x), {}) is None
+        assert ask_number_rules(Q.odd, power,
+            Q.nonnegative(x) & Q.nonpositive(x) & Q.eq(y, -1)) is True
 
 
 def test_rule_about_an_argument():

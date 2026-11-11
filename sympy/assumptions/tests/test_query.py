@@ -5,9 +5,10 @@ from sympy.assumptions.assume import (assuming, global_assumptions, Predicate)
 from sympy.assumptions.ask import _ask_recursive
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.facts import (single_fact_lookup,
-    get_known_facts, generate_known_facts_dict, get_known_facts_keys)
+    get_known_facts, generate_combinations_dict, generate_known_facts_dict,
+    get_known_facts_keys, get_number_facts)
 from sympy.assumptions.ask_generated import (get_all_known_facts,
-    get_known_facts_dict)
+    get_known_facts_dict, get_number_facts_combinations)
 from sympy.core.add import Add
 from sympy.core.mul import Mul
 from sympy.core.numbers import (I, Integer, Rational, oo, zoo, pi)
@@ -2352,6 +2353,12 @@ def test_known_facts_consistent():
     keys = [pred(x) for pred in get_known_facts_keys()]
     mapping = generate_known_facts_dict(keys, fact)
     assert get_known_facts_dict() == mapping
+
+
+def test_number_facts_combinations_consistent():
+    """Test that get_number_facts_combinations() in ask_generated.py is up-to-date"""
+    fact = get_number_facts(Symbol('x'))
+    assert get_number_facts_combinations() == generate_combinations_dict(fact)
 
 
 def test_Add_queries():
