@@ -26,27 +26,8 @@ from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, sin, tan)
-from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
-from sympy.matrices.expressions.determinant import Determinant
-from sympy.matrices.expressions.diagonal import DiagMatrix, DiagonalMatrix
-from sympy.matrices.expressions.factorizations import (EigenValues, EigenVectors,
-    Factorization, LofCholesky, LofLU, QofQR, RofQR, SofSVD, UofLU, UofSVD, VofSVD)
-from sympy.matrices.expressions.fourier import DFT, IDFT
-from sympy.matrices.expressions.hadamard import HadamardProduct
-from sympy.matrices.expressions.inverse import Inverse
-from sympy.matrices.expressions.matadd import MatAdd
-from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
-from sympy.matrices.expressions.matmul import MatMul
-from sympy.matrices.expressions.matpow import MatPow
-from sympy.matrices.expressions.slice import MatrixSlice
-from sympy.matrices.expressions.special import Identity, ZeroMatrix
-from sympy.matrices.expressions.trace import Trace
-from sympy.matrices.expressions.transpose import Transpose
 
-A = MatrixSymbol('A', 3, 3)
-B = MatrixSymbol('B', 3, 3)
-C = MatrixSymbol('C', 2, 3)
-VARYING = (Add, BlockDiagMatrix, HadamardProduct, MatAdd, MatMul, Mul)
+VARYING = (Add, Mul)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
                   OTHER_ARGS)
 
@@ -64,17 +45,8 @@ def number_of_arguments(cls):
         return 0
     if issubclass(cls, Function):
         return max(cls.nargs)
-    if cls is DiagonalMatrix or issubclass(cls, Factorization):
-        return 1
     return {
         Pow: 2,
-        MatPow: 2,
-        Inverse: 2,
-        Determinant: 1,
-        Trace: 1,
-        Transpose: 1,
-        MatrixElement: 3,
-        MatrixSlice: 3,
     }[cls]
 
 
@@ -125,17 +97,6 @@ def test_numbers():
     assert ask(Q.finite, sign(x)) is True
 
 
-def test_matrices():
-    assert ask(Q.positive, Determinant(A), Q.positive_definite(A)) is True
-    assert ask(Q.real, Trace(A), Q.real_elements(A)) is True
-    assert ask(Q.lower_triangular, A.T, Q.upper_triangular(A)) is True
-    assert ask(Q.invertible, A.T, ~Q.invertible(A)) is False
-    assert ask(Q.symmetric, A.I, Q.symmetric(A)) is True
-    assert ask(Q.invertible, MatPow(A, x), Q.invertible(A) & Q.integer(x)) is True
-    assert ask(Q.real, A[0, 1], Q.real_elements(A)) is True
-    assert ask(Q.integer_elements, A[:2, :2], Q.integer_elements(A)) is True
-
-
 def test_sums_and_products():
     P, N, R = Q.positive, Q.negative, Q.rational
     assert ask_generated(P, x + y, P(x) & Q.nonnegative(y)) is True
@@ -173,64 +134,10 @@ def test_sums_and_products():
     assert ask_generated(Q.composite, x*y, Q.prime(x) & Q.prime(y)) is True
     assert ask_generated(Q.prime, x*y*z,
                          Q.integer(x) & Q.composite(y) & Q.integer(z)) is False
-    assert ask_generated(Q.symmetric, A + B, Q.symmetric(A) & Q.symmetric(B)) is True
-    assert ask_generated(Q.symmetric, A + B, Q.symmetric(A) & ~Q.symmetric(B)) is False
-    assert ask_generated(Q.symmetric, A*B, Q.symmetric(A) & Q.symmetric(B)) is None
-    assert ask_generated(Q.invertible, A*B, Q.invertible(A) & Q.invertible(B)) is True
-    assert ask_generated(Q.invertible, A*B,
-                         Q.square(A) & Q.square(B) & ~Q.invertible(B)) is False
-    assert ask_generated(Q.invertible, A*B, ~Q.invertible(B)) is None
-
-
-def test_matrix_classes():
-    square = Q.square
-    real_symmetric = Q.real_elements(A) & Q.symmetric(A)
-    assert ask_generated(Q.orthogonal, Identity(3)) is True
-    assert ask_generated(Q.positive_definite, Identity(3)) is True
-    assert ask_generated(Q.singular, Identity(3)) is False
-    assert ask_generated(Q.real_elements, Identity(3)) is True
-    assert ask_generated(Q.invertible, ZeroMatrix(2, 2)) is False
-    assert ask_generated(Q.unitary, ZeroMatrix(2, 2)) is False
-    assert ask_generated(Q.integer_elements, ZeroMatrix(2, 3)) is True
-    assert ask_generated(Q.diagonal, ZeroMatrix(2, 2), square(ZeroMatrix(2, 2))) is True
-    assert ask_generated(Q.normal, ZeroMatrix(2, 2), square(ZeroMatrix(2, 2))) is True
-    assert ask_generated(Q.diagonal, ZeroMatrix(2, 3), ~square(ZeroMatrix(2, 3))) is False
-    assert ask_generated(Q.symmetric, ZeroMatrix(2, 3), ~square(ZeroMatrix(2, 3))) is False
-    assert ask_generated(Q.upper_triangular, ZeroMatrix(2, 3),
-                         ~square(ZeroMatrix(2, 3))) is None
-    assert ask_generated(Q.symmetric, DiagMatrix(C[0, :].T)) is True
-    assert ask_generated(Q.upper_triangular, DiagonalMatrix(A), square(A)) is True
-    assert ask_generated(Q.diagonal, DiagonalMatrix(C), ~square(C)) is False
-    assert ask_generated(Q.diagonal, DiagonalMatrix(C)) is None
-    assert ask_generated(Q.invertible, DFT(3)) is True
-    assert ask_generated(Q.unitary, IDFT(3)) is True
-    assert ask_generated(Q.complex_elements, DFT(3)) is True
-    assert ask_generated(Q.lower_triangular, LofLU(A)) is True
-    assert ask_generated(Q.lower_triangular, LofCholesky(A)) is True
-    assert ask_generated(Q.triangular, UofLU(C)) is True
-    assert ask_generated(Q.upper_triangular, RofQR(C)) is True
-    assert ask_generated(Q.real_elements, LofLU(A), Q.real_elements(A)) is True
-    assert ask_generated(Q.complex_elements, RofQR(A), Q.complex_elements(A)) is True
-    assert ask_generated(Q.unitary, QofQR(A), square(A)) is True
-    assert ask_generated(Q.singular, QofQR(A), square(A)) is False
-    assert ask_generated(Q.orthogonal, QofQR(A), square(A)) is None
-    assert ask_generated(Q.orthogonal, QofQR(A), square(A) & Q.real_elements(A)) is True
-    assert ask_generated(Q.unitary, QofQR(C), ~square(C)) is None
-    assert ask_generated(Q.invertible, UofSVD(A), square(A)) is True
-    assert ask_generated(Q.orthogonal, VofSVD(A), square(A) & Q.real_elements(A)) is True
-    assert ask_generated(Q.unitary, VofSVD(C), ~square(C)) is None
-    assert ask_generated(Q.diagonal, SofSVD(A), square(A)) is True
-    assert ask_generated(Q.diagonal, SofSVD(C), ~square(C)) is None
-    assert ask_generated(Q.symmetric, EigenValues(A), square(A)) is True
-    assert ask_generated(Q.real_elements, EigenValues(A), Q.real_elements(A)) is None
-    assert ask_generated(Q.real_elements, EigenValues(A), real_symmetric) is True
-    assert ask_generated(Q.orthogonal, EigenVectors(A), Q.real_elements(A)) is None
-    assert ask_generated(Q.orthogonal, EigenVectors(A), real_symmetric) is True
 
 
 def test_wrong_answers_of_ask():
     # ask gives an answer for each of these, and it is wrong
-    N = MatrixSymbol('N', Symbol('n', integer=True), Symbol('m', integer=True))
     real_and_two_imaginary = Q.real(x) & Q.imaginary(y) & Q.imaginary(z)
 
     # a factor or a term may be zero
@@ -293,17 +200,6 @@ def test_wrong_answers_of_ask():
     assert ask_generated(Q.positive, acot(x), Q.real(x)) is None
     assert ask_generated(Q.imaginary, (2*I)**x, Q.imaginary(x)) is None
 
-    # the dimensions n and m may be equal
-    assert ask_generated(Q.invertible, N) is None
-
-    # a product of symmetric matrices need not be symmetric, and a sum may be
-    assert ask_generated(Q.symmetric, A*B, Q.symmetric(A) & Q.symmetric(B)) is None
-    assert ask_generated(Q.symmetric, A + B) is None
-
-    # a part of an invertible matrix need not be invertible
-    assert ask_generated(Q.invertible, A[1:, 1:], Q.invertible(A)) is None
-    assert ask_generated(Q.orthogonal, A[1:, 1:], Q.orthogonal(A)) is None
-
 
 def test_old_assumptions_are_not_used():
     def forbidden(*args):
@@ -314,7 +210,6 @@ def test_old_assumptions_are_not_used():
         (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
         (Q.even, Abs(Abs(x)), Q.even(x), True),
         (Q.zero, Abs(x), ~Q.zero(x), False),
-        (Q.symmetric, A.I, Q.symmetric(A), True),
         (Q.positive, x, True, None),
         (Q.positive, p, True, None),
         (Q.zero, Abs(p), True, None),

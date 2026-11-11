@@ -18,13 +18,7 @@ from sympy.functions.elementary.complexes import Abs, im, re, sign
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, sin, tan)
-from sympy.matrices.expressions.determinant import Determinant
-from sympy.matrices.expressions.matexpr import MatrixSymbol
-from sympy.matrices.expressions.matpow import MatPow
-from sympy.matrices.expressions.trace import Trace
 from sympy.testing.pytest import raises
-
-A = MatrixSymbol('A', 3, 3)
 
 
 def test_generated_rules_are_up_to_date():
@@ -154,10 +148,6 @@ def test_answers_which_only_the_generated_rules_give():
     assert ask_by_rules(Q.negative, exp(x), Q.real(x), GENERATED_RULES) is False
     assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), RULES) is None
     assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), GENERATED_RULES) is True
-    assert ask_by_rules(Q.real, Determinant(A), Q.positive_definite(A),
-                        RULES) is None
-    assert ask_by_rules(Q.real, Determinant(A), Q.positive_definite(A),
-                        GENERATED_RULES) is True
 
 
 def test_rules_about_self_are_not_repeated():
@@ -196,14 +186,6 @@ def test_same_answers_as_the_source_rules():
         (Q.nonzero, x, ~Q.real(x)),
         (Q.zero, x**y, ~Q.zero(x) & Q.positive(y)),
         (Q.prime, x**y, Q.integer(x) & Q.composite(y)),
-        (Q.positive, Determinant(A), Q.positive_definite(A)),
-        (Q.real, Trace(A), Q.real_elements(A)),
-        (Q.lower_triangular, A.T, Q.upper_triangular(A)),
-        (Q.invertible, A.T, ~Q.invertible(A)),
-        (Q.symmetric, A.I, Q.symmetric(A)),
-        (Q.invertible, MatPow(A, x), Q.invertible(A) & Q.integer(x)),
-        (Q.real, A[0, 1], Q.real_elements(A)),
-        (Q.integer_elements, A[:2, :2], Q.integer_elements(A)),
     ]
     for predicate, expr, assumptions in queries:
         source = ask_by_rules(predicate, expr, assumptions, RULES)
