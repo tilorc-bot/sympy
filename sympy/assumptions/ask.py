@@ -66,7 +66,7 @@ class AssumptionKeys:
 
     @memoize_property
     def transcendental(self):
-        from .handlers.sets import TranscendentalPredicate
+        from .predicates.sets import TranscendentalPredicate
         return TranscendentalPredicate()
 
     @memoize_property
@@ -86,7 +86,7 @@ class AssumptionKeys:
 
     @memoize_property
     def irrational(self):
-        from .handlers.sets import IrrationalPredicate
+        from .predicates.sets import IrrationalPredicate
         return IrrationalPredicate()
 
     @memoize_property
@@ -116,12 +116,12 @@ class AssumptionKeys:
 
     @memoize_property
     def negative(self):
-        from .handlers.order import NegativePredicate
+        from .predicates.order import NegativePredicate
         return NegativePredicate()
 
     @memoize_property
     def zero(self):
-        from .handlers.order import ZeroPredicate
+        from .predicates.order import ZeroPredicate
         return ZeroPredicate()
 
     @memoize_property
@@ -136,17 +136,17 @@ class AssumptionKeys:
 
     @memoize_property
     def nonzero(self):
-        from .handlers.order import NonZeroPredicate
+        from .predicates.order import NonZeroPredicate
         return NonZeroPredicate()
 
     @memoize_property
     def nonpositive(self):
-        from .handlers.order import NonPositivePredicate
+        from .predicates.order import NonPositivePredicate
         return NonPositivePredicate()
 
     @memoize_property
     def nonnegative(self):
-        from .handlers.order import NonNegativePredicate
+        from .predicates.order import NonNegativePredicate
         return NonNegativePredicate()
 
     @memoize_property
@@ -166,22 +166,22 @@ class AssumptionKeys:
 
     @memoize_property
     def even(self):
-        from .handlers.ntheory import EvenPredicate
+        from .predicates.ntheory import EvenPredicate
         return EvenPredicate()
 
     @memoize_property
     def odd(self):
-        from .handlers.ntheory import OddPredicate
+        from .predicates.ntheory import OddPredicate
         return OddPredicate()
 
     @memoize_property
     def prime(self):
-        from .handlers.ntheory import PrimePredicate
+        from .predicates.ntheory import PrimePredicate
         return PrimePredicate()
 
     @memoize_property
     def composite(self):
-        from .handlers.ntheory import CompositePredicate
+        from .predicates.ntheory import CompositePredicate
         return CompositePredicate()
 
     @memoize_property
