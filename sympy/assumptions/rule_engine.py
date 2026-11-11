@@ -9,6 +9,8 @@ from sympy.logic.boolalg import And, Not
 from sympy.utilities.iterables import strongly_connected_components
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sympy.assumptions.assume import Predicate
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
@@ -38,6 +40,29 @@ SECOND_ARG_IS = (1, True)
 SECOND_ARG_IS_NOT = (1, False)
 SELF_IS = (SELF, True)
 SELF_IS_NOT = (SELF, False)
+
+# As an argument: all of the arguments, any of them, how many of them, and the
+# ones which did not have it in the nearest ONE_ARG, EVEN_NUMBER_OF_ARGS or
+# ODD_NUMBER_OF_ARGS condition before it
+ALL_ARGS = -2
+ANY_ARG = -3
+ONE_ARG = -4
+EVEN_NUMBER_OF_ARGS = -5
+ODD_NUMBER_OF_ARGS = -6
+OTHER_ARGS = -7
+
+ALL_ARGS_ARE = (ALL_ARGS, True)
+ALL_ARGS_ARE_NOT = (ALL_ARGS, False)
+ANY_ARG_IS = (ANY_ARG, True)
+ANY_ARG_IS_NOT = (ANY_ARG, False)
+ONE_ARG_IS = (ONE_ARG, True)
+ONE_ARG_IS_NOT = (ONE_ARG, False)
+EVEN_NUMBER_OF_ARGS_ARE = (EVEN_NUMBER_OF_ARGS, True)
+EVEN_NUMBER_OF_ARGS_ARE_NOT = (EVEN_NUMBER_OF_ARGS, False)
+ODD_NUMBER_OF_ARGS_ARE = (ODD_NUMBER_OF_ARGS, True)
+ODD_NUMBER_OF_ARGS_ARE_NOT = (ODD_NUMBER_OF_ARGS, False)
+OTHER_ARGS_ARE = (OTHER_ARGS, True)
+OTHER_ARGS_ARE_NOT = (OTHER_ARGS, False)
 
 
 class _UnaryFactsEngine:
@@ -165,11 +190,69 @@ class _RuleEngine:
             conditions: list[Condition],
             expr: Basic,
     ) -> bool | None:
+        others: list[Basic] | None = None
         for (argument, expected), predicate in conditions:
-            target = expr if argument == SELF else expr.args[argument]
-            value = self.visit(predicate, target)
-            if value is not expected:
-                if value is not None and kind == IF_AND_ONLY_IF:
-                    return False
-                return None
+            if argument >= SELF:
+                target = expr if argument == SELF else expr.args[argument]
+                value = self.visit(predicate, target)
+                if value is expected:
+                    continue
+            else:
+                value, others = self._about_args(
+                    argument, expected, predicate, expr, others)
+                if value:
+                    continue
+            if value is not None and kind == IF_AND_ONLY_IF:
+                return False
+            return None
         return kind != FALSE_IF
+
+    def _about_args(
+            self,
+            argument: int,
+            expected: bool,
+            predicate: Predicate,
+            expr: Basic,
+            others: list[Basic] | None,
+    ) -> tuple[bool | None, list[Basic] | None]:
+        """Whether a condition about the arguments holds, and what OTHER_ARGS means."""
+        if argument == OTHER_ARGS:
+            if others is None:
+                raise ValueError('OTHER_ARGS needs a ONE_ARG, EVEN_NUMBER_OF_ARGS'
+                                 ' or ODD_NUMBER_OF_ARGS condition before it')
+            args: Sequence[Basic] = others
+        else:
+            args = expr.args
+        if not expr.args:
+            return None, others
+        if argument == ALL_ARGS or argument == OTHER_ARGS:
+            holds: bool | None = True
+            for arg in args:
+                value = self.visit(predicate, arg)
+                if value is not expected:
+                    if value is not None:
+                        return False, others
+                    holds = None
+            return holds, others
+        if argument == ANY_ARG:
+            holds = False
+            for arg in args:
+                value = self.visit(predicate, arg)
+                if value is expected:
+                    return True, others
+                if value is None:
+                    holds = None
+            return holds, others
+        rest = []
+        for arg in args:
+            value = self.visit(predicate, arg)
+            if value is None:
+                return None, others
+            if value is not expected:
+                rest.append(arg)
+        count = len(args) - len(rest)
+        if argument == ONE_ARG:
+            return count == 1, rest
+        if argument == EVEN_NUMBER_OF_ARGS:
+            return count % 2 == 0, rest
+        return count % 2 == 1, rest
