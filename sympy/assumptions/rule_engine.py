@@ -14,8 +14,12 @@ if TYPE_CHECKING:
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
 
-    Rules = dict[tuple[type[Basic], Predicate, bool],
-                 list[tuple[tuple[int, Predicate, bool], ...]]]
+    # (argument, predicate, the value which the predicate must have for it)
+    Condition = tuple[int, Predicate, bool]
+    # all of the conditions must hold
+    Rule = tuple[Condition, ...]
+    # (class, predicate, answer) -> the rules which give that answer
+    Rules = dict[tuple[type[Basic], Predicate, bool], list[Rule]]
     # (predicate, whether it is true), about one expression
     LocalFacts = list[tuple[Predicate, bool]]
 
