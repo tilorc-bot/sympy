@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 from sympy.abc import x, y
@@ -11,8 +12,10 @@ from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
     FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _UnaryFactsEngine,
     ask_by_rules)
 from sympy.core.expr import Expr
+from sympy.core.facts import FactKB
 from sympy.core.function import Function
 from sympy.core.power import Pow
+from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
 
@@ -180,3 +183,27 @@ def test_no_answer_below_a_cycle_is_not_kept():
     }
     assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
     assert ask_by_rules(Q.nonzero, g(x), True, rules) is None
+
+
+def test_old_assumptions_are_not_used():
+    def forbidden(*args):
+        raise AssertionError('the old assumptions were used')
+
+    p = Symbol('p', positive=True)
+    queries = [
+        (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
+        (Q.even, Abs(Abs(x)), Q.even(x), True),
+        (Q.zero, Abs(x), ~Q.zero(x), False),
+        (Q.positive, x, True, None),
+        (Q.positive, p, True, None),
+        (Q.zero, Abs(p), True, None),
+    ]
+    # sympy.core.assumptions is also the name of a function
+    core_assumptions = import_module('sympy.core.assumptions')
+    originals = core_assumptions._ask, FactKB.deduce_all_facts
+    core_assumptions._ask = FactKB.deduce_all_facts = forbidden
+    try:
+        for predicate, expr, assumptions, expected in queries:
+            assert ask(predicate, expr, assumptions) is expected
+    finally:
+        core_assumptions._ask, FactKB.deduce_all_facts = originals
