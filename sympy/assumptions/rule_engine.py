@@ -33,30 +33,30 @@ SECOND_ARG = 1
 SELF = -1
 
 
-class _AssumedPredicates:
-    """For each expression, the predicates assumed true or false of it."""
+class _UnaryFactsEngine:
+    """Answers from one assumed predicate and the known unary facts."""
 
     def __init__(self, assumptions: Boolean | bool):
         # expr -> [(predicate, whether it is true)]. Only a predicate, its
         # negation and a conjunction of these are read.
-        self.facts: dict[Basic, list[tuple[Predicate, bool]]] = {}
+        self.assumed: dict[Basic, list[tuple[Predicate, bool]]] = {}
         literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
         for literal in literals:
             applied = literal.args[0] if isinstance(literal, Not) else literal
             is_true = not isinstance(literal, Not)
             if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
-                self.facts.setdefault(applied.arg, []).append((applied.function, is_true))
+                self.assumed.setdefault(applied.arg, []).append((applied.function, is_true))
 
     def ask_single_fact(self, key: Predicate, expr: Basic) -> bool | None:
-        """Whether one fact about *expr* decides the predicate *key* by itself."""
-        facts = self.facts.get(expr)
-        if not facts:
+        """Whether one predicate assumed of *expr* decides *key* by itself."""
+        assumed = self.assumed.get(expr)
+        if not assumed:
             return None
         # predicate -> (the predicates which it implies, the ones which it excludes)
         known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
         known_facts = get_known_facts_dict()
         implied_by_key, _ = known_facts.get(key, _NOTHING)
-        for predicate, is_true in facts:
+        for predicate, is_true in assumed:
             if is_true:
                 implied, excluded = known_facts.get(predicate, _NOTHING)
                 if key in implied:
@@ -111,7 +111,7 @@ def ask_by_rules(
 class _Search:
 
     def __init__(self, assumptions, rules):
-        self.assumed_predicates = _AssumedPredicates(assumptions)
+        self.unary_facts_engine = _UnaryFactsEngine(assumptions)
         self.rules = rules
         # finished nodes
         self.answers = {}
@@ -128,7 +128,7 @@ class _Search:
             return None
         self.path.add(node)
         cycles = self.cycles
-        answer = self.assumed_predicates.ask_single_fact(predicate, expr)
+        answer = self.unary_facts_engine.ask_single_fact(predicate, expr)
         if answer is None:
             answer = self._from_rules(predicate, expr)
         self.path.remove(node)
