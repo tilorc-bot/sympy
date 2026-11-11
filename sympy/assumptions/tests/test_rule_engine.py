@@ -10,14 +10,14 @@ from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
     FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _UnaryFactsEngine,
-    ask_by_rules)
+    ask_by_rules, check_no_cycles)
 from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
-from sympy.core.function import Function
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
+from sympy.testing.pytest import raises
 
 if TYPE_CHECKING:
     from sympy.assumptions.rule_engine import Rules
@@ -51,9 +51,6 @@ RULES: Rules = {
     ],
     (Expr, Q.nonnegative): [
         (TRUE_IF, [(SELF, Q.positive)]),
-    ],
-    (Expr, Q.positive): [
-        (TRUE_IF, [(SELF, Q.nonnegative), (SELF, Q.nonzero)]),
     ],
 }
 
@@ -151,38 +148,24 @@ def test_rules_of_a_base_class():
     assert ask(Q.real, exp(x), Q.real(x)) is True
     assert ask(Q.real, exp(x)) is None
     assert ask(Q.zero, exp(x), Q.real(x)) is False
-
-
-def test_cycle():
-    # positive has an edge to nonnegative, which has one back to positive
-    assert ask(Q.positive, x) is None
-    assert ask(Q.nonnegative, x) is None
-    assert ask(Q.positive, x, Q.nonnegative(x) & Q.nonzero(x)) is True
     assert ask(Q.nonnegative, exp(x), Q.real(x)) is True
 
 
-def test_no_answer_below_a_cycle_is_not_kept():
-    class g(Function):
-        pass
-
-    # These rules are not true of anything: they only have the shape which
-    # is tested. The first rule of real leads to positive, which leads back
-    # to real: a cycle, so positive has no answer there. The second rule
-    # then answers real, and positive has an answer after that.
-    rules = {
-        (g, Q.real): [
-            (TRUE_IF, [(SELF, Q.positive)]),
-            (TRUE_IF, [(FIRST_ARG, Q.integer)]),
-        ],
-        (g, Q.positive): [
-            (TRUE_IF, [(SELF, Q.real)]),
-        ],
-        (g, Q.nonzero): [
-            (TRUE_IF, [(SELF, Q.real), (SELF, Q.positive)]),
-        ],
+def test_check_no_cycles():
+    check_no_cycles(RULES)
+    loop = {
+        (Expr, Q.nonnegative): [(TRUE_IF, [(SELF, Q.positive)])],
+        (Expr, Q.positive): [(TRUE_IF, [(SELF, Q.nonnegative), (SELF, Q.nonzero)])],
     }
-    assert ask_by_rules(Q.nonzero, g(x), Q.integer(x), rules) is True
-    assert ask_by_rules(Q.nonzero, g(x), True, rules) is None
+    error = raises(ValueError, lambda: check_no_cycles(loop))
+    assert 'Q.nonnegative, Q.positive' in str(error.value)
+    raises(ValueError, lambda: check_no_cycles(
+        {(Abs, Q.even): [(TRUE_IF, [(SELF, Q.even)])]}))
+    raises(ValueError, lambda: check_no_cycles({
+        (Abs, Q.nonnegative): [(TRUE_IF, [(SELF, Q.positive)])],
+        (Expr, Q.positive): [(TRUE_IF, [(SELF, Q.nonnegative)])],
+    }))
+    check_no_cycles({(Abs, Q.even): [(TRUE_IF, [(FIRST_ARG, Q.even)])]})
 
 
 def test_old_assumptions_are_not_used():

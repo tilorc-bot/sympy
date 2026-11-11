@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.logic.boolalg import And, Not
+from sympy.utilities.iterables import strongly_connected_components
 
 if TYPE_CHECKING:
     from sympy.assumptions.assume import Predicate
@@ -81,6 +82,8 @@ def ask_by_rules(
     """
     Answer ``predicate(expr)`` by a depth-first search over *rules*.
 
+    The rules must pass :func:`check_no_cycles`.
+
     Examples
     ========
 
@@ -108,35 +111,38 @@ def ask_by_rules(
     return _RuleEngine(assumptions, rules).visit(predicate, expr)
 
 
+def check_no_cycles(rules: Rules) -> None:
+    """Raise ``ValueError`` if conditions about SELF form a cycle of predicates."""
+    edges = {
+        (predicate, condition_predicate)
+        for (_, predicate), rules_for_predicate in rules.items()
+        for _, conditions in rules_for_predicate
+        for argument, condition_predicate in conditions
+        if argument == SELF
+    }
+    vertices = {vertex for edge in edges for vertex in edge}
+    graph = (sorted(vertices, key=str), sorted(edges, key=str))
+    for component in strongly_connected_components(graph):
+        if len(component) > 1 or (component[0], component[0]) in edges:
+            names = ', '.join(sorted(map(str, component)))
+            raise ValueError(f'the rules have a cycle: {names}')
+
+
 class _RuleEngine:
 
     def __init__(self, assumptions: Boolean | bool, rules: Rules):
         self.unary_facts_engine = _UnaryFactsEngine(assumptions)
         self.rules = rules
-        # finished nodes
         self.answers: dict[tuple[Predicate, Basic], bool | None] = {}
-        # nodes from the first one to the one which is being visited
-        self.path: set[tuple[Predicate, Basic]] = set()
-        self.cycles = 0
 
     def visit(self, predicate: Predicate, expr: Basic) -> bool | None:
         node = (predicate, expr)
         if node in self.answers:
             return self.answers[node]
-        if node in self.path:
-            self.cycles += 1
-            return None
-        self.path.add(node)
-        cycles = self.cycles
         answer = self.unary_facts_engine.ask_single_fact(predicate, expr)
         if answer is None:
             answer = self._from_rules(predicate, expr)
-        self.path.remove(node)
-        # A node without an answer is finished only if no cycle was closed
-        # below it: the node which the cycle led back to may get an answer
-        # later, and this one with it.
-        if answer is not None or self.cycles == cycles:
-            self.answers[node] = answer
+        self.answers[node] = answer
         return answer
 
     def _from_rules(self, predicate: Predicate, expr: Basic) -> bool | None:
