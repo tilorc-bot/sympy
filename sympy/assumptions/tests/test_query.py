@@ -1943,7 +1943,7 @@ def test_prime():
 
     # Ideally, these should return True since the base is prime and the exponent is one,
     # but currently, they return None.
-    assert _ask_recursive(Q.prime(x**y), Q.prime(x) & Q.eq(y,1)) is None
+    assert _ask_recursive(Q.prime(x**y), Q.prime(x) & Q.eq(y,1)) is True
     assert _ask_recursive(Q.prime(x**y), Q.prime(x) & Q.integer(y) & Q.gt(y,0) & Q.lt(y,2)) is None
 
     assert _ask_recursive(Q.prime(Pow(x,1, evaluate=False)), Q.prime(x)) is True
@@ -1998,7 +1998,7 @@ def test_positive():
     assert _ask_recursive(Q.positive(x**2), Q.real(x)) is None
     assert _ask_recursive(Q.positive(x**y), Q.even(y) & Q.real(x)) is None
     assert _ask_recursive(Q.positive(x**y),Q.zero(x)) is None
-    assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.negative(y)) is None
+    assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.negative(y)) is False
     assert _ask_recursive(Q.positive(x**y), Q.zero(x) & Q.even(y)) is None
 
     # logarithm
@@ -2391,7 +2391,7 @@ def test_issue_7246():
     assert _ask_recursive(Q.positive(atan(x))) is None
 
     assert _ask_recursive(Q.positive(asin(p)), Q.positive(p)) is None
-    assert _ask_recursive(Q.positive(asin(p)), Q.zero(p)) is None
+    assert _ask_recursive(Q.positive(asin(p)), Q.zero(p)) is False
     assert _ask_recursive(Q.positive(asin(Rational(1, 7)))) is True
     assert _ask_recursive(Q.positive(asin(x)), Q.positive(x) & Q.nonpositive(x - 1)) is True
     assert _ask_recursive(Q.positive(asin(x)), Q.negative(x) & Q.nonnegative(x + 1)) is False

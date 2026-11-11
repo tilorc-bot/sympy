@@ -5,6 +5,7 @@ from sympy.assumptions.assume import (global_assumptions, Predicate,
         AppliedPredicate)
 from sympy.assumptions.cnf import CNF, EncodedCNF, Literal
 from sympy.core import sympify
+from sympy.core.expr import Expr
 from sympy.core.kind import BooleanKind
 from sympy.core.relational import Eq, Ne, Gt, Lt, Ge, Le
 from sympy.logic.inference import satisfiable
@@ -538,6 +539,10 @@ def ask(proposition, assumptions=True, context=global_assumptions):
     if res is not None:
         return res
 
+    res = _ask_rules(key, args, assumptions)
+    if res is not None:
+        return res
+
     # direct resolution method, no logic
     res = key(*args)._eval_ask(assumptions)
     if res is not None:
@@ -656,9 +661,23 @@ def _ask_recursive(proposition, assumptions=True):
     if res is not None:
         return res
 
+    res = _ask_rules(key, args, assumptions)
+    if res is not None:
+        return res
+
     res = key(*args)._eval_ask(assumptions)
     if res is not None:
         return bool(res)
+
+
+def _ask_rules(key, args, assumptions):
+    """Answer a unary predicate of an expression which is not a matrix by the rules."""
+    from sympy.assumptions.ask_rules_generated import RULES
+    from sympy.assumptions.rule_engine import ask_by_rules
+
+    if len(args) != 1 or not isinstance(args[0], Expr) or args[0].is_Matrix:
+        return None
+    return ask_by_rules(key, args[0], assumptions, RULES)
 
 
 from sympy.assumptions.ask_generated import (get_all_known_facts,
