@@ -1544,7 +1544,7 @@ def test_hermitian():
         Q.imaginary(x) & Q.imaginary(y) & Q.imaginary(z)) is None
 
     assert _ask_recursive(Q.antihermitian(x)) is None
-    assert _ask_recursive(Q.antihermitian(x), Q.real(x)) is False
+    assert _ask_recursive(Q.antihermitian(x), Q.real(x)) is None
     assert _ask_recursive(Q.antihermitian(x), Q.prime(x)) is False
 
     assert _ask_recursive(Q.antihermitian(x + 1), Q.antihermitian(x)) is False
@@ -1556,7 +1556,7 @@ def test_hermitian():
     assert _ask_recursive(Q.antihermitian(x + I), Q.complex(x)) is None
     assert _ask_recursive(Q.antihermitian(x + I), Q.hermitian(x)) is None
     assert _ask_recursive(Q.antihermitian(x + I), Q.imaginary(x)) is True
-    assert _ask_recursive(Q.antihermitian(x + I), Q.real(x)) is False
+    assert _ask_recursive(Q.antihermitian(x + I), Q.real(x)) is None
     assert _ask_recursive(Q.antihermitian(x), Q.zero(x)) is True
 
     assert _ask_recursive(
@@ -1569,7 +1569,7 @@ def test_hermitian():
     assert _ask_recursive(
         Q.antihermitian(x + y), Q.antihermitian(x) & Q.imaginary(y)) is True
     assert _ask_recursive(Q.antihermitian(x + y), Q.antihermitian(x) & Q.real(y)
-        ) is False
+        ) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.hermitian(x) & Q.complex(y)) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.hermitian(x) & Q.hermitian(y)
         ) is None
@@ -1578,7 +1578,7 @@ def test_hermitian():
     assert _ask_recursive(Q.antihermitian(x + y), Q.hermitian(x) & Q.real(y)) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.imaginary(x) & Q.complex(y)) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.imaginary(x) & Q.imaginary(y)) is True
-    assert _ask_recursive(Q.antihermitian(x + y), Q.imaginary(x) & Q.real(y)) is False
+    assert _ask_recursive(Q.antihermitian(x + y), Q.imaginary(x) & Q.real(y)) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.real(x) & Q.complex(y)) is None
     assert _ask_recursive(Q.antihermitian(x + y), Q.real(x) & Q.real(y)) is None
 
@@ -1592,7 +1592,7 @@ def test_hermitian():
     assert _ask_recursive(Q.antihermitian(x + y + z),
         Q.real(x) & Q.real(y) & Q.imaginary(z)) is None
     assert _ask_recursive(Q.antihermitian(x + y + z),
-        Q.real(x) & Q.imaginary(y) & Q.imaginary(z)) is False
+        Q.real(x) & Q.imaginary(y) & Q.imaginary(z)) is None
     assert _ask_recursive(Q.antihermitian(x + y + z),
         Q.imaginary(x) & Q.imaginary(y) & Q.imaginary(z)) is True
 

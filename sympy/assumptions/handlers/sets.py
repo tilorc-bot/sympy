@@ -9,7 +9,7 @@ from sympy.core import Add, Basic, Expr, Mul, Pow, S
 from sympy.core.numbers import (AlgebraicNumber, ComplexInfinity, Exp1, Float,
     GoldenRatio, ImaginaryUnit, Infinity, Integer, NaN, NegativeInfinity,
     Number, NumberSymbol, Pi, pi, Rational, TribonacciConstant, E)
-from sympy.core.logic import fuzzy_bool, fuzzy_not, fuzzy_and
+from sympy.core.logic import fuzzy_and, fuzzy_bool, fuzzy_not, fuzzy_or
 from sympy.functions import (Abs, acos, acot, asin, atan, cos, cot, exp, im,
     log, re, sin, tan)
 from sympy.core.numbers import I
@@ -688,9 +688,8 @@ def _(expr, assumptions):
 def _(expr, assumptions):
     if isinstance(expr, MatrixBase):
         return None
-    if _ask_recursive(Q.zero(expr), assumptions):
-        return True
-    return _ask_recursive(Q.imaginary(expr), assumptions)
+    return fuzzy_or([_ask_recursive(Q.zero(expr), assumptions),
+                     _ask_recursive(Q.imaginary(expr), assumptions)])
 
 @AntihermitianPredicate.register(Add) # type:ignore
 def _(expr, assumptions):
