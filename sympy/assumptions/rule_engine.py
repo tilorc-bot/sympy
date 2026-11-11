@@ -33,7 +33,7 @@ SECOND_ARG = 1
 SELF = -1
 
 
-class _LocalFacts:
+class _SingleFacts:
     """What the assumptions say about each expression by itself."""
 
     def __init__(self, assumptions: Boolean | bool):
@@ -111,7 +111,7 @@ def ask_by_rules(
 class _Search:
 
     def __init__(self, assumptions, rules):
-        self.local_facts = _LocalFacts(assumptions)
+        self.single_facts = _SingleFacts(assumptions)
         self.rules = rules
         # finished nodes
         self.answers = {}
@@ -128,7 +128,7 @@ class _Search:
             return None
         self.path.add(node)
         cycles = self.cycles
-        answer = self.local_facts.ask_single_fact(predicate, expr)
+        answer = self.single_facts.ask_single_fact(predicate, expr)
         if answer is None:
             answer = self._from_rules(predicate, expr)
         self.path.remove(node)
