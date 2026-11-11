@@ -105,21 +105,21 @@ def ask_by_rules(
     False
 
     """
-    return _Search(assumptions, rules).visit(predicate, expr)
+    return _RuleEngine(assumptions, rules).visit(predicate, expr)
 
 
-class _Search:
+class _RuleEngine:
 
-    def __init__(self, assumptions, rules):
+    def __init__(self, assumptions: Boolean | bool, rules: Rules):
         self.unary_facts_engine = _UnaryFactsEngine(assumptions)
         self.rules = rules
         # finished nodes
-        self.answers = {}
+        self.answers: dict[tuple[Predicate, Basic], bool | None] = {}
         # nodes from the first one to the one which is being visited
-        self.path = set()
+        self.path: set[tuple[Predicate, Basic]] = set()
         self.cycles = 0
 
-    def visit(self, predicate, expr):
+    def visit(self, predicate: Predicate, expr: Basic) -> bool | None:
         node = (predicate, expr)
         if node in self.answers:
             return self.answers[node]
@@ -139,7 +139,7 @@ class _Search:
             self.answers[node] = answer
         return answer
 
-    def _from_rules(self, predicate, expr):
+    def _from_rules(self, predicate: Predicate, expr: Basic) -> bool | None:
         for cls in type(expr).__mro__:
             for kind, conditions in self.rules.get((cls, predicate), ()):
                 answer = self._apply(kind, conditions, expr)
@@ -147,7 +147,12 @@ class _Search:
                     return answer
         return None
 
-    def _apply(self, kind, conditions, expr):
+    def _apply(
+            self,
+            kind: RuleKind,
+            conditions: list[Condition],
+            expr: Basic,
+    ) -> bool | None:
         for argument, predicate in conditions:
             target = expr if argument == SELF else expr.args[argument]
             value = self.visit(predicate, target)
