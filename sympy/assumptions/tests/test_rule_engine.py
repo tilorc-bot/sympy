@@ -8,8 +8,8 @@ from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.rule_engine import (ALWAYS_FALSE, ALWAYS_TRUE, FALSE_IF,
-    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _ask_single_fact,
-    _local_facts, ask_by_rules)
+    FIRST_ARG, IF_AND_ONLY_IF, SECOND_ARG, SELF, TRUE_IF, _LocalFacts,
+    ask_by_rules)
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.power import Pow
@@ -60,24 +60,28 @@ def ask(predicate, expr, assumptions=True):
 
 
 def test_local_facts():
-    assert _local_facts(True) == {}
-    assert _local_facts(Q.even(x)) == {x: [(Q.even, True)]}
-    local_facts = _local_facts(~Q.even(x) & Q.real(y) & Q.zero(x))
-    assert set(local_facts) == {x, y}
-    assert set(local_facts[x]) == {(Q.zero, True), (Q.even, False)}
-    assert local_facts[y] == [(Q.real, True)]
-    assert _local_facts(Q.even(x) | Q.odd(x)) == {}
-    assert _local_facts(Q.gt(x, y) & Q.real(x)) == {x: [(Q.real, True)]}
+    assert _LocalFacts(True).facts == {}
+    assert _LocalFacts(Q.even(x)).facts == {x: [(Q.even, True)]}
+    facts = _LocalFacts(~Q.even(x) & Q.real(y) & Q.zero(x)).facts
+    assert set(facts) == {x, y}
+    assert set(facts[x]) == {(Q.zero, True), (Q.even, False)}
+    assert facts[y] == [(Q.real, True)]
+    assert _LocalFacts(Q.even(x) | Q.odd(x)).facts == {}
+    assert _LocalFacts(Q.gt(x, y) & Q.real(x)).facts == {x: [(Q.real, True)]}
 
 
 def test_ask_single_fact():
-    assert _ask_single_fact(Q.zero, [(Q.zero, False)]) is False
-    assert _ask_single_fact(Q.zero, [(Q.even, False)]) is False
-    assert _ask_single_fact(Q.even, [(Q.zero, True)]) is True
-    assert _ask_single_fact(Q.even, [(Q.odd, True)]) is False
-    assert _ask_single_fact(Q.even, [(Q.integer, True)]) is None
-    assert _ask_single_fact(Q.even, [(Q.real, True), (Q.zero, True)]) is True
-    assert _ask_single_fact(Q.even, None) is None
+    def ask_single_fact(key, assumptions):
+        return _LocalFacts(assumptions).ask_single_fact(key, x)
+
+    assert ask_single_fact(Q.zero, ~Q.zero(x)) is False
+    assert ask_single_fact(Q.zero, ~Q.even(x)) is False
+    assert ask_single_fact(Q.even, Q.zero(x)) is True
+    assert ask_single_fact(Q.even, Q.odd(x)) is False
+    assert ask_single_fact(Q.even, Q.integer(x)) is None
+    assert ask_single_fact(Q.even, Q.real(x) & Q.zero(x)) is True
+    assert ask_single_fact(Q.even, Q.zero(y)) is None
+    assert ask_single_fact(Q.even, True) is None
 
 
 def test_ask_single_fact_agrees_with_the_one_of_ask():
@@ -88,7 +92,7 @@ def test_ask_single_fact_agrees_with_the_one_of_ask():
                 assumption = predicate(x) if value else ~predicate(x)
                 expected = _ask_single_fact_of_ask(
                     key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
-                assert _ask_single_fact(key, [(predicate, value)]) is expected
+                assert _LocalFacts(assumption).ask_single_fact(key, x) is expected
 
 
 def test_rule_about_an_argument():

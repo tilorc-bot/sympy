@@ -33,54 +33,40 @@ SECOND_ARG = 1
 SELF = -1
 
 
-def _literal(literal):
-    if isinstance(literal, Not):
-        return literal.args[0], False
-    return literal, True
+class _LocalFacts:
+    """What the assumptions say about each expression by itself."""
 
+    def __init__(self, assumptions: Boolean | bool):
+        # expr -> [(predicate, whether it is true)]. Only a predicate, its
+        # negation and a conjunction of these are read.
+        self.facts: dict[Basic, list[tuple[Predicate, bool]]] = {}
+        literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
+        for literal in literals:
+            applied = literal.args[0] if isinstance(literal, Not) else literal
+            is_true = not isinstance(literal, Not)
+            if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
+                self.facts.setdefault(applied.arg, []).append((applied.function, is_true))
 
-def _local_facts(
-        assumptions: Boolean | bool,
-) -> dict[Basic, list[tuple[Predicate, bool]]]:
-    """
-    For each expression, the predicates which *assumptions* say are true or
-    false of it, as ``(predicate, whether it is true)``. Only a predicate,
-    its negation and a conjunction of these are read.
-    """
-    local_facts: dict[Basic, list[tuple[Predicate, bool]]] = {}
-    literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
-    for literal in literals:
-        applied, is_true = _literal(literal)
-        if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
-            local_facts.setdefault(applied.arg, []).append((applied.function, is_true))
-    return local_facts
-
-
-def _ask_single_fact(
-        key: Predicate,
-        local_facts: list[tuple[Predicate, bool]] | None,
-) -> bool | None:
-    """
-    Whether one of *local_facts*, which are about one expression, decides
-    the predicate *key* for that expression by itself.
-    """
-    if not local_facts:
-        return None
-    # predicate -> (the predicates which it implies, the ones which it excludes)
-    known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
-    known_facts = get_known_facts_dict()
-    implied_by_key, _ = known_facts.get(key, _NOTHING)
-    for predicate, is_true in local_facts:
-        if is_true:
-            implied, excluded = known_facts.get(predicate, _NOTHING)
-            if key in implied:
-                return True
-            if key in excluded:
+    def ask_single_fact(self, key: Predicate, expr: Basic) -> bool | None:
+        """Whether one fact about *expr* decides the predicate *key* by itself."""
+        facts = self.facts.get(expr)
+        if not facts:
+            return None
+        # predicate -> (the predicates which it implies, the ones which it excludes)
+        known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
+        known_facts = get_known_facts_dict()
+        implied_by_key, _ = known_facts.get(key, _NOTHING)
+        for predicate, is_true in facts:
+            if is_true:
+                implied, excluded = known_facts.get(predicate, _NOTHING)
+                if key in implied:
+                    return True
+                if key in excluded:
+                    return False
+            elif predicate in implied_by_key:
+                # key would imply predicate, which is false
                 return False
-        elif predicate in implied_by_key:
-            # key would imply predicate, which is false
-            return False
-    return None
+        return None
 
 
 _NOTHING: tuple[set, set] = (set(), set())
@@ -125,7 +111,7 @@ def ask_by_rules(
 class _Search:
 
     def __init__(self, assumptions, rules):
-        self.local_facts = _local_facts(assumptions)
+        self.local_facts = _LocalFacts(assumptions)
         self.rules = rules
         # finished nodes
         self.answers = {}
@@ -142,7 +128,7 @@ class _Search:
             return None
         self.path.add(node)
         cycles = self.cycles
-        answer = _ask_single_fact(predicate, self.local_facts.get(expr))
+        answer = self.local_facts.ask_single_fact(predicate, expr)
         if answer is None:
             answer = self._from_rules(predicate, expr)
         self.path.remove(node)
