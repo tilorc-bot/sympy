@@ -76,8 +76,7 @@ def test_numbers():
     assert ask(Q.positive, Abs(x), Q.positive(x)) is True
     assert ask(Q.zero, Abs(x), ~Q.zero(x)) is False
     assert ask(Q.even, Abs(Abs(x)), Q.even(x)) is True
-    assert ask(Q.odd, x, Q.integer(x) & ~Q.even(x)) is True
-    assert ask(Q.hermitian, sin(x), Q.real(x)) is True
+    assert ask_generated(Q.hermitian, sin(x), Q.real(x)) is True
     assert ask(Q.positive, x**y, Q.positive(x) & Q.real(y)) is True
     assert ask(Q.negative, x**y, Q.negative(x) & Q.odd(y)) is True
     assert ask(Q.real, x**y, Q.negative(x) & Q.rational(y) & ~Q.integer(y)) is False

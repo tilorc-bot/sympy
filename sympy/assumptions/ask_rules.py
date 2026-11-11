@@ -10,13 +10,11 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS,
     SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, TRUE_IF)
 from sympy.core.add import Add
-from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.mul import Mul
 from sympy.core.numbers import I
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.complexes import im
@@ -197,51 +195,6 @@ RULES: Rules = {
     ],
     (Add, Q.zero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.zero)]),
-    ],
-    (Basic, Q.composite): [
-        (TRUE_IF, [(SELF_IS, Q.even), (SELF_IS, Q.positive), (SELF_IS_NOT, Q.prime)]),
-        (FALSE_IF, [(SELF_IS_NOT, Q.integer)]),
-        (FALSE_IF, [(SELF_IS_NOT, Q.positive)]),
-        (FALSE_IF, [(SELF_IS, Q.prime)]),
-    ],
-    (Basic, Q.odd): [
-        (TRUE_IF, [(SELF_IS_NOT, Q.even), (SELF_IS, Q.integer)]),
-        (FALSE_IF, [(SELF_IS_NOT, Q.integer)]),
-    ],
-    (Expr, Q.antihermitian): [
-        (TRUE_IF, [(SELF_IS, Q.imaginary)]),
-    ],
-    (Expr, Q.extended_real): [
-        (TRUE_IF, [(SELF_IS, Q.extended_negative)]),
-        (TRUE_IF, [(SELF_IS, Q.extended_positive)]),
-        (TRUE_IF, [(SELF_IS, Q.zero)]),
-    ],
-    (Expr, Q.hermitian): [
-        (TRUE_IF, [(SELF_IS, Q.real)]),
-    ],
-    (Expr, Q.infinite): [
-        (FALSE_IF, [(SELF_IS, Q.finite)]),
-    ],
-    (Expr, Q.irrational): [
-        (TRUE_IF, [(SELF_IS_NOT, Q.rational), (SELF_IS, Q.real)]),
-    ],
-    (Expr, Q.negative_infinite): [
-        (TRUE_IF, [(SELF_IS, Q.extended_negative), (SELF_IS_NOT, Q.finite)]),
-        (FALSE_IF, [(SELF_IS, Q.finite)]),
-    ],
-    (Expr, Q.nonzero): [
-        (FALSE_IF, [(SELF_IS_NOT, Q.real)]),
-    ],
-    (Expr, Q.positive_infinite): [
-        (TRUE_IF, [(SELF_IS, Q.extended_positive), (SELF_IS_NOT, Q.finite)]),
-        (FALSE_IF, [(SELF_IS, Q.finite)]),
-    ],
-    (Expr, Q.transcendental): [
-        (TRUE_IF, [(SELF_IS_NOT, Q.algebraic), (SELF_IS, Q.complex)]),
-    ],
-    (Expr, Q.zero): [
-        (TRUE_IF, [(SELF_IS_NOT, Q.nonzero), (SELF_IS, Q.real)]),
-        (FALSE_IF, [(SELF_IS_NOT, Q.real)]),
     ],
     (Expr, S.NegativeOne): [
         (FALSE_IF, [(SELF_IS_NOT, Q.negative)]),
@@ -676,9 +629,6 @@ RULES: Rules = {
             (SECOND_ARG_IS_NOT, Q.positive),
             (SECOND_ARG_IS, Q.real),
         ]),
-    ],
-    (Symbol, Q.infinite): [
-        (TRUE_IF, [(SELF_IS, Q.commutative), (SELF_IS_NOT, Q.finite)]),
     ],
     (acos, Q.negative): [
         ALWAYS_FALSE,
