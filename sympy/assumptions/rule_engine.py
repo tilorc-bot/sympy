@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
     RuleKind = int
     # (FIRST_ARG_IS, Q.even): Q.even is true of the first argument
-    # (FIRST_ARG_IS, S.NegativeOne): the first argument is the number -1
+    # (FIRST_ARG_IS, S.NegativeOne): the first argument is the number -1; only
+    # S.One, S.NegativeOne, S.Half and S.ImaginaryUnit, which are compared with "is"
     Condition = tuple[tuple[int, bool], Predicate | Basic]
     # all of the conditions must hold
     Rule = tuple[RuleKind, list[Condition]]
@@ -73,19 +74,23 @@ class _UnaryFactsEngine:
 
     def ask_single_fact(self, key: Predicate | Basic, expr: Basic) -> bool | None:
         """Whether one predicate known of *expr* decides *key* by itself."""
-        if key is expr:
-            # the number of a condition such as (FIRST_ARG_IS, S.NegativeOne)
-            return True
         known = self.known.get(expr)
         if not known:
             return None
         # predicate -> (the predicates which it implies, the ones which it excludes)
         known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
         known_facts = get_known_facts_dict()
-        implied_by_key, _ = known_facts.get(key, _NOTHING)
+        facts_of_key = known_facts.get(key)
+        if facts_of_key is None:
+            # a number, as in (FIRST_ARG_IS, S.NegativeOne); it has known facts itself
+            if key is expr:
+                return True
+            for number, is_equal in known:
+                if number is key:
+                    return is_equal
+            return None
+        implied_by_key = facts_of_key[0]
         for predicate, is_true in known:
-            if predicate is key:
-                return is_true
             if is_true:
                 implied, excluded = known_facts.get(predicate, _NOTHING)
                 if key in implied:
