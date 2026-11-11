@@ -19,23 +19,32 @@ if TYPE_CHECKING:
     # (predicate, whether it is true), about one expression
     LocalFacts = list[tuple[Predicate, bool]]
 
-# As the argument of a condition: the expression itself
+# (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even)): Abs(x) is even if x is
+FALSE_IF = 0
+TRUE_IF = 1
+IF_AND_ONLY_IF = 2
+
+FIRST_ARG = 0
+SECOND_ARG = 1
+# the expression itself
 SELF = -1
 
 
 def index_rules(rows: Iterable[tuple]) -> Rules:
     """
-    Index rows ``(class, conclusion, *conditions)`` for :func:`ask_by_rules`.
+    Index rows ``(class, predicate, (TRUE_IF, argument, predicate), ...)``
+    for :func:`ask_by_rules`.
 
     Examples
     ========
 
     >>> from sympy import Abs, Q
     >>> from sympy.abc import x
-    >>> from sympy.assumptions.rule_engine import ask_by_rules, index_rules
+    >>> from sympy.assumptions.rule_engine import (FALSE_IF, FIRST_ARG,
+    ...     TRUE_IF, ask_by_rules, index_rules)
     >>> rules = index_rules([
-    ...     (Abs, Q.even, (0, Q.even)),
-    ...     (Abs, ~Q.negative),
+    ...     (Abs, Q.even, (TRUE_IF, FIRST_ARG, Q.even)),
+    ...     (Abs, Q.negative, (FALSE_IF,)),
     ... ])
     >>> ask_by_rules(Q.even, Abs(x), Q.even(x), rules)
     True
@@ -44,9 +53,16 @@ def index_rules(rows: Iterable[tuple]) -> Rules:
 
     """
     rules: Rules = {}
-    for cls, conclusion, *conditions in rows:
-        rules.setdefault((cls, *_literal(conclusion)), []).append(tuple(
-            (argument, *_literal(condition)) for argument, condition in conditions))
+    for cls, predicate, *cases in rows:
+        for kind, *pairs in cases:
+            conditions = tuple(
+                (argument, condition, True)
+                for argument, condition in zip(pairs[::2], pairs[1::2]))
+            rules.setdefault((cls, predicate, kind != FALSE_IF), []).append(conditions)
+            if kind == IF_AND_ONLY_IF:
+                for argument, condition, _ in conditions:
+                    rules.setdefault((cls, predicate, False), []).append(
+                        ((argument, condition, False),))
     return rules
 
 
