@@ -238,7 +238,10 @@ def test_min_and_max():
     # Max(1, oo) is oo
     assert ask_generated(Q.positive, Max(x, y),
                          Q.positive(x) & Q.extended_real(y)) is None
-    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is True
+    assert ask_generated(Q.extended_positive, Max(x, y),
+                         Q.positive(x) & Q.extended_real(y)) is True
+    # Max(1, I) has no value
+    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is None
     assert ask_generated(Q.negative, Min(x, y), Q.negative(x) & Q.real(y)) is True
     assert ask_generated(Q.negative, Min(x, y),
                          Q.positive(x) & Q.nonnegative(y)) is False
@@ -289,7 +292,10 @@ def test_combinatorial_and_special_functions():
                          & Q.integer(y)) is True
     assert ask_generated(Q.positive, catalan(x), Q.nonnegative(x)) is True
     assert ask_generated(Q.positive, totient(x), Q.integer(x) & Q.positive(x)) is True
-    assert ask_generated(Q.prime, legendre_symbol(x, y)) is False
+    assert ask_generated(Q.prime, legendre_symbol(x, y),
+                         Q.integer(x) & Q.prime(y) & Q.odd(y)) is False
+    # legendre_symbol(1, 4) has no value
+    assert ask_generated(Q.prime, legendre_symbol(x, y)) is None
     assert ask_generated(Q.real, gamma(x), Q.real(x) & ~Q.integer(x)) is True
     assert ask_generated(Q.real, gamma(x), Q.integer(x) & Q.nonpositive(x)) is False
     assert ask_generated(Q.real, loggamma(x), Q.negative(x)) is False
