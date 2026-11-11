@@ -8,7 +8,7 @@ from sympy.assumptions import Q, AppliedPredicate
 from sympy.assumptions.ask import _ask_recursive
 from sympy.core import Basic, Symbol
 from sympy.core.logic import _fuzzy_group, fuzzy_and, fuzzy_or
-from sympy.core.numbers import NaN, Number
+from sympy.core.numbers import NaN
 from sympy.logic.boolalg import (And, BooleanTrue, BooleanFalse, conjuncts,
     Equivalent, Implies, Not, Or)
 
@@ -36,9 +36,6 @@ def _(expr, assumptions):
             return False
     return True
 
-@CommutativePredicate.register(Number)
-def _(expr, assumptions):
-    return True
 
 @CommutativePredicate.register(NaN)
 def _(expr, assumptions):

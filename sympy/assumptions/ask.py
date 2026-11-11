@@ -46,7 +46,7 @@ class AssumptionKeys:
 
     @memoize_property
     def extended_real(self):
-        from .handlers.sets import ExtendedRealPredicate
+        from .predicates.sets import ExtendedRealPredicate
         return ExtendedRealPredicate()
 
     @memoize_property
@@ -101,12 +101,12 @@ class AssumptionKeys:
 
     @memoize_property
     def positive_infinite(self):
-        from .handlers.calculus import PositiveInfinitePredicate
+        from .predicates.calculus import PositiveInfinitePredicate
         return PositiveInfinitePredicate()
 
     @memoize_property
     def negative_infinite(self):
-        from .handlers.calculus import NegativeInfinitePredicate
+        from .predicates.calculus import NegativeInfinitePredicate
         return NegativeInfinitePredicate()
 
     @memoize_property
@@ -126,12 +126,12 @@ class AssumptionKeys:
 
     @memoize_property
     def extended_positive(self):
-        from .handlers.order import ExtendedPositivePredicate
+        from .predicates.order import ExtendedPositivePredicate
         return ExtendedPositivePredicate()
 
     @memoize_property
     def extended_negative(self):
-        from .handlers.order import ExtendedNegativePredicate
+        from .predicates.order import ExtendedNegativePredicate
         return ExtendedNegativePredicate()
 
     @memoize_property
@@ -151,17 +151,17 @@ class AssumptionKeys:
 
     @memoize_property
     def extended_nonzero(self):
-        from .handlers.order import ExtendedNonZeroPredicate
+        from .predicates.order import ExtendedNonZeroPredicate
         return ExtendedNonZeroPredicate()
 
     @memoize_property
     def extended_nonpositive(self):
-        from .handlers.order import ExtendedNonPositivePredicate
+        from .predicates.order import ExtendedNonPositivePredicate
         return ExtendedNonPositivePredicate()
 
     @memoize_property
     def extended_nonnegative(self):
-        from .handlers.order import ExtendedNonNegativePredicate
+        from .predicates.order import ExtendedNonNegativePredicate
         return ExtendedNonNegativePredicate()
 
     @memoize_property
