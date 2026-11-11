@@ -159,7 +159,13 @@ def test_sums_and_products():
     assert ask_generated(Q.integer, x + y + z,
                          Q.integer(x) & ~Q.integer(y) & Q.integer(z)) is False
     assert ask_generated(Q.integer, x + y, ~Q.integer(x) & ~Q.integer(y)) is None
-    assert ask_generated(Q.finite, x + y + z, Q.real(x) & ~Q.finite(y)) is False
+    assert ask_generated(Q.finite, x + y + z, Q.real(x) & Q.real(z) & ~Q.finite(y)
+                         ) is False
+    # z may be -y for a y which is not commutative
+    assert ask_generated(Q.finite, x + y + z, Q.real(x) & ~Q.finite(y)) is None
+    assert ask_generated(Q.finite, x*y, Q.nonzero(x) & ~Q.finite(y)) is False
+    # 0*oo is nan
+    assert ask_generated(Q.finite, x*y, Q.finite(x) & ~Q.finite(y)) is None
     assert ask_generated(Q.positive_infinite, x + y,
                          Q.positive_infinite(x) & Q.real(y)) is True
     assert ask_generated(Q.extended_real, x + y,

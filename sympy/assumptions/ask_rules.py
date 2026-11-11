@@ -128,7 +128,7 @@ RULES: Rules = {
     ],
     (Add, Q.finite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ANY_ARG_IS_NOT, Q.finite)]),
+        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
     ],
     (Add, Q.hermitian): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.hermitian)]),
@@ -281,7 +281,7 @@ RULES: Rules = {
     ],
     (Mul, Q.finite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ANY_ARG_IS_NOT, Q.finite)]),
+        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite), (OTHER_ARGS_ARE_NOT, Q.zero)]),
     ],
     (Mul, Q.hermitian): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.hermitian), (ALL_ARGS_ARE, Q.commutative)]),
