@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 from sympy.abc import w, x, y, z
 from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
+from sympy.assumptions.ask import ask as sympy_ask
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.cnf import CNF
+from sympy.assumptions.number_facts import number_facts
 from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, ANY_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
@@ -23,8 +25,9 @@ from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
 from sympy.core.function import Function
 from sympy.core.mul import Mul
-from sympy.core.numbers import Integer
+from sympy.core.numbers import E, Float, I, Integer, Rational, nan, oo, pi, zoo
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
@@ -108,15 +111,18 @@ def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
 
 
-def test_assumed():
-    assert _UnaryFactsEngine(True).assumed == {}
-    assert _UnaryFactsEngine(Q.even(x)).assumed == {x: [(Q.even, True)]}
-    assumed = _UnaryFactsEngine(~Q.even(x) & Q.real(y) & Q.zero(x)).assumed
-    assert set(assumed) == {x, y}
-    assert set(assumed[x]) == {(Q.zero, True), (Q.even, False)}
-    assert assumed[y] == [(Q.real, True)]
-    assert _UnaryFactsEngine(Q.even(x) | Q.odd(x)).assumed == {}
-    assert _UnaryFactsEngine(Q.gt(x, y) & Q.real(x)).assumed == {x: [(Q.real, True)]}
+def test_known():
+    assert _UnaryFactsEngine(True).known == {}
+    assert _UnaryFactsEngine(Q.even(x)).known == {x: [(Q.even, True)]}
+    known = _UnaryFactsEngine(~Q.even(x) & Q.real(y) & Q.zero(x)).known
+    assert set(known) == {x, y}
+    assert set(known[x]) == {(Q.zero, True), (Q.even, False)}
+    assert known[y] == [(Q.real, True)]
+    assert _UnaryFactsEngine(Q.even(x) | Q.odd(x)).known == {}
+    assert _UnaryFactsEngine(Q.gt(x, y) & Q.real(x)).known == {x: [(Q.real, True)]}
+    three = Integer(3)
+    assert _UnaryFactsEngine(Q.finite(three)).known == {
+        three: [(Q.positive, True), (Q.odd, True), (Q.prime, True), (Q.finite, True)]}
 
 
 def test_ask_single_fact():
@@ -504,6 +510,8 @@ def old_assumptions_forbidden():
     def forbidden(*args):
         raise AssertionError('the old assumptions were used')
 
+    # its first call imports modules, and a new class uses the old assumptions
+    get_known_facts_dict()
     # sympy.core.assumptions is also the name of a function
     core_assumptions = import_module('sympy.core.assumptions')
     names = ['is_' + fact for fact in core_assumptions._assume_defined]
@@ -549,6 +557,85 @@ def test_old_assumptions_are_not_used():
         (Q.positive, x + y + z, Q.positive(x) & Q.positive(y) & Q.positive(z), True),
         (Q.odd, x + y + p, Q.odd(x) & Q.odd(y) & Q.odd(p), True),
         (Q.zero, x*p, Q.positive(x), None),
+    ]
+    with old_assumptions_forbidden():
+        for predicate, expr, assumptions, expected in queries:
+            assert ask(predicate, expr, assumptions) is expected
+
+
+
+NUMBERS = [
+    (Q.positive, Integer(3), True),
+    (Q.even, Integer(3), False),
+    (Q.real, Integer(3), True),
+    (Q.prime, Integer(7), True),
+    (Q.composite, Integer(9), True),
+    (Q.prime, Integer(9), False),
+    (Q.prime, Integer(1), False),
+    (Q.composite, Integer(1), False),
+    (Q.zero, Integer(0), True),
+    (Q.even, Integer(0), True),
+    (Q.positive, Integer(0), False),
+    (Q.antihermitian, Integer(0), True),
+    (Q.negative, Integer(-2), True),
+    (Q.prime, Integer(-2), False),
+    (Q.rational, Rational(1, 2), True),
+    (Q.integer, Rational(1, 2), False),
+    (Q.even, Rational(1, 2), False),
+    (Q.negative, Rational(-1, 2), True),
+    (Q.positive, Float(2.5), True),
+    (Q.integer, Float(2.5), False),
+    (Q.integer, Float(2.0), None),
+    (Q.rational, Float(2.5), None),
+    (Q.zero, Float(0.0), True),
+    (Q.irrational, pi, True),
+    (Q.algebraic, pi, False),
+    (Q.transcendental, E, True),
+    (Q.algebraic, S.GoldenRatio, True),
+    (Q.irrational, S.GoldenRatio, True),
+    (Q.positive, S.EulerGamma, True),
+    (Q.rational, S.EulerGamma, None),
+    (Q.imaginary, I, True),
+    (Q.real, I, False),
+    (Q.algebraic, I, True),
+    (Q.positive_infinite, oo, True),
+    (Q.extended_real, oo, True),
+    (Q.real, oo, False),
+    (Q.finite, oo, False),
+    (Q.negative_infinite, -oo, True),
+    (Q.infinite, zoo, True),
+    (Q.extended_real, zoo, False),
+    (Q.real, nan, None),
+    (Q.positive, x, None),
+]
+
+
+def test_number_facts():
+    assert number_facts(x) is None
+    assert number_facts(x + 1) is None
+    with old_assumptions_forbidden():
+        for predicate, number, expected in NUMBERS:
+            assert ask_by_rules(predicate, number, True, {}) is expected
+
+
+def test_number_facts_agree_with_ask():
+    numbers = {number for _, number, _ in NUMBERS} - {x}
+    for predicate in sorted(get_known_facts_dict(), key=str):
+        for number in numbers:
+            answer = ask_by_rules(predicate, number, True, {})
+            expected = sympy_ask(predicate(number))
+            assert answer is None or expected is None or answer is expected
+
+
+def test_numbers_in_expressions():
+    queries = [
+        (Q.positive, x + 1, Q.positive(x), True),
+        (Q.odd, x + 1, Q.even(x), True),
+        (Q.even, 2*x, Q.integer(x), True),
+        (Q.irrational, x + pi, Q.rational(x), True),
+        (Q.positive, x**2, Q.positive(x), True),
+        (Q.zero, 3*x, ~Q.zero(x), False),
+        (Q.positive, x + 1, True, None),
     ]
     with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:

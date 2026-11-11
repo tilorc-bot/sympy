@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.assume import AppliedPredicate
+from sympy.assumptions.number_facts import number_facts
 from sympy.logic.boolalg import And, Not
 
 if TYPE_CHECKING:
@@ -65,29 +66,42 @@ OTHER_ARGS_ARE_NOT = (OTHER_ARGS, False)
 
 
 class _UnaryFactsEngine:
-    """Answers from the assumed predicates and the known unary facts."""
+    """
+    Answers from the assumed predicates, the facts of numbers and the known
+    unary facts.
+    """
 
     def __init__(self, assumptions: Boolean | bool):
-        # expr -> [(predicate, whether it is true)]. Only a predicate, its
-        # negation and a conjunction of these are read.
-        self.assumed: dict[Basic, list[tuple[Predicate, bool]]] = {}
+        # expr -> [(predicate, whether it is true)], from number_facts and from
+        # the assumptions. Only a predicate, its negation and a conjunction of
+        # these are read from the assumptions.
+        self.known: dict[Basic, list[tuple[Predicate, bool]]] = {}
         literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
         for literal in literals:
             applied = literal.args[0] if isinstance(literal, Not) else literal
             is_true = not isinstance(literal, Not)
             if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
-                self.assumed.setdefault(applied.arg, []).append((applied.function, is_true))
+                self._known(applied.arg).append((applied.function, is_true))
+
+    def _known(self, expr: Basic) -> list[tuple[Predicate, bool]]:
+        known = self.known.get(expr)
+        if known is None:
+            facts = number_facts(expr) if expr.is_Atom else None
+            known = self.known[expr] = list(facts or ())
+        return known
 
     def ask_single_fact(self, key: Predicate, expr: Basic) -> bool | None:
-        """Whether one predicate assumed of *expr* decides *key* by itself."""
-        assumed = self.assumed.get(expr)
-        if not assumed:
+        """Whether one predicate known of *expr* decides *key* by itself."""
+        known = self.known.get(expr)
+        if known is None and expr.is_Atom:
+            known = self._known(expr)
+        if not known:
             return None
         # predicate -> (the predicates which it implies, the ones which it excludes)
         known_facts: dict[Predicate, tuple[set[Predicate], set[Predicate]]]
         known_facts = get_known_facts_dict()
         implied_by_key, _ = known_facts.get(key, _NOTHING)
-        for predicate, is_true in assumed:
+        for predicate, is_true in known:
             if is_true:
                 implied, excluded = known_facts.get(predicate, _NOTHING)
                 if key in implied:
