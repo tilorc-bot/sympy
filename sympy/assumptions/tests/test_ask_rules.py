@@ -2,17 +2,21 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from sympy.abc import x, y
+from sympy.abc import w, x, y, z
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_rules import RULES
+from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
-from sympy.assumptions.rule_engine import (FALSE_IF, IF_AND_ONLY_IF, SELF,
-    TRUE_IF, ask_by_rules)
+from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
+    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF, TRUE_IF,
+    ask_by_rules)
+from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.facts import FactKB
 from sympy.core.function import Function
+from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import factorial
@@ -20,19 +24,31 @@ from sympy.functions.elementary.complexes import Abs, im, re, sign
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, sin, tan)
+from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.hadamard import HadamardProduct
 from sympy.matrices.expressions.inverse import Inverse
+from sympy.matrices.expressions.matadd import MatAdd
 from sympy.matrices.expressions.matexpr import MatrixElement, MatrixSymbol
+from sympy.matrices.expressions.matmul import MatMul
 from sympy.matrices.expressions.matpow import MatPow
 from sympy.matrices.expressions.slice import MatrixSlice
 from sympy.matrices.expressions.trace import Trace
 from sympy.matrices.expressions.transpose import Transpose
 
 A = MatrixSymbol('A', 3, 3)
+B = MatrixSymbol('B', 3, 3)
+VARYING = (Add, BlockDiagMatrix, HadamardProduct, MatAdd, MatMul, Mul)
+ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
+                  OTHER_ARGS)
 
 
 def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
+
+
+def ask_generated(predicate, expr, assumptions=True):
+    return ask_by_rules(predicate, expr, assumptions, GENERATED_RULES)
 
 
 def number_of_arguments(cls):
@@ -66,7 +82,10 @@ def test_rules_are_well_formed():
             for selector, condition_predicate in conditions:
                 argument, expected = selector
                 assert type(argument) is int and type(expected) is bool
-                assert argument == SELF or 0 <= argument < number_of_arguments(cls)
+                if cls in VARYING:
+                    assert argument in ABOUT_ALL_ARGS
+                else:
+                    assert argument == SELF or 0 <= argument < number_of_arguments(cls)
                 assert isinstance(condition_predicate, Predicate)
 
 
@@ -105,6 +124,52 @@ def test_matrices():
     assert ask(Q.invertible, MatPow(A, x), Q.invertible(A) & Q.integer(x)) is True
     assert ask(Q.real, A[0, 1], Q.real_elements(A)) is True
     assert ask(Q.integer_elements, A[:2, :2], Q.integer_elements(A)) is True
+
+
+def test_sums_and_products():
+    P, N, R = Q.positive, Q.negative, Q.rational
+    assert ask_generated(P, x + y, P(x) & Q.nonnegative(y)) is True
+    assert ask_generated(P, x + y, Q.nonnegative(x) & P(y)) is True
+    assert ask_generated(P, x + y, P(x) & N(y)) is None
+    assert ask_generated(N, x + y + z, N(x) & Q.nonpositive(y) & N(z)) is True
+    assert ask_generated(Q.even, x + y + z, Q.odd(x) & Q.odd(y) & Q.even(z)) is True
+    assert ask_generated(Q.even, x + y + z, Q.even(x) & Q.odd(y) & Q.odd(z)) is True
+    assert ask_generated(Q.odd, x + y + z, Q.odd(x) & Q.odd(y) & Q.odd(z)) is True
+    assert ask_generated(Q.odd, x + y, Q.odd(x) & Q.odd(y)) is False
+    assert ask_generated(Q.irrational, x + y + z, R(x) & Q.irrational(y) & R(z)) is True
+    assert ask_generated(Q.irrational, x + y, Q.irrational(x) & Q.irrational(y)) is None
+    assert ask_generated(Q.integer, x + y + z,
+                         Q.integer(x) & ~Q.integer(y) & Q.integer(z)) is False
+    assert ask_generated(Q.integer, x + y, ~Q.integer(x) & ~Q.integer(y)) is None
+    assert ask_generated(Q.finite, x + y + z, Q.real(x) & ~Q.finite(y)) is False
+    assert ask_generated(Q.positive_infinite, x + y,
+                         Q.positive_infinite(x) & Q.real(y)) is True
+    assert ask_generated(Q.extended_real, x + y,
+                         Q.positive_infinite(x) & Q.negative_infinite(y)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+    assert ask_generated(Q.imaginary, x + y, Q.imaginary(x) & Q.nonzero(y)) is False
+    assert ask_generated(P, x*y*z*w, N(x) & N(y) & P(z) & P(w)) is True
+    assert ask_generated(P, x*y*z*w, P(x) & N(y) & P(z) & N(w)) is True
+    assert ask_generated(N, x*y*z, N(x) & N(y) & N(z)) is True
+    assert ask_generated(P, x*y*z, P(x) & N(y) & P(z)) is False
+    assert ask_generated(Q.zero, x*y, Q.zero(x) & Q.finite(y)) is True
+    assert ask_generated(Q.zero, x*y, Q.zero(x)) is None
+    assert ask_generated(Q.zero, x*y*z, ~Q.zero(x) & Q.nonzero(y) & P(z)) is False
+    assert ask_generated(Q.irrational, x*y, Q.irrational(x) & R(y) & ~Q.zero(y)) is True
+    assert ask_generated(Q.irrational, x*y, Q.irrational(x) & R(y)) is None
+    assert ask_generated(Q.even, x*y*z, Q.integer(x) & Q.even(y) & Q.integer(z)) is True
+    assert ask_generated(Q.real, x*y, Q.imaginary(x) & Q.imaginary(y)) is True
+    assert ask_generated(Q.real, x*y, Q.imaginary(x) & P(y)) is False
+    assert ask_generated(Q.composite, x*y, Q.prime(x) & Q.prime(y)) is True
+    assert ask_generated(Q.prime, x*y*z,
+                         Q.integer(x) & Q.composite(y) & Q.integer(z)) is False
+    assert ask_generated(Q.symmetric, A + B, Q.symmetric(A) & Q.symmetric(B)) is True
+    assert ask_generated(Q.symmetric, A + B, Q.symmetric(A) & ~Q.symmetric(B)) is False
+    assert ask_generated(Q.symmetric, A*B, Q.symmetric(A) & Q.symmetric(B)) is None
+    assert ask_generated(Q.invertible, A*B, Q.invertible(A) & Q.invertible(B)) is True
+    assert ask_generated(Q.invertible, A*B,
+                         Q.square(A) & Q.square(B) & ~Q.invertible(B)) is False
+    assert ask_generated(Q.invertible, A*B, ~Q.invertible(B)) is None
 
 
 def test_old_assumptions_are_not_used():
