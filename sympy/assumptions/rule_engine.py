@@ -16,10 +16,11 @@ if TYPE_CHECKING:
 
     RuleKind = int
     # (FIRST_ARG_IS, Q.even): Q.even is true of the first argument
-    Condition = tuple[tuple[int, bool], Predicate]
+    # (FIRST_ARG_IS, S.NegativeOne): the first argument is the number -1
+    Condition = tuple[tuple[int, bool], Predicate | Basic]
     # all of the conditions must hold
     Rule = tuple[RuleKind, list[Condition]]
-    Rules = dict[tuple[type[Basic], Predicate], list[Rule]]
+    Rules = dict[tuple[type[Basic], Predicate | Basic], list[Rule]]
 
 FALSE_IF: RuleKind = 0
 TRUE_IF: RuleKind = 1
@@ -70,8 +71,11 @@ class _UnaryFactsEngine:
     def __init__(self, known: Known):
         self.known = known
 
-    def ask_single_fact(self, key: Predicate, expr: Basic) -> bool | None:
+    def ask_single_fact(self, key: Predicate | Basic, expr: Basic) -> bool | None:
         """Whether one predicate known of *expr* decides *key* by itself."""
+        if key is expr:
+            # the number of a condition such as (FIRST_ARG_IS, S.NegativeOne)
+            return True
         known = self.known.get(expr)
         if not known:
             return None
@@ -80,6 +84,8 @@ class _UnaryFactsEngine:
         known_facts = get_known_facts_dict()
         implied_by_key, _ = known_facts.get(key, _NOTHING)
         for predicate, is_true in known:
+            if predicate is key:
+                return is_true
             if is_true:
                 implied, excluded = known_facts.get(predicate, _NOTHING)
                 if key in implied:
@@ -138,9 +144,9 @@ class _RuleEngine:
     def __init__(self, known: Known, rules: Rules):
         self.unary_facts_engine = _UnaryFactsEngine(known)
         self.rules = rules
-        self.answers: dict[tuple[Predicate, Basic], bool | None] = {}
+        self.answers: dict[tuple[Predicate | Basic, Basic], bool | None] = {}
 
-    def visit(self, predicate: Predicate, expr: Basic) -> bool | None:
+    def visit(self, predicate: Predicate | Basic, expr: Basic) -> bool | None:
         node = (predicate, expr)
         if node in self.answers:
             return self.answers[node]
@@ -150,7 +156,7 @@ class _RuleEngine:
         self.answers[node] = answer
         return answer
 
-    def _from_rules(self, predicate: Predicate, expr: Basic) -> bool | None:
+    def _from_rules(self, predicate: Predicate | Basic, expr: Basic) -> bool | None:
         for cls in type(expr).__mro__:
             for kind, conditions in self.rules.get((cls, predicate), ()):
                 answer = self._apply(kind, conditions, expr)

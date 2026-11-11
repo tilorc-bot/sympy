@@ -307,6 +307,57 @@ def test_rules_of_a_base_class():
 SYMBOLS = (x, y, z, w)
 
 
+NUMBER_RULES: Rules = {
+    (Pow, Q.odd): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.integer), (FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (log, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (Expr, S.One): [
+        (FALSE_IF, [(SELF_IS, Q.prime)]),
+    ],
+}
+
+
+def ask_number_rules(predicate, expr, assumptions=True):
+    return ask_by_rules(predicate, expr, assumptions, NUMBER_RULES)
+
+
+def test_condition_about_a_number():
+    assert ask_number_rules(Q.odd, (-1)**x, Q.integer(x)) is True
+    assert ask_number_rules(Q.odd, (-1)**x) is None
+    assert ask_number_rules(Q.odd, (-3)**x, Q.integer(x)) is None
+    assert ask_number_rules(Q.odd, y**x, Q.integer(x)) is None
+    assert ask_number_rules(Q.zero, log(1, evaluate=False)) is True
+    assert ask_number_rules(Q.zero, log(x)) is None
+    # by the rule for S.One
+    assert ask_number_rules(Q.zero, log(x), Q.prime(x)) is False
+    assert ask_number_rules(Q.zero, log(x), Q.composite(x)) is None
+
+
+def test_assumed_equal_to_a_number():
+    assert preprocess(x, Q.eq(x, 2)) == {x: [(Integer(2), True), *number_facts(Integer(2))]}
+    assert preprocess(x, Q.ne(x, 2)) == {x: [(Integer(2), False)]}
+    assert preprocess(x, ~Q.eq(x, I)) == {x: [(I, False)]}
+    assert preprocess(x, Q.eq(x, y) & Q.eq(x, pi) & Q.gt(x, 1)) == {}
+    assert ask_number_rules(Q.zero, log(x), Q.eq(x, 1)) is True
+    assert ask_number_rules(Q.zero, log(x), ~Q.ne(x, 1)) is True
+    assert ask_number_rules(Q.zero, log(x), Q.ne(x, 1)) is False
+    assert ask_number_rules(Q.zero, log(x), ~Q.eq(x, 1)) is False
+    assert ask_number_rules(Q.zero, log(x), Q.ne(x, 2)) is None
+    assert ask_number_rules(Q.zero, log(x), Q.eq(x, 2)) is False
+    assert ask_number_rules(Q.odd, y**x, Q.integer(x) & Q.eq(y, -1)) is True
+    assert ask_number_rules(Q.positive, x, Q.eq(x, 2)) is True
+    assert ask_number_rules(Q.prime, x, Q.eq(x, 1)) is False
+
+
+def test_assumption_about_a_number_is_not_kept():
+    facts = list(number_facts(pi))
+    assert preprocess(pi, Q.negative(pi))[pi] == facts + [(Q.negative, True)]
+    assert number_facts(pi) == facts
+
+
 def is_not(predicate):
     return lambda symbol: ~predicate(symbol)
 
