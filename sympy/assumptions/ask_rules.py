@@ -31,6 +31,19 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import tan
 from sympy.matrices.expressions.blockmatrix import BlockDiagMatrix
 from sympy.matrices.expressions.determinant import Determinant
+from sympy.matrices.expressions.diagonal import DiagMatrix
+from sympy.matrices.expressions.diagonal import DiagonalMatrix
+from sympy.matrices.expressions.factorizations import EigenValues
+from sympy.matrices.expressions.factorizations import EigenVectors
+from sympy.matrices.expressions.factorizations import Factorization
+from sympy.matrices.expressions.factorizations import LofLU
+from sympy.matrices.expressions.factorizations import QofQR
+from sympy.matrices.expressions.factorizations import RofQR
+from sympy.matrices.expressions.factorizations import SofSVD
+from sympy.matrices.expressions.factorizations import UofLU
+from sympy.matrices.expressions.factorizations import UofSVD
+from sympy.matrices.expressions.factorizations import VofSVD
+from sympy.matrices.expressions.fourier import DFT
 from sympy.matrices.expressions.hadamard import HadamardProduct
 from sympy.matrices.expressions.inverse import Inverse
 from sympy.matrices.expressions.matadd import MatAdd
@@ -38,6 +51,8 @@ from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.matrices.expressions.matmul import MatMul
 from sympy.matrices.expressions.matpow import MatPow
 from sympy.matrices.expressions.slice import MatrixSlice
+from sympy.matrices.expressions.special import Identity
+from sympy.matrices.expressions.special import ZeroMatrix
 from sympy.matrices.expressions.trace import Trace
 from sympy.matrices.expressions.transpose import Transpose
 
@@ -228,6 +243,12 @@ RULES: Rules = {
     (BlockDiagMatrix, Q.real_elements): [
         (IF_AND_ONLY_IF, [(ALL_ARGS_ARE, Q.real_elements)]),
     ],
+    (DFT, Q.complex_elements): [
+        ALWAYS_TRUE,
+    ],
+    (DFT, Q.unitary): [
+        ALWAYS_TRUE,
+    ],
     (Determinant, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex_elements)]),
     ],
@@ -248,6 +269,24 @@ RULES: Rules = {
     ],
     (Determinant, Q.real_elements): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (DiagMatrix, Q.diagonal): [
+        ALWAYS_TRUE,
+    ],
+    (DiagonalMatrix, Q.diagonal): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (EigenValues, Q.diagonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (EigenValues, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.symmetric)]),
+    ],
+    (EigenVectors, Q.orthogonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.symmetric)]),
+    ],
+    (EigenVectors, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.symmetric)]),
     ],
     (Expr, Q.antihermitian): [
         (TRUE_IF, [(SELF_IS, Q.imaginary)]),
@@ -290,6 +329,9 @@ RULES: Rules = {
         (TRUE_IF, [(SELF_IS_NOT, Q.nonzero), (SELF_IS, Q.real)]),
         (FALSE_IF, [(SELF_IS_NOT, Q.real)]),
     ],
+    (Factorization, Q.complex_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex_elements)]),
+    ],
     (HadamardProduct, Q.complex_elements): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.complex_elements)]),
     ],
@@ -298,6 +340,18 @@ RULES: Rules = {
     ],
     (HadamardProduct, Q.real_elements): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.real_elements)]),
+    ],
+    (Identity, Q.diagonal): [
+        ALWAYS_TRUE,
+    ],
+    (Identity, Q.integer_elements): [
+        ALWAYS_TRUE,
+    ],
+    (Identity, Q.orthogonal): [
+        ALWAYS_TRUE,
+    ],
+    (Identity, Q.positive_definite): [
+        ALWAYS_TRUE,
     ],
     (Inverse, Q.complex_elements): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex_elements)]),
@@ -328,6 +382,12 @@ RULES: Rules = {
     ],
     (Inverse, Q.upper_triangular): [
         (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.upper_triangular)]),
+    ],
+    (LofLU, Q.lower_triangular): [
+        ALWAYS_TRUE,
+    ],
+    (LofLU, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
     ],
     (MatAdd, Q.complex_elements): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.complex_elements)]),
@@ -924,6 +984,27 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.real),
         ]),
     ],
+    (QofQR, Q.orthogonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.square)]),
+    ],
+    (QofQR, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (QofQR, Q.unitary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (RofQR, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (RofQR, Q.upper_triangular): [
+        ALWAYS_TRUE,
+    ],
+    (SofSVD, Q.diagonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (SofSVD, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
     (Symbol, Q.infinite): [
         (TRUE_IF, [(SELF_IS, Q.commutative), (SELF_IS_NOT, Q.finite)]),
     ],
@@ -983,6 +1064,54 @@ RULES: Rules = {
     ],
     (Transpose, Q.upper_triangular): [
         (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.lower_triangular)]),
+    ],
+    (UofLU, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (UofLU, Q.upper_triangular): [
+        ALWAYS_TRUE,
+    ],
+    (UofSVD, Q.orthogonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.square)]),
+    ],
+    (UofSVD, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (UofSVD, Q.unitary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (VofSVD, Q.orthogonal): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements), (FIRST_ARG_IS, Q.square)]),
+    ],
+    (VofSVD, Q.real_elements): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real_elements)]),
+    ],
+    (VofSVD, Q.unitary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.diagonal): [
+        (IF_AND_ONLY_IF, [(SELF_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.fullrank): [
+        ALWAYS_FALSE,
+    ],
+    (ZeroMatrix, Q.integer_elements): [
+        ALWAYS_TRUE,
+    ],
+    (ZeroMatrix, Q.lower_triangular): [
+        (TRUE_IF, [(SELF_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.normal): [
+        (IF_AND_ONLY_IF, [(SELF_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.symmetric): [
+        (IF_AND_ONLY_IF, [(SELF_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.triangular): [
+        (TRUE_IF, [(SELF_IS, Q.square)]),
+    ],
+    (ZeroMatrix, Q.upper_triangular): [
+        (TRUE_IF, [(SELF_IS, Q.square)]),
     ],
     (acos, Q.negative): [
         ALWAYS_FALSE,
