@@ -4,14 +4,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask_generated import get_known_facts_dict
-from sympy.assumptions.assume import AppliedPredicate
-from sympy.assumptions.number_facts import number_facts
-from sympy.logic.boolalg import And, Not
+from sympy.assumptions.rule_preprocessing import preprocess
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sympy.assumptions.assume import Predicate
+    from sympy.assumptions.rule_preprocessing import Known
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
 
@@ -66,35 +65,14 @@ OTHER_ARGS_ARE_NOT = (OTHER_ARGS, False)
 
 
 class _UnaryFactsEngine:
-    """
-    Answers from the assumed predicates, the facts of numbers and the known
-    unary facts.
-    """
+    """Answers from what is known before the search and the known unary facts."""
 
-    def __init__(self, assumptions: Boolean | bool):
-        # expr -> [(predicate, whether it is true)], from number_facts and from
-        # the assumptions. Only a predicate, its negation and a conjunction of
-        # these are read from the assumptions.
-        self.known: dict[Basic, list[tuple[Predicate, bool]]] = {}
-        literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
-        for literal in literals:
-            applied = literal.args[0] if isinstance(literal, Not) else literal
-            is_true = not isinstance(literal, Not)
-            if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
-                self._known(applied.arg).append((applied.function, is_true))
-
-    def _known(self, expr: Basic) -> list[tuple[Predicate, bool]]:
-        known = self.known.get(expr)
-        if known is None:
-            facts = number_facts(expr) if expr.is_Atom else None
-            known = self.known[expr] = list(facts or ())
-        return known
+    def __init__(self, known: Known):
+        self.known = known
 
     def ask_single_fact(self, key: Predicate, expr: Basic) -> bool | None:
         """Whether one predicate known of *expr* decides *key* by itself."""
         known = self.known.get(expr)
-        if known is None and expr.is_Atom:
-            known = self._known(expr)
         if not known:
             return None
         # predicate -> (the predicates which it implies, the ones which it excludes)
@@ -152,13 +130,13 @@ def ask_by_rules(
     False
 
     """
-    return _RuleEngine(assumptions, rules).visit(predicate, expr)
+    return _RuleEngine(preprocess(expr, assumptions), rules).visit(predicate, expr)
 
 
 class _RuleEngine:
 
-    def __init__(self, assumptions: Boolean | bool, rules: Rules):
-        self.unary_facts_engine = _UnaryFactsEngine(assumptions)
+    def __init__(self, known: Known, rules: Rules):
+        self.unary_facts_engine = _UnaryFactsEngine(known)
         self.rules = rules
         self.answers: dict[tuple[Predicate, Basic], bool | None] = {}
 

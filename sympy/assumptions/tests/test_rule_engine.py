@@ -19,6 +19,7 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE, ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
     SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules)
+from sympy.assumptions.rule_preprocessing import preprocess
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
@@ -111,23 +112,43 @@ def ask(predicate, expr, assumptions=True):
     return ask_by_rules(predicate, expr, assumptions, RULES)
 
 
-def test_known():
-    assert _UnaryFactsEngine(True).known == {}
-    assert _UnaryFactsEngine(Q.even(x)).known == {x: [(Q.even, True)]}
-    known = _UnaryFactsEngine(~Q.even(x) & Q.real(y) & Q.zero(x)).known
+def test_preprocess():
+    assert preprocess(x, True) == {}
+    assert preprocess(x, Q.even(x)) == {x: [(Q.even, True)]}
+    known = preprocess(x, ~Q.even(x) & Q.real(y) & Q.zero(x))
     assert set(known) == {x, y}
     assert set(known[x]) == {(Q.zero, True), (Q.even, False)}
     assert known[y] == [(Q.real, True)]
-    assert _UnaryFactsEngine(Q.even(x) | Q.odd(x)).known == {}
-    assert _UnaryFactsEngine(Q.gt(x, y) & Q.real(x)).known == {x: [(Q.real, True)]}
+    assert preprocess(x, Q.even(x) | Q.odd(x)) == {}
+    assert preprocess(x, Q.gt(x, y) & Q.real(x)) == {x: [(Q.real, True)]}
+
+
+def test_preprocess_numbers():
     three = Integer(3)
-    assert _UnaryFactsEngine(Q.finite(three)).known == {
-        three: [(Q.positive, True), (Q.odd, True), (Q.prime, True), (Q.finite, True)]}
+    facts = [(Q.positive, True), (Q.odd, True), (Q.prime, True)]
+    assert preprocess(three, True) == {three: facts}
+    assert preprocess(x + 3*y, True) == {three: facts}
+    assert preprocess(three, Q.finite(three)) == {three: facts + [(Q.finite, True)]}
+    assert preprocess(pi, True) == preprocess(exp(pi) + pi, True) == {
+        pi: [(Q.positive, True), (Q.irrational, True), (Q.transcendental, True)]}
+
+
+def test_preprocess_declared_symbols():
+    p = Symbol('p', positive=True)
+    n = Symbol('n', integer=True, nonzero=True)
+    c = Symbol('c', commutative=False)
+    # only what was declared, not what follows from it
+    assert preprocess(p, True) == {p: [(Q.positive, True)]}
+    assert preprocess(Abs(p) + x, True) == {p: [(Q.positive, True)]}
+    assert set(preprocess(n, True)[n]) == {(Q.integer, True), (Q.nonzero, True)}
+    assert preprocess(c, True) == {c: [(Q.commutative, False)]}
+    assert preprocess(p, Q.even(p)) == {p: [(Q.positive, True), (Q.even, True)]}
+    assert preprocess(x, Q.even(p)) == {p: [(Q.even, True)]}
 
 
 def test_ask_single_fact():
     def ask_single_fact(key, assumptions):
-        return _UnaryFactsEngine(assumptions).ask_single_fact(key, x)
+        return _UnaryFactsEngine(preprocess(x, assumptions)).ask_single_fact(key, x)
 
     assert ask_single_fact(Q.zero, ~Q.zero(x)) is False
     assert ask_single_fact(Q.zero, ~Q.even(x)) is False
@@ -147,7 +168,8 @@ def test_ask_single_fact_agrees_with_the_one_of_ask():
                 assumption = predicate(x) if value else ~predicate(x)
                 expected = _ask_single_fact_of_ask(
                     key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
-                assert _UnaryFactsEngine(assumption).ask_single_fact(key, x) is expected
+                engine = _UnaryFactsEngine(preprocess(x, assumption))
+                assert engine.ask_single_fact(key, x) is expected
 
 
 def test_rule_about_an_argument():
@@ -546,17 +568,14 @@ def test_old_assumptions_forbidden():
 
 
 def test_old_assumptions_are_not_used():
-    p = Symbol('p', positive=True)
     queries = [
         (Q.positive, exp(x)**y, Q.real(x) & Q.real(y), True),
         (Q.even, Abs(Abs(x)), Q.even(x), True),
         (Q.zero, Abs(x), ~Q.zero(x), False),
         (Q.positive, x, True, None),
-        (Q.positive, p, True, None),
-        (Q.zero, Abs(p), True, None),
         (Q.positive, x + y + z, Q.positive(x) & Q.positive(y) & Q.positive(z), True),
-        (Q.odd, x + y + p, Q.odd(x) & Q.odd(y) & Q.odd(p), True),
-        (Q.zero, x*p, Q.positive(x), None),
+        (Q.odd, x + y + z, Q.odd(x) & Q.odd(y) & Q.odd(z), True),
+        (Q.zero, x*y, Q.positive(x), None),
     ]
     with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:
@@ -636,6 +655,27 @@ def test_numbers_in_expressions():
         (Q.positive, x**2, Q.positive(x), True),
         (Q.zero, 3*x, ~Q.zero(x), False),
         (Q.positive, x + 1, True, None),
+    ]
+    with old_assumptions_forbidden():
+        for predicate, expr, assumptions, expected in queries:
+            assert ask(predicate, expr, assumptions) is expected
+
+
+def test_declared_symbols():
+    p = Symbol('p', positive=True)
+    n = Symbol('n', integer=True)
+    c = Symbol('c', commutative=False)
+    queries = [
+        (Q.positive, p, True, True),
+        (Q.real, p, True, True),
+        (Q.zero, p, True, False),
+        (Q.zero, Abs(p), True, False),
+        (Q.positive, p + 1, True, True),
+        (Q.positive, p*x, Q.positive(x), True),
+        (Q.even, 2*n, True, True),
+        (Q.integer, n + 3, True, True),
+        (Q.even, n, True, None),
+        (Q.commutative, c, True, False),
     ]
     with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:
