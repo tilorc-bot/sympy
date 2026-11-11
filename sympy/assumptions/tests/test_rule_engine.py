@@ -336,6 +336,14 @@ def test_condition_about_a_number():
     assert ask_number_rules(Q.zero, log(x), Q.composite(x)) is None
 
 
+def test_a_number_is_itself():
+    # ask_single_fact looks at a number only if something is known of it
+    for number in (S.One, S.NegativeOne, S.Half, I):
+        assert ask_by_rules(number, number, True, {}) is True
+        assert ask_by_rules(number, x, True, {}) is None
+    assert ask_by_rules(S.One, S.NegativeOne, True, {}) is None
+
+
 def test_assumed_equal_to_a_number():
     assert preprocess(x, Q.eq(x, 2)) == {x: [(Integer(2), True), *number_facts(Integer(2))]}
     assert preprocess(x, Q.ne(x, 2)) == {x: [(Integer(2), False)]}
