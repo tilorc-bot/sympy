@@ -677,9 +677,6 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.real),
         ]),
     ],
-    (Symbol, Q.commutative): [
-        ALWAYS_TRUE,
-    ],
     (Symbol, Q.infinite): [
         (TRUE_IF, [(SELF_IS, Q.commutative), (SELF_IS_NOT, Q.finite)]),
     ],

@@ -2882,9 +2882,6 @@ RULES: Rules = {
         (FALSE_IF, [(SECOND_ARG_IS, Q.zero)]),
         (FALSE_IF, [(SECOND_ARG_IS, Q.imaginary), (FIRST_ARG_IS, S.ImaginaryUnit)]),
     ],
-    (Symbol, Q.commutative): [
-        ALWAYS_TRUE,
-    ],
     (Symbol, Q.infinite): [
         (TRUE_IF, [(SELF_IS, Q.commutative), (SELF_IS_NOT, Q.finite)]),
     ],

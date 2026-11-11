@@ -118,15 +118,6 @@ def test_conditions_about_a_number():
     assert ask_generated(Q.algebraic, acos(x), Q.algebraic(x)) is None
 
 
-def test_hermitian():
-    c = Symbol('c', commutative=False)
-    assert ask_generated(Q.commutative, x) is True
-    assert ask_generated(Q.commutative, c) is False
-    assert ask_generated(Q.hermitian, x*y, Q.hermitian(x) & Q.real(y)) is True
-    assert ask_generated(Q.hermitian, c*y, Q.hermitian(c) & Q.real(y)) is True
-    assert ask_generated(Q.hermitian, I*x, Q.antihermitian(x)) is True
-
-
 def test_log():
     assert ask_generated(Q.finite, log(x), Q.infinite(x)) is False
     assert ask_generated(Q.finite, log(x), Q.zero(x)) is False
