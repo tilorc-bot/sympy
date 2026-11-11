@@ -33,6 +33,13 @@ from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp
 from sympy.logic.boolalg import And
+from sympy.matrices.expressions.blockmatrix import BlockMatrix
+from sympy.matrices.expressions.diagonal import DiagonalOf
+from sympy.matrices.expressions.kronecker import KroneckerProduct
+from sympy.matrices.expressions.matexpr import MatrixSymbol
+from sympy.matrices.expressions.special import (GenericIdentity, GenericZeroMatrix,
+    ZeroMatrix)
+from sympy.matrices.immutable import ImmutableDenseMatrix
 from sympy.testing.pytest import raises
 
 if TYPE_CHECKING:
@@ -125,12 +132,14 @@ def test_preprocess():
 
 def test_preprocess_numbers():
     three = Integer(3)
-    facts = [(Q.positive, True), (Q.odd, True), (Q.prime, True)]
+    facts = [(Q.positive, True), (Q.odd, True), (Q.antihermitian, False),
+             (Q.prime, True)]
     assert preprocess(three, True) == {three: facts}
     assert preprocess(x + 3*y, True) == {three: facts}
     assert preprocess(three, Q.finite(three)) == {three: facts + [(Q.finite, True)]}
     assert preprocess(pi, True) == preprocess(exp(pi) + pi, True) == {
-        pi: [(Q.positive, True), (Q.irrational, True), (Q.transcendental, True)]}
+        pi: [(Q.positive, True), (Q.irrational, True), (Q.transcendental, True),
+             (Q.antihermitian, False)]}
 
 
 def test_preprocess_declared_symbols():
@@ -626,6 +635,22 @@ NUMBERS = [
     (Q.extended_real, zoo, False),
     (Q.real, nan, None),
     (Q.positive, x, None),
+    (Q.hermitian, Integer(3), True),
+    (Q.antihermitian, Integer(3), False),
+    (Q.antihermitian, Integer(-2), False),
+    (Q.hermitian, Integer(0), True),
+    (Q.antihermitian, Rational(1, 2), False),
+    (Q.antihermitian, Float(2.5), False),
+    (Q.antihermitian, pi, False),
+    (Q.antihermitian, S.EulerGamma, False),
+    (Q.hermitian, I, False),
+    (Q.antihermitian, I, True),
+    (Q.hermitian, oo, False),
+    (Q.antihermitian, oo, False),
+    (Q.hermitian, -oo, False),
+    (Q.antihermitian, -oo, False),
+    (Q.hermitian, zoo, False),
+    (Q.antihermitian, zoo, False),
 ]
 
 
@@ -680,3 +705,48 @@ def test_declared_symbols():
     with old_assumptions_forbidden():
         for predicate, expr, assumptions, expected in queries:
             assert ask(predicate, expr, assumptions) is expected
+
+
+def test_matrix_shapes():
+    n = Symbol('n', integer=True)
+    m = Symbol('m', integer=True)
+    A = MatrixSymbol('A', 2, 3)
+    B = MatrixSymbol('B', 3, 2)
+    N = MatrixSymbol('N', n, n)
+    M = MatrixSymbol('M', m, m)
+    queries = [
+        (Q.square, A, False),
+        (Q.invertible, A, False),
+        (Q.square, A.T, False),
+        (Q.square, A*B, True),
+        (Q.diagonal, A*B, None),
+        (Q.square, ImmutableDenseMatrix([[1, 2]]), False),
+        (Q.diagonal, ImmutableDenseMatrix([[x]]), True),
+        (Q.diagonal, MatrixSymbol('C', 1, 1), True),
+        (Q.symmetric, MatrixSymbol('C', 1, 1), True),
+        (Q.diagonal, MatrixSymbol('C', 0, 0), True),
+        (Q.square, N, True),
+        (Q.square, N*N.T, True),
+        (Q.square, MatrixSymbol('C', n, m), None),
+        (Q.square, MatrixSymbol('C', n, 3), None),
+        # shapes which are computed with Add, Mul or Min are not read
+        (Q.square, BlockMatrix([[N, ZeroMatrix(n, m)], [ZeroMatrix(m, n), M]]), None),
+        (Q.square, KroneckerProduct(N, M), None),
+        (Q.square, N[m:n, 1:n], None),
+        (Q.square, DiagonalOf(MatrixSymbol('C', n, m)), None),
+        (Q.square, BlockMatrix(ImmutableDenseMatrix([[x, y]])), None),
+        (Q.square, GenericIdentity(), None),
+        (Q.square, GenericZeroMatrix(), None),
+    ]
+    product = A.T*B.T
+    with old_assumptions_forbidden():
+        for predicate, expr, expected in queries:
+            assert ask_by_rules(predicate, expr, True, {}) is expected
+        known = preprocess(product, True)
+    assert known == {
+        A: [(Q.square, False)],
+        B: [(Q.square, False)],
+        A.T: [(Q.square, False)],
+        B.T: [(Q.square, False)],
+        product: [(Q.square, True)],
+    }
