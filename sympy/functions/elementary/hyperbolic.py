@@ -344,7 +344,10 @@ class sinh(HyperbolicFunction):
         # if `im` is of the form n*pi
         # else, check if it is a number
         re, im = arg.as_real_imag()
-        return (im%pi).is_zero
+        im_is_n_pi = (im%pi).is_zero
+        if im_is_n_pi:
+            return re.is_finite
+        return im_is_n_pi
 
     def _eval_is_positive(self):
         if self.args[0].is_extended_real:
@@ -549,7 +552,13 @@ class cosh(HyperbolicFunction):
         # the imaginary part can be an expression like n*pi
         # if not, check if the imaginary part is a number
         re, im = arg.as_real_imag()
-        return (im%pi).is_zero
+        im_is_n_pi = (im%pi).is_zero
+        if im_is_n_pi:
+            return re.is_finite
+        if re.is_zero and im.is_finite:
+            return True
+        if im_is_n_pi is False and re.is_zero is False:
+            return False
 
     def _eval_is_positive(self):
         # cosh(x+I*y) = cos(y)*cosh(x) + I*sin(y)*sinh(x)
@@ -565,7 +574,7 @@ class cosh(HyperbolicFunction):
         yzero = ymod.is_zero
         # shortcut if ymod is zero
         if yzero:
-            return True
+            return x.is_finite
 
         xzero = x.is_zero
         # shortcut x is not zero
@@ -592,7 +601,7 @@ class cosh(HyperbolicFunction):
         yzero = ymod.is_zero
         # shortcut if ymod is zero
         if yzero:
-            return True
+            return x.is_finite
 
         xzero = x.is_zero
         # shortcut x is not zero
@@ -806,7 +815,15 @@ class tanh(HyperbolicFunction):
 
         # check if im is of the form n*pi/2 to make sin(2*im) = 0
         # if not, im could be a number, return False in that case
-        return (im % (pi/2)).is_zero
+        im_is_n_pi_2 = (im % (pi/2)).is_zero
+        if im_is_n_pi_2:
+            # tanh(I*pi/2 + I*pi*n) = zoo
+            if fuzzy_or([(im % pi).is_zero, fuzzy_not(re.is_zero)]):
+                return True
+            return None
+        # tanh(oo + I*y) = 1
+        if im_is_n_pi_2 is False and re.is_finite:
+            return False
 
     def _eval_is_positive(self):
         if self.args[0].is_extended_real:
@@ -1070,7 +1087,8 @@ class ReciprocalHyperbolicFunction(HyperbolicFunction):
         return (1/self._reciprocal_of(self.args[0]))._eval_as_leading_term(x, logx=logx, cdir=cdir)
 
     def _eval_is_extended_real(self):
-        return self._reciprocal_of(self.args[0]).is_extended_real
+        reciprocal = self._reciprocal_of(self.args[0])
+        return fuzzy_and([reciprocal.is_extended_real, fuzzy_not(reciprocal.is_zero)])
 
     def _eval_is_finite(self):
         return (1/self._reciprocal_of(self.args[0])).is_finite
