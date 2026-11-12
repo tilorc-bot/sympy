@@ -103,3 +103,19 @@ def test_rules_for_steps():
     assert rules[Abs, Q.irrational] == [(FALSE_IF, not_real)]
     # the old assumptions deduce everything which follows from an integer
     assert (Abs, Q.rational) not in rules and (Abs, Q.real) not in rules
+
+
+def test_what_was_tried_for_an_object_of_another_class():
+    class Positive(Function):
+        def _eval_is_positive(self):
+            return True
+
+    class Unknown(Function):
+        pass
+
+    x = Symbol('x')
+    unknown = Unknown(x)
+    assert unknown.is_zero is None
+    positive = Positive(x)
+    positive._assumptions = unknown._assumptions
+    assert positive.is_positive is True

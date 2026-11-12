@@ -511,8 +511,10 @@ class StdFactKB(FactKB):
     # whether the facts of the number which the object is have been looked for
     number_facts_tried = False
     # the facts for which the rules as written and the handler gave no answer
-    # (a bit of each, see _FACT_BITS)
+    # (a bit of each, see _FACT_BITS), and the class of the object for which
+    # they were tried
     tried = 0
+    tried_by = None
 
     def __init__(self, facts=None):
         super().__init__(_assume_rules)
@@ -583,6 +585,12 @@ def _ask(fact, obj):
 
     # A dict that maps facts to their handlers:
     handler_map = obj._prop_handler
+
+    # What was tried is forgotten if it was tried for an object of another
+    # class which has the same FactKB.
+    if assumptions.tried_by is not obj.__class__:
+        assumptions.tried_by = obj.__class__
+        assumptions.tried = 0
 
     # Nothing can be found if each fact which could decide this one is known
     # or was tried for this object before: see below.
