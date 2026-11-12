@@ -1376,14 +1376,6 @@ class catalan(DefinedFunction):
         k = Dummy('k', integer=True, positive=True)
         return Product((n + k) / k, (k, 2, n))
 
-    def _eval_is_integer(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_positive(self):
-        if self.args[0].is_nonnegative:
-            return True
-
     def _eval_is_composite(self):
         if self.args[0].is_integer and (self.args[0] - 3).is_positive:
             return True
@@ -1629,11 +1621,6 @@ class andre(DefinedFunction):
     def _eval_rewrite_as_polylog(self, s, **kwargs):
         from sympy.functions.special.zeta_functions import polylog
         return (-I)**(s+1) * polylog(-s, I) + I**(s+1) * polylog(-s, -I)
-
-    def _eval_is_integer(self):
-        n = self.args[0]
-        if n.is_integer and n.is_nonnegative:
-            return True
 
     def _eval_is_positive(self):
         if self.args[0].is_nonnegative:
