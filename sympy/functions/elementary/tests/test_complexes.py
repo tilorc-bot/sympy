@@ -1054,6 +1054,15 @@ def test_assumptions_where_the_argument_may_be_infinite_or_zero():
     assert im(t).is_algebraic is None
 
 
+def test_facts_of_numbers_made_without_evaluation():
+    assert re(exp(I), evaluate=False).is_transcendental is True
+    assert im(exp(I), evaluate=False).is_transcendental is True
+    assert re(oo*I, evaluate=False).is_algebraic is True
+    assert arg(oo*I, evaluate=False).is_positive is True
+    assert arg(0, evaluate=False).is_real is None
+    assert arg(zoo, evaluate=False).is_real is None
+
+
 @_both_exp_pow
 def test_issue_15893():
     f = Function('f', real=True)

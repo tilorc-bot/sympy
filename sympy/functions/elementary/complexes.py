@@ -20,6 +20,17 @@ if TYPE_CHECKING:
     from sympy.matrices.matrixbase import MatrixBase
     Tmat = TypeVar('Tmat', bound=MatrixBase)
 
+def _is_of_evaluated(expr, attribute):
+    """
+    The fact *attribute* of the value of *expr* (made with ``evaluate=False``)
+    when its argument is a number for which it evaluates to a finite number.
+    """
+    if expr.args[0].is_number:
+        value = expr.func(*expr.args)
+        if not isinstance(value, expr.func) and value.is_finite:
+            return getattr(value, attribute)
+
+
 ###############################################################################
 ######################### REAL and IMAGINARY PARTS ############################
 ###############################################################################
@@ -145,6 +156,7 @@ class re(DefinedFunction):
     def _eval_is_algebraic(self):
         if self.args[0].is_algebraic:
             return True
+        return _is_of_evaluated(self, 'is_algebraic')
 
 
 class im(DefinedFunction):
@@ -255,6 +267,7 @@ class im(DefinedFunction):
     def _eval_is_algebraic(self):
         if self.args[0].is_algebraic:
             return True
+        return _is_of_evaluated(self, 'is_algebraic')
 
 ###############################################################################
 ############### SIGN, ABSOLUTE VALUE, ARGUMENT and CONJUGATION ################
@@ -739,6 +752,9 @@ class arg(DefinedFunction):
 
     def as_real_imag(self, deep=True, **hints):
         return (self, S.Zero)
+
+    def _eval_is_real(self):
+        return _is_of_evaluated(self, 'is_real')
 
     def _eval_conjugate(self):
         return self
