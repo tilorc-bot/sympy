@@ -71,7 +71,7 @@ class _CoreRuleEngine(_RuleEngine):
         if value is False and predicate in _OPPOSITE:
             # for the rules an expression can be neither finite nor infinite
             value = False if self._from_rules(_OPPOSITE[predicate], obj) else None
-        if value is not None and _may_be_nan(obj):
+        if value is not None and predicate is not Q.commutative and _may_be_nan(obj):
             return None
         return value
 
