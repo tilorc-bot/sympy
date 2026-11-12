@@ -4,13 +4,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sympy.assumptions.ask import Q
+from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.ask_rules import RULES as WRITTEN_RULES
 from sympy.assumptions.ask_rules_generated import RULES
 from sympy.assumptions.number_facts import EVALUATED, number_facts
-from sympy.assumptions.rule_closing import exp_rules_for_powers
-from sympy.assumptions.rule_engine import _RuleEngine, _UnaryFactsEngine
+from sympy.assumptions.rule_closing import (_without_if_and_only_if,
+    exp_rules_for_powers)
+from sympy.assumptions.rule_engine import (FALSE_IF, SELF, TRUE_IF, _RuleEngine,
+    _UnaryFactsEngine)
 from sympy.core.add import Add
-from sympy.core.assumptions import _assume_defined, _set_ask_rules
+from sympy.core.assumptions import StdFactKB, _assume_defined, _set_ask_rules
 from sympy.core.logic import fuzzy_and
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
@@ -41,7 +44,6 @@ class _CoreRuleEngine(_RuleEngine):
 
     def __init__(self, rules: Rules, written_rules: Rules):
         self.rules = rules
-        self.written_rules = written_rules
         self.unary_facts_engine = _UnaryFactsEngine({})
         where_true = self.unary_facts_engine.where_true
         self.predicates: dict[str, Predicate] = {}
@@ -55,6 +57,7 @@ class _CoreRuleEngine(_RuleEngine):
         self.attributes[Q.antihermitian] = 'is_antihermitian'
         self.handlers: dict[Predicate | Basic, str] = {
             predicate: '_eval_is_' + fact for fact, predicate in self.predicates.items()}
+        self.written_rules = _rules_for_steps(written_rules, self.predicates)
         self.class_rules: dict[tuple[type, Predicate | Basic], tuple[Rule, ...]] = {}
         self.class_written_rules: dict[tuple[type, Predicate | Basic], tuple[Rule, ...]] = {}
 
@@ -163,6 +166,64 @@ class _CoreRuleEngine(_RuleEngine):
         return tuple(found)
 
 
+def _rules_for_steps(written: Rules, predicates: dict[str, Predicate]) -> Rules:
+    """
+    The rules which are asked for a fact when another fact is wanted.
+
+    These are the rules as they are written: when one of them answers, the
+    old assumptions deduce what follows for the other facts. Where they do
+    not (the rule is for a predicate which is not a fact of the old
+    assumptions, or the implication is not one of theirs), the rule is
+    repeated here for as few of the facts which it decides as the old
+    assumptions need to deduce the others.
+    """
+    facts = get_known_facts_dict()
+    names = {predicate: fact for fact, predicate in predicates.items()}
+    alone = {(fact, value): len(StdFactKB({fact: value}))
+             for fact in predicates for value in (True, False)}
+
+    repeated: dict[tuple[Predicate | Basic, bool], list[tuple[Predicate, bool]]] = {}
+
+    def repeated_for(predicate: Predicate | Basic, is_true: bool) -> list[tuple[Predicate, bool]]:
+        found = repeated.get((predicate, is_true))
+        if found is not None:
+            return found
+        implied, excluded = facts[predicate]
+        if is_true:
+            decided = [(names[q], True) for q in implied if q in names]
+            false = excluded
+        else:
+            decided = []
+            false = [q for q, (implied_by_q, _) in facts.items() if predicate in implied_by_q]
+        # for the rules an expression can be neither finite nor infinite
+        decided += [(names[q], False) for q in false if q in names and q not in _OPPOSITE]
+        known = StdFactKB()
+        if predicate in names:
+            known.deduce_all_facts([(names[predicate], is_true)])
+        found = repeated[predicate, is_true] = []
+        # the facts from which most follows first
+        for fact, value in sorted(decided, key=lambda item: (-alone[item], item)):
+            if known.get(fact) is not value:
+                known.deduce_all_facts([(fact, value)])
+                found.append((predicates[fact], value))
+        return found
+
+    result: Rules = {key: list(rules) for key, rules in written.items()}
+    for (cls, predicate), rules in written.items():
+        if predicate not in facts:
+            continue
+        for rule in rules:
+            for kind, conditions in _without_if_and_only_if(rule):
+                if any(argument == SELF for (argument, _), _ in conditions):
+                    continue
+                for q, value in repeated_for(predicate, kind == TRUE_IF):
+                    new_rule = (TRUE_IF if value else FALSE_IF, list(conditions))
+                    rules_of_q = result.setdefault((cls, q), [])
+                    if new_rule not in rules_of_q:
+                        rules_of_q.append(new_rule)
+    return exp_rules_for_powers(result)
+
+
 def _may_be_nan(expr: Basic) -> bool:
     """
     Whether an expression has the argument ``nan``, or is a sum, a product
@@ -202,4 +263,4 @@ def _is_evaluated_number(expr: Basic) -> bool:
     return type(expr) in EVALUATED and all(map(_is_evaluated_number, expr.args))
 
 
-_set_ask_rules(_CoreRuleEngine(RULES, exp_rules_for_powers(WRITTEN_RULES)).ask)
+_set_ask_rules(_CoreRuleEngine(RULES, WRITTEN_RULES).ask)

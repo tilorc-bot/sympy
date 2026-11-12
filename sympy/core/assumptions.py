@@ -480,6 +480,27 @@ def check_assumptions(expr, against=None, **assume):
 
 
 _FACT_BITS = {fact: 1 << i for i, fact in enumerate(sorted(_assume_defined))}
+_BIT_FACTS = {bit: fact for fact, bit in _FACT_BITS.items()}
+
+
+def _prereq_bits():
+    """For each fact, the bits of the fact and of every fact which _ask may try for it."""
+    result = {}
+    for fact in _assume_defined:
+        found = {fact}
+        queue = [fact]
+        for fact_i in queue:
+            new = _assume_rules.prereq[fact_i] - found
+            found |= new
+            queue.extend(new)
+        bits = 0
+        for fact_i in found:
+            bits |= _FACT_BITS[fact_i]
+        result[fact] = bits
+    return result
+
+
+_PREREQ_BITS = _prereq_bits()
 
 
 class StdFactKB(FactKB):
@@ -563,6 +584,26 @@ def _ask(fact, obj):
     # A dict that maps facts to their handlers:
     handler_map = obj._prop_handler
 
+    # Nothing can be found if each fact which could decide this one is known
+    # or was tried for this object before: see below.
+    missing = _PREREQ_BITS[fact] & ~assumptions.tried
+    while missing:
+        bit = missing & -missing
+        if _BIT_FACTS[bit] not in assumptions:
+            break
+        missing ^= bit
+    else:
+        assumptions._tell(fact, None)
+        return None
+
+    # The rules about expressions are asked first, for the fact itself. These
+    # are the rules closed under the implications between the facts.
+    if _ask_rules is not None:
+        fact_value = _ask_rules(fact, obj, True)
+        if fact_value is not None:
+            assumptions.deduce_all_facts(((fact, fact_value),))
+            return fact_value
+
     # This is our queue of facts to check:
     facts_to_check = [fact]
     facts_queued = {fact}
@@ -579,24 +620,22 @@ def _ask(fact, obj):
         if fact_i in assumptions:
             continue
 
-        # The rules about expressions are asked first. The associated handler
-        # for fact_i, if it exists, is called if they do not answer. Neither
-        # is asked again for the same object if they did not answer: what
-        # they say depends only on the object.
+        # The rules as they are written are asked for fact_i (what follows
+        # from their answer is deduced here), and the associated handler, if
+        # it exists, is called if they do not answer. Neither is asked again
+        # for the same object if they did not answer: what they say depends
+        # only on the object.
         fact_i_value = None
-        if fact_i is fact and _ask_rules is not None:
-            fact_i_value = _ask_rules(fact_i, obj, True)
-        if fact_i_value is None:
-            bit = _FACT_BITS[fact_i]
-            if not assumptions.tried & bit:
-                if fact_i is not fact and _ask_rules is not None:
-                    fact_i_value = _ask_rules(fact_i, obj, False)
+        bit = _FACT_BITS[fact_i]
+        if not assumptions.tried & bit:
+            if fact_i is not fact and _ask_rules is not None:
+                fact_i_value = _ask_rules(fact_i, obj, False)
+            if fact_i_value is None:
+                handler_i = handler_map.get(fact_i)
+                if handler_i is not None:
+                    fact_i_value = handler_i(obj)
                 if fact_i_value is None:
-                    handler_i = handler_map.get(fact_i)
-                    if handler_i is not None:
-                        fact_i_value = handler_i(obj)
-                    if fact_i_value is None:
-                        assumptions.tried |= bit
+                    assumptions.tried |= bit
 
         # If we get a new value for fact_i then we should update our knowledge
         # of fact_i as well as any related facts that can be inferred using the

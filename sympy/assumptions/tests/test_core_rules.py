@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from sympy.assumptions.ask import Q
+from sympy.assumptions.core_rules import _CoreRuleEngine, _rules_for_steps
+from sympy.assumptions.rule_engine import FALSE_IF, FIRST_ARG_IS, TRUE_IF
 from sympy.core.add import Add
+from sympy.core.function import Function
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, nan, oo, pi
 from sympy.core.power import Pow
@@ -53,3 +57,49 @@ def test_handler_of_a_subclass_before_the_rules_of_its_base():
     x = Symbol('x', nonzero=True)
     assert Abs(x).is_zero is False
     assert AlwaysZero(x).is_zero is True
+
+
+def test_a_handler_is_called_once_for_an_object():
+    calls = []
+
+    class Counted(Function):
+        def _eval_is_extended_real(self):
+            calls.append(self)
+
+    f = Counted(Symbol('x'))
+    assert f.is_positive is None
+    assert f.is_negative is None
+    assert f.is_zero is None
+    assert f.is_extended_real is None
+    assert calls == [f]
+
+
+def test_what_was_tried_is_not_what_is_known():
+    class Sometimes(Function):
+        def _eval_is_integer(self):
+            return self.args[0].is_integer
+
+    assert Sometimes(Symbol('x')).is_rational is None
+    f = Sometimes(Symbol('n', integer=True))
+    assert f.is_zero is None
+    assert f.is_rational is True
+
+
+def test_rules_for_steps():
+    engine = _CoreRuleEngine({}, {})
+    infinite = [(FIRST_ARG_IS, Q.infinite)]
+    not_real = [(FIRST_ARG_IS, Q.imaginary)]
+    rules = _rules_for_steps({
+        (Abs, Q.positive_infinite): [(TRUE_IF, infinite)],
+        (Abs, Q.nonzero): [(FALSE_IF, not_real)],
+        (Abs, Q.integer): [(TRUE_IF, [(FIRST_ARG_IS, Q.integer)])],
+    }, engine.predicates)
+    # a predicate which is not a fact of the old assumptions: repeated for
+    # the facts from which they deduce the others
+    assert rules[Abs, Q.infinite] == [(TRUE_IF, infinite)]
+    assert rules[Abs, Q.extended_positive] == [(TRUE_IF, infinite)]
+    assert (Abs, Q.finite) not in rules and (Abs, Q.extended_real) not in rules
+    # an implication which the old assumptions do not have
+    assert rules[Abs, Q.irrational] == [(FALSE_IF, not_real)]
+    # the old assumptions deduce everything which follows from an integer
+    assert (Abs, Q.rational) not in rules and (Abs, Q.real) not in rules
