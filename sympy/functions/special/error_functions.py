@@ -807,7 +807,10 @@ class erf2(DefinedFunction):
         return self.rewrite(erf)
 
     def _eval_is_zero(self):
-        return is_eq(*self.args)
+        x, y = self.args
+        equal = is_eq(x, y)
+        if equal or (x.is_extended_real and y.is_extended_real):
+            return equal
 
 class erfinv(DefinedFunction):
     r"""

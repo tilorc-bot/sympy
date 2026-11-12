@@ -306,6 +306,9 @@ def test_erf2():
     assert erf2(0, 0, evaluate=False).is_zero
     assert erf2(x, x, evaluate=False).is_zero
     assert erf2(x, y).is_zero is None
+    # erf(x) and erf(x + 1) are equal at x = -1/2 + 3.30911578173735*I
+    assert erf2(x, x + 1).is_zero is None
+    assert erf2(w, w + 1).is_zero is False
 
     assert expand_func(erf(x) + erf2(x, y)) == erf(y)
 

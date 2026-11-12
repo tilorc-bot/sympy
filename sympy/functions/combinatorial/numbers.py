@@ -17,7 +17,7 @@ from sympy.core.cache import cacheit
 from sympy.core.containers import Dict
 from sympy.core.expr import Expr
 from sympy.core.function import ArgumentIndexError, DefinedFunction, expand_mul
-from sympy.core.logic import fuzzy_not
+from sympy.core.logic import fuzzy_and, fuzzy_not
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, pi, oo, Rational, Integer
 from sympy.core.relational import Eq, is_le, is_gt, is_lt
@@ -1492,7 +1492,7 @@ class genocchi(DefinedFunction):
         if n.is_integer and n.is_nonnegative:
             if n.is_zero or n.is_odd:
                 return False
-            return (n/2).is_even
+            return fuzzy_and([n.is_positive, (n/2).is_even])
 
     def _eval_is_even(self):
         if len(self.args) > 1 and self.args[1] != 1:
@@ -1519,7 +1519,8 @@ class genocchi(DefinedFunction):
         # only G_6 = -3 and G_8 = 17 are prime,
         # but SymPy does not consider negatives as prime
         # so only n=8 is tested
-        return (n-8).is_zero
+        if n.is_integer:
+            return (n-8).is_zero
 
     def _eval_evalf(self, prec):
         if all(i.is_number for i in self.args):

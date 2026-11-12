@@ -179,7 +179,7 @@ class gamma(DefinedFunction):
             return False
         if intlike(x) and x <= 0:
             return False
-        if x.is_positive or x.is_noninteger:
+        if x.is_positive or (x.is_noninteger and x.is_finite):
             return True
 
     def _eval_is_positive(self):
@@ -187,7 +187,9 @@ class gamma(DefinedFunction):
         if x.is_positive:
             return True
         elif x.is_noninteger:
-            return floor(x).is_even
+            even = floor(x).is_even
+            if even or x.is_negative:
+                return even
 
     def _eval_rewrite_as_tractable(self, z, limitvar=None, **kwargs):
         return exp(loggamma(z))
@@ -1339,9 +1341,11 @@ class multigamma(DefinedFunction):
     def _eval_is_real(self):
         x, p = self.args
         y = 2*x
-        if y.is_integer and (y <= (p - 1)) is True:
+        if (y.is_integer and (y <= (p - 1)) is True
+                and (y.is_even or y.is_nonnegative or (p - 1).is_positive)):
             return False
-        if intlike(y) and (y <= (p - 1)):
+        if (intlike(y) and (y <= (p - 1))
+                and (int(y) % 2 == 0 or y >= 0 or (p - 1).is_positive)):
             return False
-        if y > (p - 1) or y.is_noninteger:
+        if x.is_finite and (y > (p - 1) or y.is_noninteger):
             return True

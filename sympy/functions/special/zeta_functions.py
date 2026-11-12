@@ -4,7 +4,7 @@ from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.cache import cacheit
 from sympy.core.function import ArgumentIndexError, expand_mul, DefinedFunction
-from sympy.core.logic import fuzzy_not
+from sympy.core.logic import fuzzy_and, fuzzy_not
 from sympy.core.numbers import pi, I, Integer
 from sympy.core.relational import Eq
 from sympy.core.singleton import S
@@ -542,7 +542,16 @@ class zeta(DefinedFunction):
         return lerchphi(1, s, a)
 
     def _eval_is_finite(self):
-        return fuzzy_not((self.args[0] - 1).is_zero)
+        s = self.args[0]
+        s_is_one = (s - 1).is_zero
+        if s_is_one:
+            return False
+        if len(self.args) == 2:
+            a = self.args[1]
+            if not fuzzy_and([a.is_finite,
+                              fuzzy_not(fuzzy_and([a.is_integer, a.is_nonpositive]))]):
+                return None
+        return fuzzy_not(s_is_one)
 
     def _eval_expand_func(self, **hints):
         s = self.args[0]
