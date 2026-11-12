@@ -33,10 +33,12 @@ from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.hyperbolic import (cosh, coth, csch, sech, sinh,
-    tanh)
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
+    asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
-from sympy.functions.elementary.trigonometric import acos, cos, csc, sec, sin, tan
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, cos, csc, sec, sin, tan)
+from sympy.functions.special.error_functions import erf
 from sympy.logic.boolalg import And
 from sympy.testing.pytest import raises
 
@@ -174,7 +176,7 @@ def test_numbers_without_symbols():
     # zero, which intervals do not decide
     assert cos(1)**2 + sin(1)**2 - 1 not in known(cos(1)**2 + sin(1)**2 - 1)
     # functions which are not evaluated, and numbers which are too large
-    assert acos(Rational(1, 7)) not in known(acos(Rational(1, 7)))
+    assert erf(Rational(1, 7)) not in known(erf(Rational(1, 7)))
     assert exp(10**10) not in known(exp(10**10))
     assert Pow(2, 10**9, evaluate=False) not in known(Pow(2, 10**9, evaluate=False))
     # in an expression with symbols
@@ -183,7 +185,7 @@ def test_numbers_without_symbols():
     # only the largest number gets an entry
     assert sqrt(2) not in known(sqrt(2) - 1)
     assert known(sqrt(2) - 1)[sqrt(2) - 1] == positive
-    assert known(acos(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
+    assert known(erf(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
 
 
 def test_exact_numbers_without_symbols():
@@ -214,6 +216,7 @@ def test_exact_numbers_without_symbols():
     assert ask_number(Q.real, Pow(-8, Rational(1, 3), evaluate=False)) is False
     # values at 0 and at multiples of pi/2
     assert ask_number(Q.zero, sin(Add(-1, 1, evaluate=False))) is True
+    assert ask_number(Q.zero, acosh(1, evaluate=False)) is True
     assert ask_number(Q.zero, cos(5*pi/2, evaluate=False)) is True
     assert ask_number(Q.zero, cosh(5*I*pi/2, evaluate=False)) is True
     assert ask_number(Q.zero, sinh(2*I*pi, evaluate=False)) is True
@@ -222,6 +225,43 @@ def test_exact_numbers_without_symbols():
     assert ask_number(Q.algebraic, exp(I*pi/3)) is True
     assert ask_number(Q.algebraic, cos(2*pi/7)) is True
     assert ask_number(Q.algebraic, sinh(pi/7)) is None
+
+
+def test_powers_with_infinities():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    assert ask_number(Q.infinite, Pow(2, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(half, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(2, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(half, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(oo, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(oo, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(oo, 1 + I, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(oo, -half, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(0, oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(0, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(0, -sqrt(2), evaluate=False)) is True
+    # nan in SymPy
+    one_to_oo = Pow(1, oo, evaluate=False)
+    assert one_to_oo not in known(one_to_oo)
+    oo_to_imaginary = Pow(oo, I/2, evaluate=False)
+    assert oo_to_imaginary not in known(oo_to_imaginary)
+    zero_to_complex = Pow(0, 1 + I, evaluate=False)
+    assert zero_to_complex not in known(zero_to_complex)
+    negative_to_minus_oo = Pow(-half, -oo, evaluate=False)
+    assert negative_to_minus_oo not in known(negative_to_minus_oo)
+    minus_oo_to_oo = Pow(-oo, oo, evaluate=False)
+    assert minus_oo_to_oo not in known(minus_oo_to_oo)
+    # 0 in SymPy
+    zoo_to_oo = Pow(zoo, oo, evaluate=False)
+    assert zoo_to_oo not in known(zoo_to_oo)
 
 
 def test_functions_of_numbers_without_symbols():
@@ -249,6 +289,38 @@ def test_functions_of_numbers_without_symbols():
     # poles
     assert sec(pi/2, evaluate=False) not in known(sec(pi/2, evaluate=False))
     assert csc(0, evaluate=False) not in known(csc(0, evaluate=False))
+    # inverse functions, inside and outside the real interval where they are real
+    assert ask_number(Q.positive, asin(Rational(1, 7))) is True
+    assert ask_number(Q.positive, asin(1, evaluate=False)) is True
+    assert ask_number(Q.real, asin(3)) is False
+    assert ask_number(Q.real, -asin(-3)) is False
+    assert ask_number(Q.positive, acos(Rational(-1, 7))) is True
+    assert ask_number(Q.imaginary, acos(Rational(3, 2))) is True
+    assert ask_number(Q.real, acos(-2)) is False
+    assert ask_number(Q.positive, atan(10**10)) is True
+    assert ask_number(Q.negative, acot(-3)) is True
+    assert acot(0, evaluate=False) not in known(acot(0, evaluate=False))
+    assert ask_number(Q.positive, asec(3)) is True
+    assert ask_number(Q.imaginary, asec(half)) is True
+    assert ask_number(Q.negative, acsc(-3)) is True
+    assert ask_number(Q.real, acsc(half)) is False
+    assert ask_number(Q.negative, asinh(-2)) is True
+    assert ask_number(Q.positive, acosh(2)) is True
+    assert ask_number(Q.imaginary, acosh(Rational(1, 5))) is True
+    assert ask_number(Q.real, acosh(-2)) is False
+    assert ask_number(Q.positive, atanh(Rational(1, 5))) is True
+    assert ask_number(Q.real, atanh(2)) is False
+    assert atanh(1, evaluate=False) not in known(atanh(1, evaluate=False))
+    assert ask_number(Q.positive, acoth(2)) is True
+    assert ask_number(Q.real, acoth(half)) is False
+    assert ask_number(Q.positive, asech(Rational(2, 3))) is True
+    assert ask_number(Q.real, asech(Rational(-1, 3))) is False
+    assert ask_number(Q.negative, acsch(-2)) is True
+    # an interval across the end of the domain, and a complex argument
+    above_one = Float('1.000000000000000000001', 30)
+    assert asin(above_one, evaluate=False) not in known(asin(above_one, evaluate=False))
+    assert ask_number(Q.positive, acosh(above_one, evaluate=False)) is None
+    assert asin(1 + I) not in known(asin(1 + I))
 
 
 def test_preprocess_declared_symbols():
