@@ -244,6 +244,21 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.integer, x**y, Q.integer(x) & Q.negative(y)) is None
     assert ask_generated(Q.algebraic, x**y, Q.algebraic(x) & Q.irrational(x)
                          & Q.algebraic(y) & Q.irrational(y)) is False
+    assert ask_generated(Q.extended_negative, x**y,
+                         Q.extended_real(x) & Q.even(y)) is False
+    assert ask_generated(Q.negative, x**2, Q.extended_real(x)) is False
+    assert ask_generated(Q.extended_nonnegative, x**y,
+                         Q.extended_real(x) & ~Q.zero(x) & Q.even(y)) is True
+    assert ask_generated(Q.extended_positive, x**y,
+                         Q.extended_real(x) & ~Q.zero(x) & Q.even(y)) is None
+    assert ask_generated(Q.extended_negative, x**y, Q.real(x) & Q.integer(y)) is None
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.nonnegative(y)) is True
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.complex(y)) is None
+    assert ask_generated(Q.finite, x**y, Q.infinite(x) & Q.negative(y)) is True
+    assert ask_generated(Q.finite, x**y, Q.infinite(x) & Q.real(y)) is None
+    assert ask_generated(Q.even, I**x, Q.integer(x)) is False
+    assert ask_generated(Q.odd, I**x, Q.integer(x)) is None
+    assert ask_generated(Q.even, x**y, Q.imaginary(x) & Q.even(y)) is None
 
 
 def test_products_of_factors_which_may_be_zero():

@@ -850,16 +850,11 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.commutative), (SECOND_ARG_IS, Q.commutative)]),
     ],
     (Pow, Q.complex): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (SECOND_ARG_IS, Q.positive)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (SECOND_ARG_IS, Q.nonnegative)]),
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.complex),
             (FIRST_ARG_IS_NOT, Q.zero),
             (SECOND_ARG_IS, Q.complex),
-        ]),
-        (TRUE_IF, [
-            (FIRST_ARG_IS, Q.complex),
-            (SECOND_ARG_IS, Q.integer),
-            (SECOND_ARG_IS_NOT, Q.negative),
         ]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.negative)]),
     ],
@@ -886,15 +881,22 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.positive),
         ]),
+        (FALSE_IF, [(FIRST_ARG_IS, I), (SECOND_ARG_IS, Q.integer)]),
     ],
     (Pow, Q.extended_negative): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero)]),
         (FALSE_IF, [(SECOND_ARG_IS, S.Half)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.even)]),
     ],
     (Pow, Q.extended_nonnegative): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.extended_nonnegative),
             (SECOND_ARG_IS, Q.positive),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.extended_real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+            (SECOND_ARG_IS, Q.even),
         ]),
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive), (SECOND_ARG_IS, Q.real)]),
     ],
@@ -922,6 +924,7 @@ RULES: Rules = {
             (FIRST_ARG_IS_NOT, Q.zero),
             (SECOND_ARG_IS, Q.finite),
         ]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite), (SECOND_ARG_IS, Q.negative)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.finite), (SECOND_ARG_IS, Q.positive)]),
     ],
     (Pow, Q.hermitian): [
@@ -982,7 +985,6 @@ RULES: Rules = {
     (Pow, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative), (SECOND_ARG_IS, Q.odd)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.nonnegative), (SECOND_ARG_IS, Q.odd)]),
-        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.even)]),
     ],
     (Pow, Q.negative_infinite): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (SECOND_ARG_IS, Q.finite)]),
