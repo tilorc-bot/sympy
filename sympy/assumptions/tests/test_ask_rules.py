@@ -27,7 +27,8 @@ from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_s
 from sympy.functions.elementary.complexes import (Abs, adjoint, conjugate, im, re, sign,
     transpose)
 from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import cosh, sech, sinh, tanh
+from sympy.functions.elementary.hyperbolic import (acosh, acsch, asech, asinh, atanh,
+    cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
@@ -378,6 +379,57 @@ def test_elementary_functions():
     assert ask_generated(Q.integer, exp_polar(x), Q.zero(x)) is True
     # LambertW(1, 1) is not real
     assert ask_generated(Q.real, LambertW(x), Q.positive(x)) is None
+
+
+def test_hyperbolic_functions():
+    infinite_real = Q.extended_real(x) & Q.infinite(x)
+    # sinh(oo) = cosh(oo) = oo
+    assert ask_generated(Q.infinite, sinh(x), infinite_real) is True
+    assert ask_generated(Q.positive, sinh(x), Q.extended_positive(x)) is None
+    assert ask_generated(Q.positive, sinh(x), Q.extended_real(x) & ~Q.positive(x)) is False
+    assert ask_generated(Q.extended_negative, sinh(x), Q.extended_nonnegative(x)) is False
+    assert ask_generated(Q.zero, sinh(x), Q.extended_nonzero(x)) is False
+    assert ask_generated(Q.infinite, cosh(x), infinite_real) is True
+    # tanh(oo) = coth(oo) = 1, coth(0) = zoo
+    assert ask_generated(Q.positive, tanh(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.negative, tanh(x), Q.extended_positive(x)) is False
+    assert ask_generated(Q.integer, tanh(x), infinite_real) is True
+    assert ask_generated(Q.prime, tanh(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, tanh(x), Q.extended_nonzero(x)) is False
+    assert ask_generated(Q.positive, coth(x), Q.extended_positive(x)) is True
+    assert ask_generated(Q.positive, coth(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.real, coth(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.real, coth(x), Q.real(x)) is None
+    assert ask_generated(Q.infinite, coth(x), Q.zero(x)) is True
+    assert ask_generated(Q.zero, coth(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.composite, coth(x), infinite_real) is False
+    # csch(oo) = sech(oo) = 0, csch(0) = zoo
+    assert ask_generated(Q.zero, csch(x), infinite_real) is True
+    assert ask_generated(Q.zero, csch(x), Q.finite(x)) is False
+    assert ask_generated(Q.infinite, csch(x), Q.zero(x)) is True
+    assert ask_generated(Q.real, csch(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.positive, csch(x), Q.extended_real(x) & ~Q.positive(x)) is False
+    assert ask_generated(Q.imaginary, csch(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, sech(x), infinite_real) is True
+    assert ask_generated(Q.zero, sech(x), Q.finite(x)) is False
+    assert ask_generated(Q.imaginary, sech(x), Q.imaginary(x)) is False
+    # asinh(zoo) = acosh(zoo) = zoo, asech(0) = oo, acsch(0) = zoo
+    assert ask_generated(Q.zero, asinh(x), ~Q.zero(x)) is False
+    assert ask_generated(Q.extended_real, asinh(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.infinite, asinh(x), Q.infinite(x)) is True
+    assert ask_generated(Q.finite, acosh(x), Q.finite(x)) is True
+    assert ask_generated(Q.positive_infinite, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.finite, asech(x), ~Q.zero(x)) is True
+    assert ask_generated(Q.extended_real, acsch(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.extended_real, acsch(x), Q.zero(x)) is False
+    assert ask_generated(Q.extended_real, acsch(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.extended_nonzero, acsch(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, acsch(x), Q.infinite(x)) is True
+    assert ask_generated(Q.infinite, acsch(x), Q.zero(x)) is True
+    # atanh(oo) = -I*pi/2
+    assert ask_generated(Q.imaginary, atanh(x), Q.imaginary(x)) is True
+    assert ask_generated(Q.imaginary, atanh(x), Q.finite(x) & ~Q.imaginary(x)) is False
+    assert ask_generated(Q.imaginary, atanh(x), Q.extended_real(x)) is None
 
 
 def test_combinatorial_and_special_functions():
