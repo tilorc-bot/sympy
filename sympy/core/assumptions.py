@@ -573,10 +573,12 @@ def _ask(fact, obj):
         if fact_i in assumptions:
             continue
 
-        # The rules about expressions are asked first, and the associated
-        # handler for fact_i, if it exists, only if they do not answer.
+        # The rules about expressions are asked first, for the fact of the
+        # question only: each rule is repeated for every fact which its
+        # conclusion decides. The associated handler for fact_i, if it
+        # exists, is called if they do not answer.
         fact_i_value = None
-        if _ask_rules is not None:
+        if fact_i is fact and _ask_rules is not None:
             fact_i_value = _ask_rules(fact_i, obj)
         if fact_i_value is None:
             handler_i = handler_map.get(fact_i)
