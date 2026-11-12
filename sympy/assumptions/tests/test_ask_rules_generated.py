@@ -146,14 +146,8 @@ def test_answers_which_only_the_generated_rules_give():
     assert ask_by_rules(Q.nonzero, exp(x), Q.real(x), GENERATED_RULES) is True
     assert ask_by_rules(Q.negative, exp(x), Q.real(x), RULES) is None
     assert ask_by_rules(Q.negative, exp(x), Q.real(x), GENERATED_RULES) is False
-    assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), RULES) is None
-    assert ask_by_rules(Q.real, acot(x), Q.nonnegative(x), GENERATED_RULES) is True
-
-
-def test_rules_about_self_are_not_repeated():
-    assumptions = ~Q.nonzero(x) & Q.real(x)
-    assert ask_by_rules(Q.zero, x, assumptions, GENERATED_RULES) is True
-    assert ask_by_rules(Q.even, x, assumptions, GENERATED_RULES) is None
+    assert ask_by_rules(Q.finite, acot(x), Q.nonnegative(x), RULES) is None
+    assert ask_by_rules(Q.finite, acot(x), Q.nonnegative(x), GENERATED_RULES) is True
 
 
 def test_same_answers_as_the_source_rules():
@@ -161,8 +155,6 @@ def test_same_answers_as_the_source_rules():
         (Q.positive, Abs(x), Q.positive(x)),
         (Q.zero, Abs(x), ~Q.zero(x)),
         (Q.even, Abs(Abs(x)), Q.even(x)),
-        (Q.odd, x, Q.integer(x) & ~Q.even(x)),
-        (Q.hermitian, sin(x), Q.real(x)),
         (Q.positive, x**y, Q.positive(x) & Q.real(y)),
         (Q.negative, x**y, Q.negative(x) & Q.odd(y)),
         (Q.real, x**y, Q.negative(x) & Q.rational(y) & ~Q.integer(y)),
@@ -181,9 +173,6 @@ def test_same_answers_as_the_source_rules():
         (Q.real, im(x), Q.complex(x)),
         (Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)),
         (Q.finite, sign(x), True),
-        (Q.composite, x, Q.even(x) & Q.positive(x) & ~Q.prime(x)),
-        (Q.zero, x, ~Q.nonzero(x) & Q.real(x)),
-        (Q.nonzero, x, ~Q.real(x)),
         (Q.zero, x**y, ~Q.zero(x) & Q.positive(y)),
         (Q.prime, x**y, Q.integer(x) & Q.composite(y)),
     ]

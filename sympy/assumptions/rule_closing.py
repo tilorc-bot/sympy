@@ -25,6 +25,9 @@ def close_rules(rules: Rules) -> Rules:
     closed = {key: list(rules_for_key) for key, rules_for_key in plain.items()}
     for (cls, predicate), rules_for_key in sorted(plain.items(),
                                                   key=lambda item: str(item[0][1])):
+        if predicate not in facts:
+            # a number: its rules are about the expression itself
+            continue
         implied, excluded = facts[predicate]
         implying = [q for q, (implied_by_q, _) in facts.items()
                     if predicate in implied_by_q]
@@ -112,6 +115,9 @@ def _implies(b, a, facts):
         return True
     ((argument, w), q), ((other, v), p) = b[0], a[0]
     if argument != other or argument in _HOW_MANY_ARGS:
+        return False
+    if q not in facts or p not in facts:
+        # a number
         return False
     if w and v:
         return p in facts[q][0]

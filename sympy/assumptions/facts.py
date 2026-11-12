@@ -218,6 +218,29 @@ def generate_known_facts_dict(keys, fact):
     return ret
 
 
+def generate_combinations_dict(fact):
+    """
+    For each predicate in *fact*, an integer with one bit for each combination
+    of true and false which satisfies *fact*, set where the predicate is true.
+
+    Examples
+    ========
+
+    >>> from sympy import Q, And, Implies
+    >>> from sympy.assumptions.facts import generate_combinations_dict
+    >>> from sympy.abc import x
+    >>> generate_combinations_dict(And(Implies(Q.even(x), ~Q.odd(x)),
+    ...     Implies(Q.zero(x), Q.even(x))))
+    {Q.even: 12, Q.odd: 2, Q.zero: 8}
+    """
+    keys = sorted(fact.atoms(AppliedPredicate), key=str)
+    combinations = sorted(tuple(model[key] for key in keys)
+                          for model in satisfiable(fact, all_models=True))
+    return {key.function: sum(1 << j for j, combination in enumerate(combinations)
+                              if combination[i])
+            for i, key in enumerate(keys)}
+
+
 @cacheit
 def get_known_facts_keys():
     """
