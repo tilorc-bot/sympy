@@ -391,6 +391,10 @@ class Pow(Expr):
                     exp = phi + Mod(exp, phi)
                     return Mod(Pow(base, exp, evaluate=False), q)
 
+    def _not_one_to_infinity(self):
+        """Whether this power is not ``1**oo`` or ``1**-oo``, which are nan."""
+        return fuzzy_or((self.exp.is_finite, fuzzy_not((self.base - 1).is_zero)))
+
     def _eval_is_even(self):
         if self.exp.is_integer and self.exp.is_positive:
             return self.base.is_even
@@ -403,7 +407,8 @@ class Pow(Expr):
             if self.exp.is_real:
                 return True
         elif self.base.is_extended_negative:
-            if self.exp.is_even:
+            if self.exp.is_even and fuzzy_or((self.base.is_finite,
+                                              self.exp.is_nonnegative)):
                 return True
             if self.exp.is_odd:
                 return False
@@ -433,11 +438,14 @@ class Pow(Expr):
                 return True
             if self.exp.is_even:
                 return False
-        elif self.base.is_extended_positive or self.base.is_zero:
+        elif self.base.is_zero:
             if self.exp.is_extended_real:
                 return False
+        elif self.base.is_extended_positive:
+            if self.exp.is_extended_real and self._not_one_to_infinity():
+                return False
         elif self.base.is_extended_nonnegative:
-            if self.exp.is_extended_nonnegative:
+            if self.exp.is_extended_nonnegative and self._not_one_to_infinity():
                 return False
         elif self.base.is_extended_nonpositive or self.base.is_extended_real:
             if self.exp.is_even:
@@ -450,7 +458,7 @@ class Pow(Expr):
             elif self.exp.is_extended_nonpositive:
                 return False
         elif self.base == S.Exp1:
-            return self.exp is S.NegativeInfinity
+            return fuzzy_and((self.exp.is_infinite, self.exp.is_extended_negative))
         elif self.base.is_zero is False:
             if self.base.is_finite and self.exp.is_finite:
                 return False
@@ -470,8 +478,9 @@ class Pow(Expr):
     def _eval_is_integer(self):
         b, e = self.args
         if b.is_rational:
-            if b.is_integer is False and e.is_positive:
-                return False  # rat**nonneg
+            if b.is_integer is False and e.is_positive and fuzzy_or(
+                    (e.is_rational, (b - 1).is_negative)):
+                return False
         if b.is_integer and e.is_integer:
             if b is S.NegativeOne:
                 return True
@@ -508,9 +517,11 @@ class Pow(Expr):
             return
         if real_b and real_e:
             if self.base.is_extended_positive:
-                return True
+                if self._not_one_to_infinity():
+                    return True
             elif self.base.is_extended_nonnegative and self.exp.is_extended_nonnegative:
-                return True
+                if self._not_one_to_infinity():
+                    return True
             elif self.exp.is_integer and self.base.is_extended_nonzero:
                 return True
             elif self.exp.is_integer and self.exp.is_nonnegative:
@@ -553,6 +564,8 @@ class Pow(Expr):
         if real_b is False and real_e: # we already know it's not imag
             if isinstance(self.exp, Rational) and self.exp.p == 1:
                 return False
+            if self.exp == 2 and self.base.is_imaginary is False:
+                return False
             from sympy.functions.elementary.complexes import arg
             i = arg(self.base)*self.exp/S.Pi
             if i.is_complex: # finite
@@ -587,7 +600,8 @@ class Pow(Expr):
                 return True
             return None
 
-        if self.exp.is_imaginary:
+        if self.exp.is_imaginary and fuzzy_and((self.base.is_finite,
+                                                fuzzy_not(self.base.is_zero))):
             from sympy.functions.elementary.exponential import log
             imlog = log(self.base).is_imaginary
             if imlog is not None:
@@ -595,11 +609,17 @@ class Pow(Expr):
 
         if self.base.is_extended_real and self.exp.is_extended_real:
             if self.base.is_positive:
-                return False
+                if self._not_one_to_infinity():
+                    return False
             else:
                 rat = self.exp.is_rational
                 if not rat:
-                    return rat
+                    if fuzzy_or((self.exp.is_finite, self.base.is_irrational,
+                                 fuzzy_and((self.base.is_integer,
+                                            fuzzy_not((self.base - 1).is_zero),
+                                            fuzzy_not((self.base + 1).is_zero))))):
+                        return rat
+                    return None
                 if self.exp.is_integer:
                     return False
                 else:
@@ -608,7 +628,7 @@ class Pow(Expr):
                         return self.base.is_negative
                     return half
 
-        if self.base.is_extended_real is False:  # we already know it's not imag
+        if self.base.is_extended_real is False and self.exp.is_extended_real:
             from sympy.functions.elementary.complexes import arg
             i = arg(self.base)*self.exp/S.Pi
             isodd = (2*i).is_odd
@@ -1249,8 +1269,6 @@ class Pow(Expr):
                     return True
                 if b == e:  # always rational, even for 0**0
                     return True
-            elif b.is_irrational:
-                return e.is_zero
         if b is S.Exp1:
             if e.is_rational and e.is_nonzero:
                 return False
@@ -1270,7 +1288,8 @@ class Pow(Expr):
                 return True
             return None
         if _is_one(self.base):
-            return True
+            if self.exp.is_finite:
+                return True
         elif self.base is S.Exp1:
             s = self.func(*self.args)
             if s.func == self.func:

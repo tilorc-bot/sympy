@@ -690,3 +690,41 @@ def test_issue_28219():
     assert Pow(S.Zero, -1, evaluate=False).as_real_imag() == (S.NaN, S.NaN)
     x = Symbol('x', real=True)
     assert Pow(x, -1, evaluate=False).as_real_imag() == (1/x, S.Zero)
+
+
+def test_assumptions_of_powers_at_values():
+    irr = Symbol('irr', irrational=True)
+    en = Symbol('en', extended_negative=True)
+    p = Symbol('p', positive=True)
+    er = Symbol('er', extended_real=True)
+    ep = Symbol('ep', extended_positive=True)
+    # sqrt(2)**2 = 2
+    assert (irr**2).is_rational is None
+    assert (irr**-2).is_irrational is None
+    # (-oo)**-2 = 0
+    assert (en**-2).is_extended_positive is None
+    assert (en**-2).is_zero is None
+    # 1**oo and (-oo)**-oo are nan
+    assert (p**er).is_extended_real is None
+    assert (p**er).is_extended_negative is None
+    assert (p**er).is_imaginary is None
+    assert (er**er).is_imaginary is None
+    ie = Symbol('ie', infinite=True, extended_real=True)
+    assert (Symbol('r', real=True)**ie).is_imaginary is None
+    assert (Symbol('ev', even=True)**ie).is_imaginary is False
+    assert (irr**ie).is_imaginary is False
+    assert Pow(1, oo, evaluate=False).is_positive is None
+    assert Pow(1, oo, evaluate=False).is_algebraic is None
+    assert (2**er).is_extended_real is True
+    # -I*exp(-pi/2)
+    assert (I**(3 + I)).is_imaginary is None
+    # E**-oo = 0
+    assert Pow(S.Exp1, x, evaluate=False).is_zero is None
+    assert Pow(S.Exp1, ep, evaluate=False).is_zero is False
+    # (3/2)**(log(2)/log(3/2)) = 2
+    assert (Rational(3, 2)**p).is_integer is None
+    assert (S.Half**p).is_integer is False
+    im = Symbol('im', imaginary=True)
+    assert ((p + im)**2).is_extended_real is False
+    # 0**I is nan
+    assert Pow(Symbol('z', zero=True), im).is_imaginary is None
