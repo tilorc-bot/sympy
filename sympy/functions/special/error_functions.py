@@ -44,6 +44,22 @@ def real_to_real_as_real_imag(self, deep=True, **hints):
     return (re, im)
 
 
+def not_real_by_evalf(self, value=None):
+    """False if *self*, a function of numbers, has a value (*value*, if
+    given, is the same written otherwise) with a clearly non-zero imaginary
+    part; None otherwise."""
+    if not all(arg.is_number for arg in self.args):
+        return None
+    value = (self if value is None else value).evalf(30)
+    if value.has(self.func):
+        return None
+    re_part, im_part = value.as_real_imag()
+    if (im_part.is_Float and (re_part.is_Float or re_part.is_zero)
+            and abs(im_part) > abs(re_part)*1e-15 + 1e-25):
+        return False
+    return None
+
+
 ###############################################################################
 ################################ ERROR FUNCTION ###############################
 ###############################################################################
@@ -578,6 +594,9 @@ class erfi(DefinedFunction):
             else:
                 return 2 * x**n/(n*factorial(k)*sqrt(pi))
 
+    def _eval_is_extended_real(self):
+        return not_real_by_evalf(self)
+
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
 
@@ -742,6 +761,10 @@ class erf2(DefinedFunction):
             return -cls(-x, -y)
         elif (sign_x or sign_y):
             return erf(y)-erf(x)
+
+    def _eval_is_extended_real(self):
+        x, y = self.args
+        return not_real_by_evalf(self, erf(y) - erf(x))
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate(), self.args[1].conjugate())
@@ -2311,6 +2334,9 @@ class FresnelIntegral(DefinedFunction):
             return self._trigfunc(S.Half*pi*self.args[0]**2)
         else:
             raise ArgumentIndexError(self, argindex)
+
+    def _eval_is_extended_real(self):
+        return not_real_by_evalf(self)
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())

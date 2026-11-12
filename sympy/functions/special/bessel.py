@@ -18,6 +18,7 @@ from sympy.functions.elementary.integers import ceiling
 from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.miscellaneous import cbrt, sqrt, root
 from sympy.functions.elementary.complexes import (Abs, re, im, polar_lift, unpolarify)
+from sympy.functions.special.error_functions import not_real_by_evalf
 from sympy.functions.special.gamma_functions import gamma, digamma, uppergamma
 from sympy.functions.special.hyper import hyper
 from sympy.polys.orthopolys import spherical_bessel_fn
@@ -1336,6 +1337,9 @@ class AiryBase(DefinedFunction):
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
+
+    def _eval_is_extended_real(self):
+        return not_real_by_evalf(self)
 
     def as_real_imag(self, deep=True, **hints):
         z = self.args[0]
