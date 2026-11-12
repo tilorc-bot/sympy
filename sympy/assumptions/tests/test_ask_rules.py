@@ -394,8 +394,14 @@ def test_min_and_max():
                          Q.positive(x) & Q.extended_real(y)) is None
     assert ask_generated(Q.extended_positive, Max(x, y),
                          Q.positive(x) & Q.extended_real(y)) is True
-    # Max(1, I) has no value
-    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is None
+    # Max and Min have a value only if every argument is extended real
+    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is True
+    assert ask_generated(Q.finite, Max(x, y), Q.finite(x) & Q.finite(y)) is True
+    assert ask_generated(Q.imaginary, Min(x, y), ~Q.imaginary(x) & ~Q.imaginary(y)
+                         ) is False
+    # Max(-1, oo) is oo
+    assert ask_generated(Q.positive, Max(x, y), Q.negative(x) & Q.infinite(y)) is False
+    assert ask_generated(Q.negative, Max(x, y), Q.negative(x) & Q.infinite(y)) is None
     assert ask_generated(Q.negative, Min(x, y), Q.negative(x) & Q.real(y)) is True
     assert ask_generated(Q.negative, Min(x, y),
                          Q.positive(x) & Q.nonnegative(y)) is False
@@ -436,6 +442,39 @@ def test_elementary_functions():
     assert ask_generated(Q.integer, exp_polar(x), Q.zero(x)) is True
     # LambertW(1, 1) is not real
     assert ask_generated(Q.real, LambertW(x), Q.positive(x)) is None
+    assert ask_generated(Q.complex, exp(x), Q.extended_negative(x)) is True
+    assert ask_generated(Q.finite, exp(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.extended_positive, exp(x),
+                         Q.extended_real(x) & ~Q.negative_infinite(x)) is True
+    assert ask_generated(Q.zero, exp(x), Q.positive_infinite(x)) is False
+    # exp(-oo) is zero
+    assert ask_generated(Q.extended_positive, exp(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.finite, exp_polar(x), Q.finite(x)) is True
+    assert ask_generated(Q.extended_real, exp_polar(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, exp_polar(x), Q.finite(x)) is False
+    assert ask_generated(Q.extended_real, log(x), ~Q.extended_real(x)) is False
+    # log(-oo) is oo
+    assert ask_generated(Q.extended_real, log(x), Q.extended_negative(x)) is None
+    assert ask_generated(Q.finite, floor(x), Q.finite(x)) is True
+    assert ask_generated(Q.infinite, ceiling(x), Q.infinite(x)) is True
+    # floor(I/2) is 0
+    assert ask_generated(Q.real, floor(x), ~Q.real(x)) is None
+    assert ask_generated(Q.finite, frac(x), Q.finite(x)) is True
+    assert ask_generated(Q.negative, frac(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, frac(x), Q.real(x) & ~Q.integer(x)) is False
+    # frac(I) is 0
+    assert ask_generated(Q.integer, frac(x), Q.imaginary(x)) is None
+    assert ask_generated(Q.integer, frac(x), Q.transcendental(x)) is False
+    assert ask_generated(Q.odd, frac(x), Q.finite(x)) is False
+    # floor(I*b) is I*floor(b)
+    assert ask_generated(Q.extended_nonzero, floor(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.extended_negative, floor(x), Q.extended_negative(x)) is True
+    assert ask_generated(Q.extended_positive, ceiling(x), Q.extended_positive(x)) is True
+    assert ask_generated(Q.irrational, floor(x)) is False
+    # log(-oo) is oo, log(0) is zoo
+    assert ask_generated(Q.positive_infinite, log(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.extended_nonpositive, log(x), Q.extended_nonpositive(x)
+                         ) is False
 
 
 def test_hyperbolic_functions():
