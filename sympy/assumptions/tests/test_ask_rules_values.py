@@ -30,6 +30,17 @@ from sympy.functions.special.bessel import (airyai, besseli, besselj, besselk,
 from sympy.functions.special.error_functions import (erf, erf2, erfc, fresnelc,
     fresnels, owens_t)
 from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
+from sympy.functions.elementary.trigonometric import (acot, asec, atan, cot, csc, sec,
+    sinc, tan)
+from sympy.functions.special.bessel import (airyai, airyaiprime, airybi,
+    airybiprime, besseli, besselj, besselk, bessely, marcumq)
+from sympy.functions.special.beta_functions import beta
+from sympy.functions.special.elliptic_integrals import elliptic_f, elliptic_k
+from sympy.functions.special.error_functions import (Shi, Si, erf, erf2, erf2inv, erfc,
+    erfi, fresnelc, fresnels, li, owens_t)
+from sympy.functions.special.gamma_functions import (gamma, loggamma, lowergamma,
+    polygamma)
+from sympy.functions.special.zeta_functions import polylog
 from sympy.functions.special.tensor_functions import KroneckerDelta
 from sympy.logic.boolalg import And
 
@@ -189,3 +200,12 @@ def test_functions_of_two_arguments():
     check(KroneckerDelta, (S.Zero, S.One, S(2), Rational(1, 2), I), (2,))
     check(atan2, PAIRS + (-oo,), (2,))
     check(atan2, (-oo,) + PAIRS[::-1], (2,))
+
+
+def test_special_functions():
+    for cls in (erfi, li, Si, Shi, elliptic_k, airybi, airyaiprime, airybiprime):
+        check(cls, COMPLEX, (1,))
+    for cls in (beta, erf2inv, polylog, elliptic_f, lowergamma):
+        check(cls, PAIRS, (2,))
+        check(cls, PAIRS[::-1], (2,))
+    check(marcumq, (S.Zero, S.One, S(2), oo), (3,))
