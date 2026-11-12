@@ -395,12 +395,6 @@ class Pow(Expr):
         if self.exp.is_integer and self.exp.is_positive:
             return self.base.is_even
 
-    def _eval_is_negative(self):
-        ext_neg = Pow._eval_is_extended_negative(self)
-        if ext_neg is True:
-            return self.is_finite
-        return ext_neg
-
     def _eval_is_extended_positive(self):
         if self.base == self.exp:
             if self.base.is_extended_nonnegative:
@@ -645,13 +639,6 @@ class Pow(Expr):
         if c1 and c2:
             if self.exp.is_nonnegative or fuzzy_not(self.base.is_zero):
                 return True
-
-    def _eval_is_prime(self):
-        '''
-        An integer raised to the n(>=2)-th power cannot be a prime.
-        '''
-        if self.base.is_integer and self.exp.is_integer and (self.exp - 1).is_positive:
-            return False
 
     def _eval_is_composite(self):
         """
