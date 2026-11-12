@@ -15,10 +15,11 @@ from sympy.assumptions.cnf import CNF
 from sympy.assumptions.number_facts import number_facts
 from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
-    ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, ANY_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
+    ALL_ARGS_BUT_AT_MOST_ONE_ARE, ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT, ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, ANY_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
     EVEN_NUMBER_OF_ARGS_ARE_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
     IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE, ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS,
-    ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
+    ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, OTHER_ARGS_BUT_AT_MOST_ONE_ARE,
+    SECOND_ARG_IS, SELF_IS,
     SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE, SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF,
     _UnaryFactsEngine, ask_by_rules)
 from sympy.assumptions.rule_preprocessing import preprocess
@@ -681,6 +682,85 @@ def test_some_even_and_odd_number_of_args():
     assert ask_each(Q.even, g, [Q.positive, Q.positive], rules) == {None}
 
 
+def test_all_args_but_at_most_one():
+    rules = {
+        (Add, Q.extended_real): [
+            (TRUE_IF, [
+                (ALL_ARGS_ARE, Q.extended_real),
+                (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.real),
+            ]),
+        ],
+        (Mul, Q.zero): [
+            (FALSE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT, Q.zero), (ALL_ARGS_ARE, Q.odd)]),
+        ],
+    }
+    R, XR = Q.real, Q.extended_real
+    assert ask_each(Q.extended_real, Add, [R, R], rules) == {True}
+    assert ask_each(Q.extended_real, Add, [XR, R], rules) == {True}
+    assert ask_each(Q.extended_real, Add, [XR, R, R, R], rules) == {True}
+    def infinite(symbol):
+        return Q.infinite(symbol) & Q.extended_real(symbol)
+
+    assert ask_each(Q.extended_real, Add, [infinite, R], rules) == {True}
+    assert ask_each(Q.extended_real, Add, [XR, XR, R], rules) == {None}
+    assert ask_each(Q.extended_real, Add, [R, R, Q.complex], rules) == {None}
+    assert ask_each(Q.zero, Mul, [Q.odd, Q.odd, Q.odd], rules) == {False}
+    assert ask_each(Q.zero, Mul, [Q.odd, Q.odd, Q.integer], rules) == {None}
+
+    class g(Function):
+        pass
+
+    # not true of anything: only the shape is tested
+    rules = {
+        (g, Q.even): [(TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)])],
+        (g, Q.odd): [
+            (TRUE_IF, [
+                (ONE_ARG_IS, Q.positive),
+                (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero),
+                (OTHER_ARGS_ARE, Q.zero),
+            ]),
+        ],
+    }
+    Z, NZ = Q.zero, is_not(Q.zero)
+    assert ask_each(Q.even, g, [Z, Z, Z], rules) == {True}
+    assert ask_each(Q.even, g, [Z, Z, NZ], rules) == {True}
+    assert ask_each(Q.even, g, [Z, Z, Q.real], rules) == {True}
+    assert ask_each(Q.even, g, [Z, NZ, NZ], rules) == {None}
+    assert ask_each(Q.even, g, [Z, NZ, Q.real], rules) == {None}
+    assert ask_each(Q.even, g, [Z, Q.real, Q.real], rules) == {None}
+    # OTHER_ARGS are the ones which ONE_ARG left
+    assert ask_each(Q.odd, g, [Q.positive, Z, Z], rules) == {True}
+    assert ask_each(Q.odd, g, [Q.positive, Z, Q.real], rules) == {None}
+    assert ask_each(Q.odd, g, [Q.positive, Z, Q.negative], rules) == {None}
+    rules = {(g, Q.odd): [(IF_AND_ONLY_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)])]}
+    assert ask_each(Q.odd, g, [Z, NZ, Q.real], rules) == {None}
+    assert ask_each(Q.odd, g, [Z, NZ, NZ], rules) == {False}
+    assert ask_each(Q.odd, g, [Z, NZ, Z], rules) == {True}
+
+
+def test_other_args_but_at_most_one():
+    class g(Function):
+        pass
+
+    # not true of anything: only the shape is tested
+    rules = {
+        (g, Q.odd): [
+            (TRUE_IF, [
+                (ONE_ARG_IS, Q.positive),
+                (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero),
+            ]),
+        ],
+    }
+    Z, P, N = Q.zero, Q.positive, Q.negative
+    assert ask_each(Q.odd, g, [P, Z, Z, Z], rules) == {True}
+    assert ask_each(Q.odd, g, [P, Z, Z, N], rules) == {True}
+    assert ask_each(Q.odd, g, [P, N], rules) == {True}
+    assert ask_each(Q.odd, g, [P, Z, N, N], rules) == {None}
+    assert ask_each(Q.odd, g, [P, P, Z], rules) == {None}
+    rules = {(g, Q.odd): [(TRUE_IF, [(OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)])]}
+    raises(ValueError, lambda: ask_by_rules(Q.odd, g(x, y), True, rules))
+
+
 def test_counting_which_needs_every_argument_decided():
     rules = {
         (Mul, Q.real): [
@@ -830,7 +910,8 @@ def test_conditions_about_the_arguments_of_an_expression_without_any():
         ONE_ARG_IS, ONE_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
         EVEN_NUMBER_OF_ARGS_ARE_NOT, ODD_NUMBER_OF_ARGS_ARE,
         ODD_NUMBER_OF_ARGS_ARE_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
-        SOME_ODD_NUMBER_OF_ARGS_ARE]
+        SOME_ODD_NUMBER_OF_ARGS_ARE, ALL_ARGS_BUT_AT_MOST_ONE_ARE,
+        ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT]
     for selector in selectors:
         for kind in (TRUE_IF, FALSE_IF, IF_AND_ONLY_IF):
             rules = {(g, Q.even): [(kind, [(selector, Q.even)])]}

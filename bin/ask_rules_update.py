@@ -45,6 +45,8 @@ SELECTOR_NAMES = {getattr(rule_engine, name): name for name in [
     'EVEN_NUMBER_OF_ARGS_ARE_NOT', 'ODD_NUMBER_OF_ARGS_ARE',
     'ODD_NUMBER_OF_ARGS_ARE_NOT', 'OTHER_ARGS_ARE', 'OTHER_ARGS_ARE_NOT',
     'SOME_EVEN_NUMBER_OF_ARGS_ARE', 'SOME_ODD_NUMBER_OF_ARGS_ARE',
+    'ALL_ARGS_BUT_AT_MOST_ONE_ARE', 'ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT',
+    'OTHER_ARGS_BUT_AT_MOST_ONE_ARE',
 ]}
 NUMBER_NAMES = {S.One: 'S.One', S.NegativeOne: 'S.NegativeOne', S.Half: 'S.Half',
                 S.ImaginaryUnit: 'S.ImaginaryUnit', S.Exp1: 'S.Exp1'}

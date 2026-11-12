@@ -7,9 +7,10 @@ from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
-from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
-    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF,
-    SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
+from sympy.assumptions.rule_engine import (ALL_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, ANY_ARG,
+    EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS,
+    OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
+    TRUE_IF, ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
@@ -40,7 +41,7 @@ from sympy.integrals.integrals import Integral
 VARYING = (Add, DefinedFunction, Max, Min, Mul)
 SOME_ARGS = (SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
-                  OTHER_ARGS) + SOME_ARGS
+                  OTHER_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, OTHER_ARGS_BUT_AT_MOST_ONE) + SOME_ARGS
 NUMBERS = (S.One, S.NegativeOne, S.Half, S.ImaginaryUnit)
 
 

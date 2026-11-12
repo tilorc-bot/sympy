@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.rule_checks import check_no_cycles
-from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG,
-    EVEN_NUMBER_OF_ARGS, FALSE_IF, FIRST_ARG_IS, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS,
-    ONE_ARG, OTHER_ARGS, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
+from sympy.assumptions.rule_engine import (ALL_ARGS, ALL_ARGS_BUT_AT_MOST_ONE,
+    ANY_ARG, EVEN_NUMBER_OF_ARGS, FALSE_IF, FIRST_ARG_IS, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS,
+    ONE_ARG, OTHER_ARGS, OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
     TRUE_IF)
 from sympy.core.power import Pow
 from sympy.core.singleton import S
@@ -17,7 +17,12 @@ if TYPE_CHECKING:
     from sympy.assumptions.rule_engine import Condition, Rule, Rules
 
 _HOW_MANY_ARGS = (ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS, OTHER_ARGS,
-                  SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS)
+                  SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
+                  OTHER_ARGS_BUT_AT_MOST_ONE)
+# about the arguments which the counting condition before them left
+_OTHER_ARGS = (OTHER_ARGS, OTHER_ARGS_BUT_AT_MOST_ONE)
+# a condition about these cannot be negated by another condition
+_NOT_FLIPPABLE = _HOW_MANY_ARGS + (ALL_ARGS_BUT_AT_MOST_ONE,)
 _FLIPPED_ARGUMENT = {ALL_ARGS: ANY_ARG, ANY_ARG: ALL_ARGS}
 
 
@@ -97,7 +102,7 @@ def _without_if_and_only_if(rule: Rule) -> list[Rule]:
     kind, conditions = rule
     if kind != IF_AND_ONLY_IF:
         return [rule]
-    if any(argument in _HOW_MANY_ARGS for (argument, _), _ in conditions):
+    if any(argument in _NOT_FLIPPABLE for (argument, _), _ in conditions):
         raise ValueError('IF_AND_ONLY_IF with a condition about how many'
                          ' arguments have a predicate is not supported')
     flipped = [((_FLIPPED_ARGUMENT.get(argument, argument), not expected), predicate)
@@ -111,7 +116,7 @@ def _groups(conditions: list[Condition]) -> list[tuple[Condition, ...]]:
     how_many = None
     for condition in conditions:
         argument = condition[0][0]
-        if argument == OTHER_ARGS and how_many is not None:
+        if argument in _OTHER_ARGS and how_many is not None:
             groups[how_many] += (condition,)
             continue
         if argument in _HOW_MANY_ARGS:
@@ -133,7 +138,7 @@ def _implies(b, a, facts):
         return True
     ((argument, w), q), ((other, v), p) = b[0], a[0]
     if (w and v and other == ALL_ARGS and argument in _HOW_MANY_ARGS
-            and argument != OTHER_ARGS):
+            and argument not in _OTHER_ARGS):
         # all arguments have p if the counted ones and the others have it
         def has_p(r):
             return r in facts and (r == p or p in facts[r][0])
