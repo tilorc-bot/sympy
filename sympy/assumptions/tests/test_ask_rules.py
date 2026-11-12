@@ -27,7 +27,7 @@ from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_s
 from sympy.functions.elementary.complexes import (Abs, adjoint, conjugate, im, re, sign,
     transpose)
 from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import (acosh, acsch, asech, asinh, atanh,
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech, asinh, atanh,
     cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
@@ -418,7 +418,9 @@ def test_hyperbolic_functions():
     assert ask_generated(Q.extended_real, asinh(x), ~Q.extended_real(x)) is False
     assert ask_generated(Q.infinite, asinh(x), Q.infinite(x)) is True
     assert ask_generated(Q.finite, acosh(x), Q.finite(x)) is True
-    assert ask_generated(Q.positive_infinite, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.infinite, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.extended_positive, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.extended_negative, asech(x)) is False
     assert ask_generated(Q.finite, asech(x), ~Q.zero(x)) is True
     assert ask_generated(Q.extended_real, acsch(x), Q.extended_nonzero(x)) is True
     assert ask_generated(Q.extended_real, acsch(x), Q.zero(x)) is False
@@ -430,6 +432,12 @@ def test_hyperbolic_functions():
     assert ask_generated(Q.imaginary, atanh(x), Q.imaginary(x)) is True
     assert ask_generated(Q.imaginary, atanh(x), Q.finite(x) & ~Q.imaginary(x)) is False
     assert ask_generated(Q.imaginary, atanh(x), Q.extended_real(x)) is None
+    # atanh(1) = oo, acoth(-1) = -oo
+    one, minus_one = atanh(S.One, evaluate=False), acoth(S.NegativeOne, evaluate=False)
+    assert ask_generated(Q.extended_positive, one) is True
+    assert ask_generated(Q.infinite, one) is True
+    assert ask_generated(Q.extended_negative, minus_one) is True
+    assert ask_generated(Q.zero, minus_one) is False
 
 
 def test_combinatorial_and_special_functions():

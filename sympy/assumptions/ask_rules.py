@@ -51,6 +51,7 @@ from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.exponential import exp_polar
 from sympy.functions.elementary.exponential import log
 from sympy.functions.elementary.hyperbolic import acosh
+from sympy.functions.elementary.hyperbolic import acoth
 from sympy.functions.elementary.hyperbolic import acsch
 from sympy.functions.elementary.hyperbolic import asech
 from sympy.functions.elementary.hyperbolic import asinh
@@ -1174,6 +1175,18 @@ RULES: Rules = {
     (acot, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.imaginary)]),
     ],
+    (acoth, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (acoth, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (acoth, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
     (acsch, Q.extended_nonzero): [
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
     ],
@@ -1213,10 +1226,16 @@ RULES: Rules = {
     (asec, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
+    (asech, Q.extended_negative): [
+        ALWAYS_FALSE,
+    ],
+    (asech, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (asech, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
-    (asech, Q.positive_infinite): [
+    (asech, Q.infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (asin, Q.negative): [
@@ -1291,9 +1310,21 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
+    (atanh, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (atanh, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
     (atanh, Q.imaginary): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.imaginary)]),
+    ],
+    (atanh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
     ],
     (atanh, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
@@ -1394,6 +1425,9 @@ RULES: Rules = {
     ],
     (coth, Q.composite): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (coth, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (coth, Q.infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
