@@ -7,7 +7,7 @@ from sympy.core.expr import Expr
 from sympy.core.exprtools import factor_terms
 from sympy.core.function import (DefinedFunction, Derivative, ArgumentIndexError,
     AppliedUndef, expand_mul, PoleError)
-from sympy.core.logic import fuzzy_not, fuzzy_or
+from sympy.core.logic import fuzzy_not
 from sympy.core.numbers import pi, I, oo
 from sympy.core.power import Pow
 from sympy.core.relational import Eq
@@ -146,18 +146,6 @@ class re(DefinedFunction):
         if self.args[0].is_algebraic:
             return True
 
-    def _eval_is_zero(self):
-        # is_imaginary implies nonzero
-        return fuzzy_or([self.args[0].is_imaginary, self.args[0].is_zero])
-
-    def _eval_is_finite(self):
-        if self.args[0].is_finite:
-            return True
-
-    def _eval_is_complex(self):
-        if self.args[0].is_finite:
-            return True
-
 
 class im(DefinedFunction):
     """
@@ -266,17 +254,6 @@ class im(DefinedFunction):
 
     def _eval_is_algebraic(self):
         if self.args[0].is_algebraic:
-            return True
-
-    def _eval_is_zero(self):
-        return self.args[0].is_extended_real
-
-    def _eval_is_finite(self):
-        if self.args[0].is_finite:
-            return True
-
-    def _eval_is_complex(self):
-        if self.args[0].is_finite:
             return True
 
 ###############################################################################
@@ -413,12 +390,6 @@ class sign(DefinedFunction):
             from sympy.functions.special.delta_functions import DiracDelta
             return 2 * Derivative(self.args[0], x, evaluate=True) \
                 * DiracDelta(-I * self.args[0])
-
-    def _eval_is_imaginary(self):
-        return self.args[0].is_imaginary
-
-    def _eval_is_integer(self):
-        return self.args[0].is_extended_real
 
     def _eval_power(self, other):
         if (
@@ -625,25 +596,6 @@ class Abs(DefinedFunction):
             unk = [a for a in abs_free_arg.free_symbols if a.is_extended_real is None]
             if not unk or not all(conj.has(conjugate(u)) for u in unk):
                 return sqrt(expand_mul(arg*conj))
-
-    def _eval_is_integer(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_integer
-
-    def _eval_is_extended_nonzero(self):
-        return fuzzy_not(self._args[0].is_zero)
-
-    def _eval_is_rational(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_rational
-
-    def _eval_is_even(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_even
-
-    def _eval_is_odd(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_odd
 
     def _eval_is_algebraic(self):
         if self.args[0].is_algebraic:
