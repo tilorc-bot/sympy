@@ -545,19 +545,10 @@ class sin(TrigonometricFunction):
             return AccumBounds(-1, 1)
         return self.func(x0) if x0.is_finite else self
 
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
-
     def _eval_is_zero(self):
         rest, pi_mult = _peeloff_pi(self.args[0])
         if rest.is_zero:
             return pi_mult.is_integer
-
-    def _eval_is_complex(self):
-        if self.args[0].is_extended_real \
-                or self.args[0].is_complex:
-            return True
 
     def _eval_derivative_n_times(self, s, n):
         if self.args[0] == s and n.is_integer and n.is_nonnegative:
@@ -925,15 +916,6 @@ class cos(TrigonometricFunction):
         if x0 in [S.Infinity, S.NegativeInfinity]:
             return AccumBounds(-1, 1)
         return self.func(x0) if x0.is_finite else self
-
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
-
-    def _eval_is_complex(self):
-        if self.args[0].is_extended_real \
-            or self.args[0].is_complex:
-            return True
 
     def _eval_is_zero(self):
         rest, pi_mult = _peeloff_pi(self.args[0])
@@ -2110,10 +2092,6 @@ class sinc(DefinedFunction):
         if rest.is_Number and pi_mult.is_integer:
             return False
 
-    def _eval_is_real(self):
-        if self.args[0].is_extended_real or self.args[0].is_imaginary:
-            return True
-
 ###############################################################################
 ########################### TRIGONOMETRIC INVERSES ############################
 ###############################################################################
@@ -2751,12 +2729,6 @@ class atan(InverseTrigonometricFunction):
         else:
             return s.is_rational
 
-    def _eval_is_positive(self):
-        return self.args[0].is_extended_positive
-
-    def _eval_is_real(self):
-        return self.args[0].is_extended_real
-
     @classmethod
     def eval(cls, arg):
         if arg.is_Number:
@@ -2968,15 +2940,6 @@ class acot(InverseTrigonometricFunction):
                 return False
         else:
             return s.is_rational
-
-    def _eval_is_positive(self):
-        return self.args[0].is_nonnegative
-
-    def _eval_is_negative(self):
-        return self.args[0].is_negative
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
 
     @classmethod
     def eval(cls, arg):
@@ -3747,9 +3710,6 @@ class atan2(InverseTrigonometricFunction):
         n = x + S.ImaginaryUnit*y
         d = x**2 + y**2
         return arg_f(n/sqrt(d)) - S.ImaginaryUnit*log(abs(n)/sqrt(abs(d)))
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real and self.args[1].is_extended_real
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate(), self.args[1].conjugate())
