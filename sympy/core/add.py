@@ -46,7 +46,7 @@ def _ca_terms(expr):
         expr.args,
         lambda x: (
             x.is_number
-            and x.is_extended_real is True
+            and x.is_real is True
             and not any(t.is_Symbol for t in x.atoms())
         ),
         binary=True,
@@ -54,6 +54,15 @@ def _ca_terms(expr):
     c = expr._new_rawargs(*num)
     a = expr._new_rawargs(*other)
     return c, a
+
+
+def _may_be_oo_minus_oo(args):
+    """Whether two of *args* may be infinite and of different signs."""
+    infinite = [a for a in args if a.is_finite is not True]
+    if len(infinite) < 2:
+        return False
+    return not (all(a.is_extended_nonnegative for a in infinite)
+                or all(a.is_extended_nonpositive for a in infinite))
 
 
 def _addsort(args):
@@ -655,8 +664,6 @@ class Add(Expr, AssocOp):
         return all(term._eval_is_algebraic_expr(syms) for term in self.args)
 
     # assumption methods
-    _eval_is_extended_real = lambda self: _fuzzy_group(
-        (a.is_extended_real for a in self.args), quick_exit=True)
     _eval_is_antihermitian = lambda self: _fuzzy_group(
         (a.is_antihermitian for a in self.args), quick_exit=True)
     _eval_is_finite = lambda self: _fuzzy_group(
@@ -669,6 +676,24 @@ class Add(Expr, AssocOp):
         (a.is_algebraic for a in self.args), quick_exit=True)
     _eval_is_commutative = lambda self: _fuzzy_group(
         a.is_commutative for a in self.args)
+
+    def _eval_is_extended_real(self):
+        not_real = None
+        for a in self.args:
+            is_real = a.is_extended_real
+            if is_real is None:
+                return
+            if is_real is False:
+                if not_real is not None:
+                    return
+                not_real = a
+        if not_real is None:
+            return
+        rest = [a for a in self.args if a is not not_real]
+        # oo + zoo and oo - oo are nan
+        if (not_real.is_finite or all(a.is_finite for a in rest)) and not (
+                _may_be_oo_minus_oo(rest)):
+            return False
 
     def _eval_is_imaginary(self):
         nz = []
@@ -817,7 +842,7 @@ class Add(Expr, AssocOp):
             unknown_sign = True
 
         if saw_INF:
-            if len(saw_INF) > 1:
+            if len(saw_INF) > 1 or _may_be_oo_minus_oo(args):
                 return
             return saw_INF.pop()
         elif unknown_sign:
@@ -910,7 +935,7 @@ class Add(Expr, AssocOp):
             unknown_sign = True
 
         if saw_INF:
-            if len(saw_INF) > 1:
+            if len(saw_INF) > 1 or _may_be_oo_minus_oo(args):
                 return
             return saw_INF.pop()
         elif unknown_sign:

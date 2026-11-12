@@ -13,7 +13,7 @@ from sympy.core.singleton import S
 from sympy.core.symbol import (Dummy, Symbol, symbols)
 from sympy.core.sympify import sympify
 from sympy.functions.combinatorial.factorials import factorial
-from sympy.functions.elementary.complexes import (im, re, sign)
+from sympy.functions.elementary.complexes import (Abs, im, re, sign)
 from sympy.functions.elementary.exponential import (exp, log)
 from sympy.functions.elementary.integers import floor
 from sympy.functions.elementary.miscellaneous import (Max, sqrt)
@@ -773,6 +773,31 @@ def test_Mul_is_negative_positive_2():
     assert (a*c).is_negative is None
 
 
+def test_Mul_is_negative_positive_infinite_factor():
+    # q and i may be oo or -oo
+    q = Symbol('q', infinite=True, extended_real=True)
+    i = Symbol('i', infinite=True)
+    p = Symbol('p', positive=True)
+    r = Symbol('r', real=True)
+    assert (-q).is_extended_negative is None
+    assert (-q).is_extended_positive is None
+    assert (p*q).is_extended_positive is None
+    assert (p*q).is_extended_negative is None
+    assert (p*i).is_extended_positive is None
+    assert (r - q).is_extended_nonnegative is None
+    # a nonpositive real times something which is not extended negative
+    x = Symbol('x')
+    assert (-sqrt(x)/2).is_extended_positive is False
+    assert (-Abs(x)).is_extended_positive is False
+    # 0*zoo is nan
+    n = Symbol('n', nonpositive=True)
+    m = Symbol('m', nonnegative=True)
+    k = Symbol('k', nonnegative=True)
+    assert (n/m).is_extended_positive is None
+    assert (n/m).is_positive is None
+    assert (k/m).is_extended_negative is None
+
+
 def test_Mul_is_nonpositive_nonnegative():
     x = Symbol('x', real=True)
 
@@ -948,6 +973,18 @@ def test_Add_is_negative_positive():
     assert z.is_zero
     z = sqrt(1 + sqrt(3)) + sqrt(3 + 3*sqrt(3)) - sqrt(10 + 6*sqrt(3))
     assert z.is_zero
+
+
+def test_Add_is_negative_positive_infinite_terms():
+    # oo - oo is nan
+    n = Symbol('n', extended_negative=True)
+    p = Symbol('p', extended_positive=True)
+    assert (n + oo).is_extended_positive is None
+    assert (n + oo).is_extended_negative is None
+    assert (p - oo).is_extended_negative is None
+    assert (p + oo).is_extended_positive is True
+    assert (n - oo).is_extended_negative is True
+    assert (n + 1).is_extended_real is True
 
 
 def test_Add_is_nonpositive_nonnegative():
@@ -1541,12 +1578,23 @@ def test_Mul_is_imaginary_real():
     assert (a*nr).is_real is False
     assert (b*nr).is_real is None
 
-    ni = Symbol('ni', imaginary=False, complex=True)  # e.g. 2 or 1 + I
+    ni = Symbol('ni', imaginary=False, complex=True)  # e.g. 0, 2 or 1 + I
     a = Symbol('a', real=True, nonzero=True)
     b = Symbol('b', real=True)
-    assert (i1*ni).is_real is False
+    assert (i1*ni).is_real is None
     assert (a*ni).is_real is None
     assert (b*ni).is_real is None
+    ni = Symbol('ni', imaginary=False, complex=True, zero=False)
+    assert (i1*ni).is_real is False
+
+    # 1/x is 0 for x = oo
+    x = Symbol('x', extended_real=True)
+    assert (i1/x).is_extended_real is None
+    assert (i1/x).is_zero is None
+    # 0*oo is nan
+    q = Symbol('q', infinite=True, extended_real=True)
+    assert (r*q).is_extended_real is None
+    assert (2*q).is_extended_real is True
 
 
 def test_Mul_hermitian_antihermitian():
@@ -2337,12 +2385,12 @@ def test_mul_zero_detection():
         e = Mul(b, z, evaluate=False)
         test(z, b, e)
 
-    # real is True
+    # real is True; 0*oo is nan
     def test(z, b, e):
-        if z.is_zero and not b.is_finite:
-            assert e.is_extended_real is None
-        else:
+        if z.is_nonzero:
             assert e.is_extended_real is True
+        else:
+            assert e.is_extended_real is None
 
     for iz, ib in product(*[[True, False, None]]*2):
         z = Dummy('z', nonzero=iz, extended_real=True)

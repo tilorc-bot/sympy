@@ -1529,12 +1529,12 @@ class Mul(Expr, AssocOp):
                 if real:  # like 3
                     return zero  # 3*(smthng like 2 + I or i) is not real
             if t_not_re_im.is_imaginary is False:  # symbolic 2 or 2 + I
-                if not real:  # like I
+                if not real and t_not_re_im.is_zero is False:  # like I
                     return zero  # I*(smthng like 2 or 2 + I) is not real
         elif zero is False:
             return real  # can't be trumped by 0
-        elif real:
-            return real  # doesn't matter what zero is
+        elif real and not _may_be_zero_times_infinite(self.args):
+            return real  # a factor 0 gives 0
 
     def _eval_is_imaginary(self):
         if all(a.is_zero is False and a.is_finite for a in self.args):
@@ -1614,15 +1614,12 @@ class Mul(Expr, AssocOp):
                 saw_NON = True
             elif t.is_extended_nonnegative:
                 saw_NON = True
-            # FIXME: is_positive/is_negative is False doesn't take account of
-            # Symbol('x', infinite=True, extended_real=True) which has
-            # e.g. is_positive is False but has uncertain sign.
-            elif t.is_positive is False:
+            elif t.is_extended_positive is False:
                 sign = -sign
                 if saw_NOT:
                     return
                 saw_NOT = True
-            elif t.is_negative is False:
+            elif t.is_extended_negative is False:
                 if saw_NOT:
                     return
                 saw_NOT = True
@@ -1631,6 +1628,9 @@ class Mul(Expr, AssocOp):
         if sign == 1 and saw_NON is False and saw_NOT is False:
             return True
         if sign < 0:
+            if (saw_NON or saw_NOT) and _may_be_zero_times_infinite(self.args):
+                # 0*oo is nan
+                return
             return False
 
     def _eval_is_extended_negative(self):
@@ -2107,6 +2107,17 @@ class Mul(Expr, AssocOp):
         return tuple(self.as_ordered_factors())
 
 mul = AssocOpDispatcher('mul')
+
+
+def _may_be_zero_times_infinite(args):
+    """Whether one of *args* may be zero and another one may be infinite."""
+    zero = [a for a in args if a.is_zero is not False]
+    if not zero:
+        return False
+    infinite = [a for a in args if a.is_finite is not True]
+    if not infinite:
+        return False
+    return len(zero) > 1 or len(infinite) > 1 or zero[0] is not infinite[0]
 
 
 def prod(a, start=1):
