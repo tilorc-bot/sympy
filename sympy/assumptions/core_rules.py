@@ -1,7 +1,7 @@
 """The rules about expressions as the first step of ``expr.is_<fact>``."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_rules_generated import RULES
@@ -41,18 +41,20 @@ class _CoreRuleEngine(_RuleEngine):
         self.rules = rules
         self.unary_facts_engine = _UnaryFactsEngine({})
         where_true = self.unary_facts_engine.where_true
-        self.predicates: dict[str, Predicate] = {
-            fact: predicate for fact in _assume_defined
-            if (predicate := getattr(Q, fact, None)) in where_true}
+        self.predicates: dict[str, Predicate] = {}
+        for fact in _assume_defined:
+            predicate = getattr(Q, fact, None)
+            if predicate is not None and predicate in where_true:
+                self.predicates[fact] = predicate
         self.attributes: dict[Predicate | Basic, str] = {
             predicate: 'is_' + fact for fact, predicate in self.predicates.items()}
         self.attributes[Q.hermitian] = 'is_hermitian'
         self.attributes[Q.antihermitian] = 'is_antihermitian'
-        self.handlers = {predicate: '_eval_is_' + fact
-                         for fact, predicate in self.predicates.items()}
+        self.handlers: dict[Predicate | Basic, str] = {
+            predicate: '_eval_is_' + fact for fact, predicate in self.predicates.items()}
         self.class_rules: dict[tuple[type, Predicate | Basic], tuple[Rule, ...]] = {}
 
-    def ask(self, fact: str, obj: Basic) -> bool | None:
+    def ask(self, fact: str, obj: Any) -> bool | None:
         """``obj.is_<fact>`` from the facts of a number and from the rules."""
         predicate = self.predicates.get(fact)
         if predicate is None:
@@ -78,7 +80,8 @@ class _CoreRuleEngine(_RuleEngine):
     def _decided(self, facts: Facts) -> Iterator[tuple[str, bool]]:
         """Every fact of the old assumptions which *facts* decide."""
         where_true = self.unary_facts_engine.where_true
-        possible = self.unary_facts_engine._possible(facts)
+        known: list[tuple[Predicate | Basic, bool]] = list(facts)
+        possible = self.unary_facts_engine._possible(known)
         for fact, predicate in self.predicates.items():
             common = possible & where_true[predicate]
             if common == possible:
