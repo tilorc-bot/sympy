@@ -13,27 +13,29 @@ from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARG
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
-from sympy.core.function import Function
+from sympy.core.function import DefinedFunction, Function
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import I, pi
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
-from sympy.functions.combinatorial.factorials import (binomial, factorial, factorial2,
-    subfactorial)
-from sympy.functions.combinatorial.numbers import catalan, legendre_symbol, totient
-from sympy.functions.elementary.complexes import Abs, im, re, sign
+from sympy.functions.combinatorial.factorials import (FallingFactorial, binomial,
+    factorial, factorial2, subfactorial)
+from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_symbol,
+    totient)
+from sympy.functions.elementary.complexes import (Abs, adjoint, conjugate, im, re, sign,
+    transpose)
 from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
 from sympy.functions.elementary.hyperbolic import cosh, sech, sinh, tanh
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
-    cos, cot, sec, sin, tan)
-from sympy.functions.special.error_functions import erf
-from sympy.functions.special.gamma_functions import gamma, loggamma
+    cos, cot, csc, sec, sin, sinc, tan)
+from sympy.functions.special.error_functions import erf, erf2, erfc, erfcinv, erfi
+from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
 
-VARYING = (Add, Max, Min, Mul)
+VARYING = (Add, DefinedFunction, Max, Min, Mul)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
                   OTHER_ARGS)
 NUMBERS = (S.One, S.NegativeOne, S.Half, S.ImaginaryUnit)
@@ -195,6 +197,19 @@ def test_sums_and_products():
     assert ask_generated(Q.composite, x*y, Q.prime(x) & Q.prime(y)) is True
     assert ask_generated(Q.prime, x*y*z,
                          Q.integer(x) & Q.composite(y) & Q.integer(z)) is False
+    assert ask_generated(Q.zero, log(x + y), Q.eq(x, 1) & Q.zero(y)) is True
+    assert ask_generated(Q.zero, log(x + y), Q.eq(x, 1)) is None
+    assert ask_generated(Q.extended_positive, x + y,
+                         Q.negative_infinite(x) & Q.finite(y)) is False
+    assert ask_generated(Q.extended_negative, x + y,
+                         Q.positive_infinite(x) & Q.finite(y)) is False
+    # oo + I is not extended real
+    assert ask_generated(Q.extended_positive, x + y,
+                         Q.positive_infinite(x) & Q.finite(y)) is None
+    assert ask_generated(Q.infinite, x*y, Q.infinite(x) & Q.finite(y) & ~Q.zero(y)
+                         ) is True
+    assert ask_generated(Q.infinite, x*y*z, Q.finite(x) & ~Q.zero(x) & Q.infinite(y)
+                         & Q.infinite(z)) is True
 
 
 def test_signs_of_products_and_powers():
@@ -277,6 +292,11 @@ def test_elementary_functions():
     assert ask_generated(Q.positive, ceiling(x), Q.positive(x)) is True
     assert ask_generated(Q.zero, frac(x), Q.integer(x)) is True
     assert ask_generated(Q.nonnegative, Mod(x, y), Q.integer(x) & Q.positive(y)) is True
+    assert ask_generated(Q.infinite, csc(x), Q.zero(x)) is True
+    assert ask_generated(Q.positive, sinc(x), Q.zero(x)) is True
+    assert ask_generated(Q.integer, exp_polar(x), Q.zero(x)) is True
+    # LambertW(1, 1) is not real
+    assert ask_generated(Q.real, LambertW(x), Q.positive(x)) is None
 
 
 def test_combinatorial_and_special_functions():
@@ -300,6 +320,56 @@ def test_combinatorial_and_special_functions():
     assert ask_generated(Q.real, gamma(x), Q.integer(x) & Q.nonpositive(x)) is False
     assert ask_generated(Q.real, loggamma(x), Q.negative(x)) is False
     assert ask_generated(Q.positive, erf(x), Q.extended_positive(x)) is True
+    assert ask_generated(Q.nonnegative, binomial(x, y), Q.integer(x) & Q.even(y)) is True
+    assert ask_generated(Q.nonnegative, binomial(x, y), Q.integer(x) & Q.integer(y)
+                         & Q.negative(y)) is True
+    assert ask_generated(Q.nonnegative, binomial(x, y), Q.integer(x) & Q.negative(x)
+                         & Q.odd(y) & Q.positive(y)) is False
+    # binomial(1/2, 1/2) is 1
+    assert ask_generated(Q.integer, binomial(x, y), ~Q.integer(y)) is None
+    # FallingFactorial(pi, 0) is 1
+    assert ask_generated(Q.integer, FallingFactorial(x, y), Q.irrational(x)
+                         & Q.integer(y) & Q.nonnegative(y)) is None
+    assert ask_generated(Q.zero, genocchi(x), Q.zero(x)) is True
+    assert ask_generated(Q.odd, genocchi(x), Q.zero(x)) is False
+    assert ask_generated(Q.real, polygamma(x, y), Q.positive(x) & Q.positive(y)) is True
+    assert ask_generated(Q.zero, erf(x), Q.zero(x)) is True
+    assert ask_generated(Q.real, erf(x), Q.imaginary(x)) is False
+    # erf has zeros which are not real
+    assert ask_generated(Q.zero, erf(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.real, erfi(x), Q.zero(x)) is True
+    assert ask_generated(Q.real, erfi(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.zero, erfc(x), Q.zero(x)) is False
+    assert ask_generated(Q.real, erfc(x), Q.imaginary(x)) is False
+    # erfc(oo) is zero
+    assert ask_generated(Q.positive, erfc(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.infinite, erfcinv(x), Q.zero(x)) is True
+    assert ask_generated(Q.zero, erf2(x, y), Q.zero(x) & Q.zero(y)) is True
+
+
+def test_commutative():
+    c = Symbol('c', commutative=False)
+    f = Function('f')
+    assert ask_generated(Q.commutative, x) is True
+    assert ask_generated(Q.commutative, x, ~Q.commutative(x)) is False
+    assert ask_generated(Q.commutative, c) is False
+    assert ask_generated(Q.commutative, S.NaN) is True
+    assert ask_generated(Q.commutative, x + y) is True
+    assert ask_generated(Q.commutative, x*y) is True
+    assert ask_generated(Q.commutative, x**y) is True
+    assert ask_generated(Q.commutative, log(x)) is True
+    assert ask_generated(Q.commutative, log(c)) is False
+    assert ask_generated(Q.complex, log(c)) is False
+    assert ask_generated(Q.commutative, conjugate(c)) is False
+    assert ask_generated(Q.commutative, transpose(c)) is False
+    assert ask_generated(Q.commutative, adjoint(c)) is False
+    # x may be zero or nan
+    assert ask_generated(Q.commutative, x*c) is None
+    assert ask_generated(Q.commutative, x + c) is None
+    # exp(2*pi*I*c) is 1 if c is a projection
+    assert ask_generated(Q.commutative, exp(c)) is None
+    # Function('f', commutative=False)(x) is not commutative
+    assert ask_generated(Q.commutative, f(x)) is None
 
 
 def test_wrong_answers_of_ask():

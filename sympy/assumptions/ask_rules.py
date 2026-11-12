@@ -11,11 +11,14 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, TRUE_IF)
 from sympy.core.add import Add
 from sympy.core.expr import Expr
+from sympy.core.function import DefinedFunction
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import I
+from sympy.core.numbers import NaN
 from sympy.core.power import Pow
 from sympy.core.singleton import S
+from sympy.core.symbol import Symbol
 from sympy.functions.combinatorial.factorials import FallingFactorial
 from sympy.functions.combinatorial.factorials import RisingFactorial
 from sympy.functions.combinatorial.factorials import binomial
@@ -24,6 +27,7 @@ from sympy.functions.combinatorial.factorials import factorial2
 from sympy.functions.combinatorial.factorials import subfactorial
 from sympy.functions.combinatorial.numbers import andre
 from sympy.functions.combinatorial.numbers import catalan
+from sympy.functions.combinatorial.numbers import genocchi
 from sympy.functions.combinatorial.numbers import jacobi_symbol
 from sympy.functions.combinatorial.numbers import kronecker_symbol
 from sympy.functions.combinatorial.numbers import legendre_symbol
@@ -35,9 +39,12 @@ from sympy.functions.combinatorial.numbers import primepi
 from sympy.functions.combinatorial.numbers import reduced_totient
 from sympy.functions.combinatorial.numbers import totient
 from sympy.functions.elementary.complexes import Abs
+from sympy.functions.elementary.complexes import adjoint
+from sympy.functions.elementary.complexes import conjugate
 from sympy.functions.elementary.complexes import im
 from sympy.functions.elementary.complexes import re
 from sympy.functions.elementary.complexes import sign
+from sympy.functions.elementary.complexes import transpose
 from sympy.functions.elementary.exponential import LambertW
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.exponential import exp_polar
@@ -74,11 +81,14 @@ from sympy.functions.special.bessel import bessely
 from sympy.functions.special.error_functions import erf
 from sympy.functions.special.error_functions import erf2
 from sympy.functions.special.error_functions import erfc
+from sympy.functions.special.error_functions import erfcinv
+from sympy.functions.special.error_functions import erfi
 from sympy.functions.special.error_functions import fresnelc
 from sympy.functions.special.error_functions import fresnels
 from sympy.functions.special.error_functions import owens_t
 from sympy.functions.special.gamma_functions import gamma
 from sympy.functions.special.gamma_functions import loggamma
+from sympy.functions.special.gamma_functions import polygamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
 
 if TYPE_CHECKING:
@@ -152,6 +162,7 @@ RULES: Rules = {
             (ALL_ARGS_ARE, Q.extended_nonpositive),
             (ANY_ARG_IS, Q.extended_negative),
         ]),
+        (FALSE_IF, [(ONE_ARG_IS, Q.positive_infinite), (OTHER_ARGS_ARE, Q.finite)]),
     ],
     (Add, Q.extended_nonnegative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonnegative)]),
@@ -164,6 +175,7 @@ RULES: Rules = {
             (ALL_ARGS_ARE, Q.extended_nonnegative),
             (ANY_ARG_IS, Q.extended_positive),
         ]),
+        (FALSE_IF, [(ONE_ARG_IS, Q.negative_infinite), (OTHER_ARGS_ARE, Q.finite)]),
     ],
     (Add, Q.extended_real): [
         (TRUE_IF, [
@@ -246,6 +258,12 @@ RULES: Rules = {
     ],
     (Add, Q.zero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.zero)]),
+    ],
+    (Add, S.One): [
+        (TRUE_IF, [(ONE_ARG_IS, S.One), (OTHER_ARGS_ARE, Q.zero)]),
+    ],
+    (DefinedFunction, Q.commutative): [
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
     ],
     (Expr, S.NegativeOne): [
         (FALSE_IF, [(SELF_IS_NOT, Q.negative)]),
@@ -676,8 +694,13 @@ RULES: Rules = {
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
         (TRUE_IF, [
             (ONE_ARG_IS, Q.infinite),
-            (OTHER_ARGS_ARE, Q.complex),
+            (OTHER_ARGS_ARE, Q.finite),
             (OTHER_ARGS_ARE_NOT, Q.zero),
+        ]),
+        (TRUE_IF, [
+            (ONE_ARG_IS, Q.finite),
+            (OTHER_ARGS_ARE, Q.infinite),
+            (ALL_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.integer): [
@@ -767,6 +790,9 @@ RULES: Rules = {
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ANY_ARG_IS, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.zero)]),
     ],
+    (NaN, Q.commutative): [
+        ALWAYS_TRUE,
+    ],
     (Pow, Q.algebraic): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.algebraic),
@@ -795,6 +821,9 @@ RULES: Rules = {
             (SECOND_ARG_IS_NOT, Q.negative),
             (SECOND_ARG_IS, Q.odd),
         ]),
+    ],
+    (Pow, Q.commutative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.commutative), (SECOND_ARG_IS, Q.commutative)]),
     ],
     (Pow, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (SECOND_ARG_IS, Q.positive)]),
@@ -1056,6 +1085,9 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.nonnegative),
         ]),
     ],
+    (Symbol, Q.commutative): [
+        ALWAYS_TRUE,
+    ],
     (acos, Q.negative): [
         ALWAYS_FALSE,
     ],
@@ -1088,6 +1120,9 @@ RULES: Rules = {
     ],
     (acot, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.imaginary)]),
+    ],
+    (adjoint, Q.commutative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (airyai, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
@@ -1186,6 +1221,18 @@ RULES: Rules = {
             (FIRST_ARG_IS, Q.nonnegative),
             (SECOND_ARG_IS, Q.integer),
         ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.even)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.negative),
+            (SECOND_ARG_IS, Q.odd),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
     ],
     (catalan, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
@@ -1201,6 +1248,9 @@ RULES: Rules = {
     ],
     (ceiling, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
+    ],
+    (conjugate, Q.commutative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (cos, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
@@ -1247,6 +1297,9 @@ RULES: Rules = {
     (coth, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
     ],
+    (csc, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (csc, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
@@ -1259,6 +1312,9 @@ RULES: Rules = {
     (csch, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
     ],
+    (erf, Q.imaginary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
     (erf, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
     ],
@@ -1268,11 +1324,30 @@ RULES: Rules = {
     (erf, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
+    (erf, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (erf2, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.extended_real)]),
     ],
+    (erf2, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.zero)]),
+    ],
+    (erfc, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
     (erfc, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (erfcinv, Q.positive_infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (erfi, Q.imaginary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (erfi, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (exp, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
@@ -1301,6 +1376,9 @@ RULES: Rules = {
     (exp, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (exp_polar, Q.integer): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (exp_polar, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
@@ -1359,6 +1437,9 @@ RULES: Rules = {
     (gamma, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real), (FIRST_ARG_IS_NOT, Q.integer)]),
     ],
+    (genocchi, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (im, Q.even): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
@@ -1404,6 +1485,9 @@ RULES: Rules = {
     ],
     (log, Q.algebraic): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, S.One)]),
+    ],
+    (log, Q.commutative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (log, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.zero)]),
@@ -1466,6 +1550,9 @@ RULES: Rules = {
     ],
     (partition, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
+    ],
+    (polygamma, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.positive)]),
     ],
     (primenu, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
@@ -1573,6 +1660,9 @@ RULES: Rules = {
     (sin, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
+    (sinc, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (sinc, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
@@ -1636,5 +1726,8 @@ RULES: Rules = {
     ],
     (totient, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
+    ],
+    (transpose, Q.commutative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
 }

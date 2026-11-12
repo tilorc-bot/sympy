@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from itertools import combinations_with_replacement
 
-from sympy.assumptions.ask import ask
+from sympy.assumptions.ask import Q, ask
 from sympy.assumptions.ask_rules_generated import RULES
+from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_engine import ask_by_rules
 from sympy.core.add import Add
 from sympy.core.mod import Mod
@@ -14,8 +15,8 @@ from sympy.core.singleton import S
 from sympy.core.symbol import symbols
 from sympy.functions.combinatorial.factorials import (FallingFactorial,
     RisingFactorial, binomial, factorial, factorial2, subfactorial)
-from sympy.functions.combinatorial.numbers import (andre, catalan, mobius, partition,
-    primenu, primeomega, primepi, reduced_totient, totient)
+from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi, mobius,
+    partition, primenu, primeomega, primepi, reduced_totient, totient)
 from sympy.functions.elementary.complexes import Abs, re, sign
 from sympy.functions.elementary.exponential import LambertW, exp_polar, log
 from sympy.functions.elementary.hyperbolic import (asinh, cosh, coth, csch, sech, sinh,
@@ -28,7 +29,7 @@ from sympy.functions.special.bessel import (airyai, besseli, besselj, besselk,
     bessely)
 from sympy.functions.special.error_functions import (erf, erf2, erfc, fresnelc,
     fresnels, owens_t)
-from sympy.functions.special.gamma_functions import gamma, loggamma
+from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
 from sympy.logic.boolalg import And
 
@@ -52,8 +53,17 @@ _truth: dict = {}
 def truth(predicate, value):
     key = (predicate, value)
     if key not in _truth:
-        _truth[key] = ask(predicate(value))
+        if isinstance(predicate, Predicate):
+            _truth[key] = ask(predicate(value))
+        else:
+            _truth[key] = value == predicate
     return _truth[key]
+
+
+def literal(predicate, symbol, is_true):
+    if isinstance(predicate, Predicate):
+        return predicate(symbol) if is_true else ~predicate(symbol)
+    return Q.eq(symbol, predicate) if is_true else Q.ne(symbol, predicate)
 
 
 def check(cls, pool, sizes):
@@ -66,7 +76,7 @@ def check(cls, pool, sizes):
                 for predicate in predicates:
                     t = truth(predicate, value)
                     if t is not None:
-                        known.append(predicate(symbol) if t else ~predicate(symbol))
+                        known.append(literal(predicate, symbol, t))
             assumptions = And(*known)
             result = cls(*values)
             for predicate in predicates:
@@ -106,15 +116,17 @@ def test_minimum_and_maximum():
 def test_functions_of_one_argument():
     for cls in (Abs, re, sign, exp_polar, sinh, cosh, tanh, coth, sech, csch, asinh,
                 floor, ceiling, frac, cot, tan, sec, csc, sinc, LambertW, factorial,
-                gamma, loggamma, erf, erfc, fresnels, fresnelc, airyai):
+                gamma, loggamma, erf, fresnels, fresnelc, airyai):
         check(cls, COMPLEX, (1,))
+    # ask raises AttributeError for erfc(-I)
+    check(erfc, EXTENDED_REAL + (zoo, nan, I, 2*I), (1,))
     for cls in (atan, acot, asec):
         check(cls, EXTENDED_REAL + (zoo, nan), (1,))
     check(log, EXTENDED_REAL[:5] + EXTENDED_REAL[6:] + (zoo, nan, I, -I), (1,))
 
 
 def test_functions_of_integers():
-    for cls in (factorial2, subfactorial, catalan, andre, partition, primepi):
+    for cls in (factorial2, subfactorial, catalan, andre, partition, primepi, genocchi):
         check(cls, INTEGERS, (1,))
     for cls in (mobius, totient, reduced_totient, primenu, primeomega):
         check(cls, POSITIVE_INTEGERS, (1,))
@@ -122,7 +134,7 @@ def test_functions_of_integers():
 
 def test_functions_of_two_arguments():
     for cls in (binomial, RisingFactorial, FallingFactorial, besselj, besseli, besselk,
-                bessely, owens_t):
+                bessely, owens_t, polygamma):
         check(cls, PAIRS, (2,))
         check(cls, PAIRS[::-1], (2,))
     check(Mod, PAIRS[1:], (2,))
