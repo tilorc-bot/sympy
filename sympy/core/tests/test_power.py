@@ -728,3 +728,20 @@ def test_assumptions_of_powers_at_values():
     assert ((p + im)**2).is_extended_real is False
     # 0**I is nan
     assert Pow(Symbol('z', zero=True), im).is_imaginary is None
+
+
+def test_parity_of_powers():
+    irr = Symbol('irr', irrational=True)
+    im = Symbol('im', imaginary=True)
+    n = Symbol('n', integer=True, positive=True)
+    # sqrt(2)**2 = 2, (2*I)**2 = -4, I**2 = -1
+    assert (irr**2).is_even is None
+    assert (im**2).is_even is None
+    assert (im**2).is_odd is None
+    assert (I**n).is_odd is None
+    assert (I**n).is_even is False
+    assert (pi**n).is_even is False
+    assert (S(3)**n).is_even is False
+    assert (S(2)**n).is_odd is False
+    p = Symbol('p', positive=True)
+    assert ((p + im)**2).is_even is False

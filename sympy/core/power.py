@@ -395,10 +395,6 @@ class Pow(Expr):
         """Whether this power is not ``1**oo`` or ``1**-oo``, which are nan."""
         return fuzzy_or((self.exp.is_finite, fuzzy_not((self.base - 1).is_zero)))
 
-    def _eval_is_even(self):
-        if self.exp.is_integer and self.exp.is_positive:
-            return self.base.is_even
-
     def _eval_is_extended_positive(self):
         if self.base == self.exp:
             if self.base.is_extended_nonnegative:
@@ -572,12 +568,8 @@ class Pow(Expr):
                 return i.is_integer
 
     def _eval_is_complex(self):
-
         if self.base == S.Exp1:
             return fuzzy_or([self.exp.is_complex, self.exp.is_extended_negative])
-
-        if all(a.is_complex for a in self.args) and self._eval_is_finite():
-            return True
 
     def _eval_is_imaginary(self):
         if self.base.is_commutative is False:
@@ -634,31 +626,6 @@ class Pow(Expr):
             isodd = (2*i).is_odd
             if isodd is not None:
                 return isodd
-
-    def _eval_is_odd(self):
-        if self.exp.is_integer:
-            if self.exp.is_positive:
-                return self.base.is_odd
-            elif self.exp.is_nonnegative and self.base.is_odd:
-                return True
-            elif self.base is S.NegativeOne:
-                return True
-
-    def _eval_is_finite(self):
-        if self.exp.is_negative:
-            if self.base.is_zero:
-                return False
-            if self.base.is_infinite or self.base.is_nonzero:
-                return True
-        c1 = self.base.is_finite
-        if c1 is None:
-            return
-        c2 = self.exp.is_finite
-        if c2 is None:
-            return
-        if c1 and c2:
-            if self.exp.is_nonnegative or fuzzy_not(self.base.is_zero):
-                return True
 
     def _eval_is_composite(self):
         """
