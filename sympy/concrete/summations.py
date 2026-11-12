@@ -208,15 +208,26 @@ class Sum(AddWithLimits, ExprWithIntLimits):
     def _eval_is_extended_real(self):
         if self.has_empty_sequence:
             return True
-        return self.function.is_extended_real
+        f = self.function
+        if f.is_extended_real and (f.is_finite or f.is_extended_nonnegative
+                                   or f.is_extended_nonpositive):
+            return True
 
     def _eval_is_positive(self):
         if self.has_finite_limits and self.has_reversed_limits is False:
-            return self.function.is_positive
+            f = self.function
+            if f.is_positive:
+                return True
+            if f.is_extended_nonpositive or (f.is_extended_positive and f.is_infinite):
+                return False
 
     def _eval_is_negative(self):
         if self.has_finite_limits and self.has_reversed_limits is False:
-            return self.function.is_negative
+            f = self.function
+            if f.is_negative:
+                return True
+            if f.is_extended_nonnegative or (f.is_extended_negative and f.is_infinite):
+                return False
 
     def _eval_is_finite(self):
         if self.has_finite_limits and self.function.is_finite:

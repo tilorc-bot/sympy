@@ -75,10 +75,10 @@ class expm1(Function):
             return exp_arg - S.One
 
     def _eval_is_real(self):
-        return self.args[0].is_real
+        return exp(self.args[0]).is_real
 
     def _eval_is_finite(self):
-        return self.args[0].is_finite
+        return exp(self.args[0]).is_finite
 
 
 def _log1p(x):
@@ -146,12 +146,15 @@ class log1p(Function):
             return log(Rational(arg) + S.One)
 
     def _eval_is_real(self):
-        return (self.args[0] + S.One).is_nonnegative
+        return (self.args[0] + S.One).is_positive
 
     def _eval_is_finite(self):
         if (self.args[0] + S.One).is_zero:
             return False
-        return self.args[0].is_finite
+        if self.args[0].is_finite is False:
+            return False
+        if (self.args[0] + S.One).is_zero is False:
+            return self.args[0].is_finite
 
     def _eval_is_positive(self):
         return self.args[0].is_positive

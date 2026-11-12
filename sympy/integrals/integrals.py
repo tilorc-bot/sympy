@@ -337,7 +337,21 @@ class Integral(AddWithLimits):
             # add in the new symbols
             for i in xab[1:]:
                 free.update(i.free_symbols)
-        if self.function.is_zero is False and got_none is False:
+        variables = set(self.variables)
+        if got_none or any(i.free_symbols & variables
+                           for xab in self.limits for i in xab[1:]):
+            return None
+        f = self.function
+        if f.free_symbols & variables:
+            # the integral of a function of one sign over limits which
+            # differ is not zero
+            if all(len(xab) == 3 for xab in self.limits) and (
+                    f.is_extended_positive or f.is_extended_negative):
+                return False
+        # a constant times the lengths of the intervals, or the variable of
+        # an indefinite integral
+        elif f.is_zero is False and all(
+                xab[0].is_zero is False for xab in self.limits if len(xab) == 1):
             return False
 
     def transform(self, x, u):

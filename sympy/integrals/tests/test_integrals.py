@@ -1130,6 +1130,13 @@ def test_is_zero():
     # this is zero but is beyond the scope of what is_zero
     # should be doing
     assert Integral(sin(x), (x, 0, 2*pi)).is_zero is None
+    assert Integral(exp(I*x), (x, 0, 2*pi)).is_zero is None
+    n = Symbol('n', nonzero=True)
+    assert Integral(1, (x, 0, n), (n, -1, 1)).is_zero is None
+    assert Integral(n, (x, 0, 1)).is_zero is False
+    # Integral(1, x) is x
+    assert Integral(1, x).is_zero is None
+    assert Integral(1, Symbol('p', positive=True)).is_zero is False
 
 
 def test_series():

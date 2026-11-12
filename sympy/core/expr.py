@@ -941,7 +941,8 @@ class Expr(Basic, EvalfMixin):
             if r._prec != 1 and i._prec != 1:
                 return bool(not i and ((r > 0) if positive else (r < 0)))
             elif r._prec == 1 and (not i or i._prec == 1) and \
-                    self._eval_is_algebraic() and not self.has(Function):
+                    not self.has(Function) and \
+                    all(a.is_algebraic for a in self.atoms()):
                 try:
                     if minimal_polynomial(self).is_Symbol:
                         return False
