@@ -679,6 +679,10 @@ def test_lambertw():
     assert LambertW(-1/E - r**2, -1).is_extended_real is None
     assert LambertW(-1/E - r**2).is_extended_real is None
     assert LambertW(-1/E - p).is_extended_real is False
+    assert LambertW(r, 1).is_real is False
+    assert LambertW(Symbol('nn', nonnegative=True), -1).is_real is False
+    assert LambertW(n, -1).is_positive is False
+    assert LambertW(x, 2).is_extended_nonnegative is False
 
 
 def test_issue_5673():

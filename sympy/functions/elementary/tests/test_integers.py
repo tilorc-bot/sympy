@@ -193,6 +193,11 @@ def test_floor():
     assert floor(np).is_negative is None
     assert floor(np).is_nonnegative is None
 
+    assert floor(i).is_extended_nonzero is False
+    assert floor(i).is_noninteger is False
+    assert floor(I*pi/2, evaluate=False).is_real is False
+    assert floor(I/2, evaluate=False).is_real is True
+
     assert (floor(7, evaluate=False) >= 7) == True
     assert (floor(7, evaluate=False) > 7) == False
     assert (floor(7, evaluate=False) <= 7) == True
@@ -394,6 +399,8 @@ def test_ceiling():
     assert ceiling(np).is_positive == False
     assert ceiling(np).is_nonpositive == True
 
+    assert ceiling(1 + I, evaluate=False).is_integer is False
+
     assert (ceiling(7, evaluate=False) >= 7) == True
     assert (ceiling(7, evaluate=False) > 7) == False
     assert (ceiling(7, evaluate=False) <= 7) == True
@@ -576,6 +583,10 @@ def test_frac():
 
     assert frac(oo).is_finite
     assert frac(oo).is_real
+
+    assert frac(i).is_extended_nonzero is False
+    assert frac(i).is_noninteger is False
+    assert frac(I*pi, evaluate=False).is_real is False
 
 
 def test_series():

@@ -84,6 +84,15 @@ class RoundFunction(DefinedFunction):
     def _eval_number(cls, arg):
         raise NotImplementedError()
 
+    def _eval_is_extended_real(self):
+        value = self.func(*self.args)
+        if value.func != self.func:
+            return value.is_extended_real
+
+    def _eval_is_noninteger(self):
+        if self.args[0].is_finite:
+            return False
+
     def _eval_is_finite(self):
         return self.args[0].is_finite
 
@@ -579,6 +588,16 @@ class frac(DefinedFunction):
 
     def _eval_rewrite_as_ceiling(self, arg, **kwargs):
         return arg + ceiling(-arg)
+
+    def _eval_is_noninteger(self):
+        # frac(I*b) is I*frac(b)
+        if self.args[0].is_imaginary:
+            return False
+
+    def _eval_is_extended_real(self):
+        value = self.func(*self.args)
+        if value.func != self.func:
+            return value.is_extended_real
 
     def _eval_is_finite(self):
         return True

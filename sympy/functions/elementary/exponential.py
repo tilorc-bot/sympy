@@ -1219,6 +1219,22 @@ class LambertW(DefinedFunction):
             if fuzzy_and([x.is_extended_real, fuzzy_not(x.is_zero)]):
                 return False
 
+    def _eval_is_extended_nonnegative(self):
+        # only the branch 0 has values in [0, oo]
+        if len(self.args) == 2 and fuzzy_not(self.args[1].is_zero):
+            return False
+
+    def _eval_is_real(self):
+        # LambertW(0, k) is -oo for k != 0
+        if len(self.args) == 1 or not fuzzy_not(self.args[1].is_zero):
+            return None
+        x, k = self.args
+        if (k + 1).is_zero:
+            if x.is_nonnegative or (x + 1/S.Exp1).is_negative:
+                return False
+        elif fuzzy_not((k + 1).is_zero) and x.is_extended_real:
+            return False
+
     def _eval_is_finite(self):
         x = self.args[0]
         if len(self.args) == 1:
