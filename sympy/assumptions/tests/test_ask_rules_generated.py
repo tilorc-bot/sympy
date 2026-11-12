@@ -5,14 +5,16 @@ from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_rules import RULES
 from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.rule_checks import check_no_cycles
-from sympy.assumptions.rule_closing import close_rules, remove_implied_rules
+from sympy.assumptions.rule_closing import (close_rules, exp_rules_for_powers,
+    remove_implied_rules)
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ANY_ARG_IS, ANY_ARG_IS_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
-    IF_AND_ONLY_IF, ONE_ARG_IS, OTHER_ARGS_ARE, SECOND_ARG_IS, SELF_IS, TRUE_IF,
-    ask_by_rules)
+    IF_AND_ONLY_IF, ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE, SECOND_ARG_IS, SELF_IS,
+    TRUE_IF, ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import Abs, im, re, sign
 from sympy.functions.elementary.exponential import exp
@@ -22,7 +24,8 @@ from sympy.testing.pytest import raises
 
 
 def test_generated_rules_are_up_to_date():
-    assert GENERATED_RULES == remove_implied_rules(close_rules(RULES))
+    assert GENERATED_RULES == exp_rules_for_powers(
+        remove_implied_rules(close_rules(RULES)))
 
 
 def test_no_cycles():
@@ -139,6 +142,31 @@ def test_remove_implied_rules_conditions_about_how_many_arguments():
                             (OTHER_ARGS_ARE, Q.real)])
     assert remove(with_first, one_positive_others_real) == [
         one_positive_others_real]
+    all_real = (TRUE_IF, [(ALL_ARGS_ARE, Q.real)])
+    assert remove(one_positive_others_real, all_real) == [all_real]
+    # nothing is said of the other arguments
+    assert remove(one_positive, all_real) == [one_positive, all_real]
+    one_not_positive_others_real = (TRUE_IF, [(ONE_ARG_IS_NOT, Q.positive),
+                                              (OTHER_ARGS_ARE, Q.real)])
+    assert remove(one_not_positive_others_real, all_real) == [
+        one_not_positive_others_real, all_real]
+
+
+def test_exp_rules_for_powers():
+    rules = {
+        (exp, Q.positive): [(TRUE_IF, [(FIRST_ARG_IS, Q.real)])],
+        (exp, Q.zero): [(FALSE_IF, [(SELF_IS, Q.positive)])],
+        (Pow, Q.positive): [(TRUE_IF, [(FIRST_ARG_IS, Q.positive)])],
+    }
+    assert exp_rules_for_powers(rules) == {
+        (exp, Q.positive): [(TRUE_IF, [(FIRST_ARG_IS, Q.real)])],
+        (exp, Q.zero): [(FALSE_IF, [(SELF_IS, Q.positive)])],
+        (Pow, Q.positive): [
+            (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
+            (TRUE_IF, [(FIRST_ARG_IS, S.Exp1), (SECOND_ARG_IS, Q.real)]),
+        ],
+        (Pow, Q.zero): [(FALSE_IF, [(FIRST_ARG_IS, S.Exp1), (SELF_IS, Q.positive)])],
+    }
 
 
 def test_answers_which_only_the_generated_rules_give():

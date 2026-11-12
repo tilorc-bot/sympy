@@ -8,7 +8,8 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, EVEN_NUMBER_OF_ARGS_ARE,
     FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE,
     ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS,
-    SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, TRUE_IF)
+    SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
+    SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF)
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import DefinedFunction
@@ -90,6 +91,7 @@ from sympy.functions.special.gamma_functions import gamma
 from sympy.functions.special.gamma_functions import loggamma
 from sympy.functions.special.gamma_functions import polygamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.integrals.integrals import Integral
 
 if TYPE_CHECKING:
     from sympy.assumptions.rule_engine import Rules
@@ -224,9 +226,19 @@ RULES: Rules = {
     ],
     (Add, Q.nonnegative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonnegative)]),
+        (TRUE_IF, [
+            (ALL_ARGS_ARE, Q.integer),
+            (ONE_ARG_IS, S.NegativeOne),
+            (OTHER_ARGS_ARE, Q.positive),
+        ]),
     ],
     (Add, Q.nonpositive): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonpositive)]),
+        (TRUE_IF, [
+            (ALL_ARGS_ARE, Q.integer),
+            (ONE_ARG_IS, S.One),
+            (OTHER_ARGS_ARE, Q.negative),
+        ]),
     ],
     (Add, Q.odd): [
         (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
@@ -259,8 +271,12 @@ RULES: Rules = {
     (Add, Q.zero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.zero)]),
     ],
+    (Add, S.NegativeOne): [
+        (FALSE_IF, [(ALL_ARGS_ARE, Q.negative), (ANY_ARG_IS, S.NegativeOne)]),
+    ],
     (Add, S.One): [
         (TRUE_IF, [(ONE_ARG_IS, S.One), (OTHER_ARGS_ARE, Q.zero)]),
+        (FALSE_IF, [(ALL_ARGS_ARE, Q.positive), (ANY_ARG_IS, S.One)]),
     ],
     (DefinedFunction, Q.commutative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
@@ -287,6 +303,9 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.nonnegative),
         ]),
+    ],
+    (Integral, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (KroneckerDelta, Q.integer): [
         ALWAYS_TRUE,
@@ -636,6 +655,11 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.positive),
             (ANY_ARG_IS, Q.prime),
         ]),
+        (TRUE_IF, [
+            (ALL_ARGS_ARE, Q.integer),
+            (ALL_ARGS_ARE, Q.positive),
+            (ALL_ARGS_ARE_NOT, S.One),
+        ]),
     ],
     (Mul, Q.even): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.integer), (ANY_ARG_IS, Q.even)]),
@@ -728,7 +752,7 @@ RULES: Rules = {
     ],
     (Mul, Q.nonnegative): [
         (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
             (OTHER_ARGS_ARE, Q.nonnegative),
         ]),
         (TRUE_IF, [
@@ -738,7 +762,7 @@ RULES: Rules = {
     ],
     (Mul, Q.nonpositive): [
         (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
             (OTHER_ARGS_ARE, Q.nonnegative),
         ]),
         (TRUE_IF, [
@@ -838,6 +862,23 @@ RULES: Rules = {
             (SECOND_ARG_IS_NOT, Q.negative),
         ]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.negative)]),
+    ],
+    (Pow, Q.composite): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.positive),
+            (FIRST_ARG_IS_NOT, S.One),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+            (SECOND_ARG_IS_NOT, S.One),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.negative),
+            (FIRST_ARG_IS_NOT, S.NegativeOne),
+            (SECOND_ARG_IS, Q.even),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
     ],
     (Pow, Q.even): [
         (TRUE_IF, [
@@ -1550,6 +1591,26 @@ RULES: Rules = {
     ],
     (partition, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
+    ],
+    (polygamma, Q.negative): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.even),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
+    ],
+    (polygamma, Q.positive): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.odd),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.odd),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.real),
+            (SECOND_ARG_IS_NOT, Q.integer),
+        ]),
     ],
     (polygamma, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.positive)]),
