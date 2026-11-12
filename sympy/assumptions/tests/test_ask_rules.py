@@ -218,6 +218,62 @@ def test_sums_and_products():
                          & Q.infinite(z)) is True
 
 
+def test_sums_and_products_with_one_argument_of_another_kind():
+    XR, NZ = Q.extended_real, Q.nonzero
+    assert ask_generated(XR, x + y + z, XR(x) & Q.real(y) & Q.real(z)) is True
+    assert ask_generated(XR, x + y, Q.positive_infinite(x) & Q.real(y)) is True
+    # oo - oo is nan
+    assert ask_generated(XR, x + y + z, XR(x) & XR(y) & Q.real(z)) is None
+    assert ask_generated(XR, x + y, ~XR(x) & Q.finite(x) & XR(y)) is False
+    assert ask_generated(XR, x + y + z, ~XR(x) & Q.real(y) & Q.real(z)) is False
+    # zoo + oo is nan
+    assert ask_generated(XR, x + y, ~XR(x) & XR(y)) is None
+    assert ask_generated(Q.nonzero, x + y, Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.irrational, x + y, Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.irrational, x + y + z, Q.integer(x) & Q.imaginary(y)
+                         & Q.rational(z)) is False
+    assert ask_generated(Q.irrational, x + y, Q.rational(x) & Q.imaginary(y)) is False
+    # x = sqrt(2) - I, y = I
+    assert ask_generated(Q.irrational, x + y, ~Q.real(x) & Q.imaginary(y)) is None
+    # Mod(I, 2) is I
+    assert ask_generated(Q.nonnegative, Mod(x, y), Q.complex(x) & Q.positive(y)) is None
+    assert ask_generated(Q.zero, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+    assert ask_generated(XR, x*y*z, XR(x) & NZ(y) & NZ(z)) is True
+    # 0*oo is nan
+    assert ask_generated(XR, x*y*z, XR(x) & XR(y) & NZ(z)) is None
+    assert ask_generated(XR, x*y, Q.imaginary(x) & Q.extended_nonzero(y)) is False
+    assert ask_generated(XR, x*y, Q.imaginary(x) & XR(y)) is None
+    assert ask_generated(Q.infinite, x*y, Q.infinite(x) & ~Q.zero(y)) is True
+    assert ask_generated(Q.infinite, x*y, Q.infinite(x)) is None
+    assert ask_generated(Q.extended_nonzero, x*y, Q.zero(x) & Q.finite(y)) is False
+    assert ask_generated(Q.extended_nonzero, x*y, Q.zero(x) & Q.infinite(y)) is None
+    P, N = Q.positive, Q.negative
+    assert ask_generated(N, x*y, N(x) & ~P(y)) is False
+    assert ask_generated(N, x*y*z, N(x) & N(y) & ~N(z)) is False
+    assert ask_generated(P, x*y*z, N(x) & ~N(y) & P(z)) is False
+    assert ask_generated(P, x*y*z, N(x) & ~P(y) & N(z)) is False
+    # 0*oo is nan
+    assert ask_generated(P, x*y*z, N(x) & ~P(y) & ~P(z) & XR(z)) is None
+    # x = y = I
+    assert ask_generated(N, x*y, ~P(x) & ~P(y)) is None
+    XNZ, IM = Q.extended_nonzero, Q.imaginary
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.real(y) & Q.real(z)) is False
+    assert ask_generated(Q.extended_positive, x*y, IM(x) & Q.extended_nonnegative(y)) is False
+    assert ask_generated(Q.extended_negative, w*x*y*z, IM(x) & IM(y) & IM(z) & XR(w)
+                         ) is False
+    # 0*oo is nan
+    assert ask_generated(XNZ, x*y*z, IM(x) & XR(y) & XR(z)) is None
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.complex(y) & ~IM(y) & Q.real(z)) is False
+    # y = z = 1 + I
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.complex(y) & ~IM(y) & Q.complex(z)
+                         & ~IM(z)) is None
+    assert ask_generated(P, x*y, ~Q.real(x) & Q.extended_positive(y)) is False
+    assert ask_generated(Q.real, x*y*z, ~Q.real(x) & XNZ(y) & XNZ(z)) is False
+    # x = y = I
+    assert ask_generated(Q.real, x*y, ~Q.real(x) & ~Q.real(y) & ~Q.zero(y)) is None
+    assert ask_generated(P, x*y*z, N(x) & ~N(y) & ~N(z)) is None
+
+
 def test_signs_of_products_and_powers():
     assert ask_generated(Q.negative, 2*x, Q.nonnegative(x)) is False
     assert ask_generated(Q.nonpositive, -x*y, Q.nonnegative(x) & Q.positive(y)) is True
@@ -226,7 +282,7 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.positive, x*y, Q.negative(x) & Q.nonnegative(y)) is False
     assert ask_generated(Q.positive, 2*x, ~Q.positive(x)) is False
     assert ask_generated(Q.positive, -x, ~Q.negative(x)) is False
-    assert ask_generated(Q.negative, -x, ~Q.positive(x)) is None
+    assert ask_generated(Q.negative, -x, ~Q.positive(x)) is False
     assert ask_generated(Q.integer, x/2, Q.even(x)) is True
     assert ask_generated(Q.integer, x**3/2, Q.even(x)) is True
     assert ask_generated(Q.extended_real, x*y,
