@@ -7,9 +7,11 @@ from sympy.assumptions.ask import Q
 from sympy.assumptions.ask_rules_generated import RULES
 from sympy.assumptions.number_facts import EVALUATED, number_facts
 from sympy.assumptions.rule_engine import _RuleEngine, _UnaryFactsEngine
-from sympy.core import assumptions as core_assumptions
-from sympy.core.assumptions import _assume_defined
+from sympy.core.add import Add
+from sympy.core.assumptions import _assume_defined, _set_ask_rules
 from sympy.core.logic import fuzzy_and
+from sympy.core.mul import Mul
+from sympy.core.power import Pow
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -63,7 +65,13 @@ class _CoreRuleEngine(_RuleEngine):
                     value = known.get(fact)
                     if value is not None:
                         return value
-        return self._from_rules(predicate, obj)
+        value = self._from_rules(predicate, obj)
+        if value is not None:
+            if known.may_be_nan is None:
+                known.may_be_nan = _may_be_nan(obj)
+            if known.may_be_nan:
+                return None
+        return value
 
     def _decided(self, facts: Facts) -> Iterator[tuple[str, bool]]:
         """Every fact of the old assumptions which *facts* decide."""
@@ -117,8 +125,40 @@ class _CoreRuleEngine(_RuleEngine):
         return tuple(found)
 
 
+def _may_be_nan(expr: Basic) -> bool:
+    """
+    Whether a sum, a product or a power may be ``nan`` for what is known of
+    its arguments (``0*oo``, ``oo - oo``, ``1**oo``, ``0**I``, ``oo**I``).
+    Nothing is said of such an expression: the rules answer ``False`` where
+    ``nan.is_<fact>`` is ``None``.
+    """
+    args = expr.args
+    if isinstance(expr, Mul):
+        zero = [arg for arg in args if getattr(arg, 'is_zero', None) is not False]
+        if not zero:
+            return False
+        infinite = [arg for arg in args if getattr(arg, 'is_finite', None) is not True]
+        if not infinite:
+            return False
+        return len(zero) > 1 or len(infinite) > 1 or zero[0] is not infinite[0]
+    if isinstance(expr, Add):
+        infinite = [arg for arg in args if getattr(arg, 'is_finite', None) is not True]
+        if len(infinite) < 2:
+            return False
+        return not (all(arg.is_extended_nonnegative for arg in infinite)
+                    or all(arg.is_extended_nonpositive for arg in infinite))
+    if isinstance(expr, Pow):
+        base, exponent = args
+        if exponent.is_finite is not True:
+            return True
+        if exponent.is_extended_real:
+            return False
+        return base.is_zero is not False or base.is_finite is not True
+    return False
+
+
 def _is_evaluated_number(expr: Basic) -> bool:
     return type(expr) in EVALUATED and all(map(_is_evaluated_number, expr.args))
 
 
-core_assumptions._ask_rules = _CoreRuleEngine(RULES).ask
+_set_ask_rules(_CoreRuleEngine(RULES).ask)

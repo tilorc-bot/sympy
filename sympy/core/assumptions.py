@@ -305,9 +305,14 @@ def _generate_assumption_rules():
 
 _assume_rules = _load_pre_generated_assumption_rules()
 
-# ``sympy.assumptions.core_rules`` sets this when SymPy has been imported: a
-# function ``(fact, obj)`` which answers from the rules about expressions
+# A function ``(fact, obj)`` which answers from the rules about expressions.
+# ``sympy.assumptions.core_rules`` sets it when SymPy has been imported.
 _ask_rules = None
+
+
+def _set_ask_rules(ask_rules):
+    global _ask_rules
+    _ask_rules = ask_rules
 _assume_defined = _assume_rules.defined_facts.copy()
 _assume_defined.add('polar')
 _assume_defined = frozenset(_assume_defined)
@@ -481,6 +486,9 @@ class StdFactKB(FactKB):
     """
     # whether the facts of the number which the object is have been looked for
     number_facts_tried = False
+    # whether the object may be nan for what is known of its arguments; None
+    # until that has been asked
+    may_be_nan = None
 
     def __init__(self, facts=None):
         super().__init__(_assume_rules)
