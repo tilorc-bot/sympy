@@ -655,12 +655,8 @@ class Add(Expr, AssocOp):
         return all(term._eval_is_algebraic_expr(syms) for term in self.args)
 
     # assumption methods
-    _eval_is_real = lambda self: _fuzzy_group(
-        (a.is_real for a in self.args), quick_exit=True)
     _eval_is_extended_real = lambda self: _fuzzy_group(
         (a.is_extended_real for a in self.args), quick_exit=True)
-    _eval_is_complex = lambda self: _fuzzy_group(
-        (a.is_complex for a in self.args), quick_exit=True)
     _eval_is_antihermitian = lambda self: _fuzzy_group(
         (a.is_antihermitian for a in self.args), quick_exit=True)
     _eval_is_finite = lambda self: _fuzzy_group(
@@ -669,25 +665,10 @@ class Add(Expr, AssocOp):
         (a.is_hermitian for a in self.args), quick_exit=True)
     _eval_is_integer = lambda self: _fuzzy_group(
         (a.is_integer for a in self.args), quick_exit=True)
-    _eval_is_rational = lambda self: _fuzzy_group(
-        (a.is_rational for a in self.args), quick_exit=True)
     _eval_is_algebraic = lambda self: _fuzzy_group(
         (a.is_algebraic for a in self.args), quick_exit=True)
     _eval_is_commutative = lambda self: _fuzzy_group(
         a.is_commutative for a in self.args)
-
-    def _eval_is_infinite(self):
-        sawinf = False
-        for a in self.args:
-            ainf = a.is_infinite
-            if ainf is None:
-                return None
-            elif ainf is True:
-                # infinite+infinite might not be infinite
-                if sawinf is True:
-                    return None
-                sawinf = True
-        return sawinf
 
     def _eval_is_imaginary(self):
         nz = []
