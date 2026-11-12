@@ -9,7 +9,8 @@ from sympy.abc import w, x, y, z
 from sympy.assumptions.ask import _ask_single_fact as _ask_single_fact_of_ask
 from sympy.assumptions.ask import Q, _extract_all_facts
 from sympy.assumptions.ask import ask as sympy_ask
-from sympy.assumptions.ask_generated import get_known_facts_dict
+from sympy.assumptions.ask_generated import (get_known_facts_dict,
+    get_number_facts_combinations)
 from sympy.assumptions.cnf import CNF
 from sympy.assumptions.number_facts import number_facts
 from sympy.assumptions.rule_checks import check_no_cycles
@@ -32,8 +33,12 @@ from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
+    asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
-from sympy.functions.elementary.trigonometric import acos, cos, sin, tan
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, cos, csc, sec, sin, tan)
+from sympy.functions.special.error_functions import erf
 from sympy.logic.boolalg import And
 from sympy.testing.pytest import raises
 
@@ -171,7 +176,7 @@ def test_numbers_without_symbols():
     # zero, which intervals do not decide
     assert cos(1)**2 + sin(1)**2 - 1 not in known(cos(1)**2 + sin(1)**2 - 1)
     # functions which are not evaluated, and numbers which are too large
-    assert acos(Rational(1, 7)) not in known(acos(Rational(1, 7)))
+    assert erf(Rational(1, 7)) not in known(erf(Rational(1, 7)))
     assert exp(10**10) not in known(exp(10**10))
     assert Pow(2, 10**9, evaluate=False) not in known(Pow(2, 10**9, evaluate=False))
     # in an expression with symbols
@@ -180,7 +185,142 @@ def test_numbers_without_symbols():
     # only the largest number gets an entry
     assert sqrt(2) not in known(sqrt(2) - 1)
     assert known(sqrt(2) - 1)[sqrt(2) - 1] == positive
-    assert known(acos(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
+    assert known(erf(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
+
+
+def test_exact_numbers_without_symbols():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    # rational numbers
+    assert ask_number(Q.integer, Pow(half, 3, evaluate=False)) is False
+    assert ask_number(Q.rational, Pow(3, -2, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(half, -2, evaluate=False)) is True
+    assert ask_number(Q.prime, Pow(4, half, evaluate=False)) is True
+    assert ask_number(Q.positive, Pow(Rational(1, 8), Rational(-2, 3), evaluate=False)) is True
+    assert ask_number(Q.integer, Pow(Rational(1, 8), Rational(-2, 3), evaluate=False)) is True
+    assert ask_number(Q.zero, Add(-1, 1, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(0, half, evaluate=False)) is True
+    assert ask_number(Q.odd, Pow(0, 0, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(2, 512, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(2, 600, evaluate=False)) is None
+    assert ask_number(Q.positive, Pow(2, 600, evaluate=False)) is True
+    # roots which are not rational, and the root of a negative number
+    assert ask_number(Q.integer, Pow(8, half, evaluate=False)) is None
+    assert ask_number(Q.real, Pow(-8, Rational(1, 3), evaluate=False)) is False
+    # values at 0 and at multiples of pi/2
+    assert ask_number(Q.zero, sin(Add(-1, 1, evaluate=False))) is True
+    assert ask_number(Q.zero, acosh(1, evaluate=False)) is True
+    assert ask_number(Q.zero, cos(5*pi/2, evaluate=False)) is True
+    assert ask_number(Q.zero, cosh(5*I*pi/2, evaluate=False)) is True
+    assert ask_number(Q.zero, sinh(2*I*pi, evaluate=False)) is True
+    assert ask_number(Q.odd, exp(-I*pi, evaluate=False)) is True
+    assert tan(pi/2, evaluate=False) not in known(tan(pi/2, evaluate=False))
+    assert ask_number(Q.algebraic, exp(I*pi/3)) is True
+    assert ask_number(Q.algebraic, cos(2*pi/7)) is True
+    assert ask_number(Q.algebraic, sinh(pi/7)) is None
+
+
+def test_powers_with_infinities():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    assert ask_number(Q.infinite, Pow(2, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(half, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(2, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(half, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(oo, oo, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(oo, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(oo, 1 + I, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(oo, -half, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(0, oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(0, -oo, evaluate=False)) is True
+    assert ask_number(Q.infinite, Pow(0, -sqrt(2), evaluate=False)) is True
+    # nan in SymPy
+    one_to_oo = Pow(1, oo, evaluate=False)
+    assert one_to_oo not in known(one_to_oo)
+    oo_to_imaginary = Pow(oo, I/2, evaluate=False)
+    assert oo_to_imaginary not in known(oo_to_imaginary)
+    zero_to_complex = Pow(0, 1 + I, evaluate=False)
+    assert zero_to_complex not in known(zero_to_complex)
+    negative_to_minus_oo = Pow(-half, -oo, evaluate=False)
+    assert negative_to_minus_oo not in known(negative_to_minus_oo)
+    minus_oo_to_oo = Pow(-oo, oo, evaluate=False)
+    assert minus_oo_to_oo not in known(minus_oo_to_oo)
+    # 0 in SymPy
+    zoo_to_oo = Pow(zoo, oo, evaluate=False)
+    assert zoo_to_oo not in known(zoo_to_oo)
+
+
+def test_functions_of_numbers_without_symbols():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    # sec, csc and the hyperbolic functions
+    assert ask_number(Q.positive, sec(1)) is True
+    assert ask_number(Q.negative, sec(2)) is True
+    assert ask_number(Q.negative, csc(-1)) is True
+    assert ask_number(Q.negative, sinh(-2)) is True
+    assert ask_number(Q.positive, cosh(2)) is True
+    assert ask_number(Q.negative, cosh(2*I, evaluate=False)) is True
+    assert ask_number(Q.real, cosh(1 + 2*I)) is False
+    assert ask_number(Q.real, tanh(1 + I*pi/3)) is False
+    assert ask_number(Q.positive, coth(half)) is True
+    assert ask_number(Q.positive, sech(3)) is True
+    assert ask_number(Q.negative, csch(-3)) is True
+    # poles
+    assert sec(pi/2, evaluate=False) not in known(sec(pi/2, evaluate=False))
+    assert csc(0, evaluate=False) not in known(csc(0, evaluate=False))
+    # inverse functions, inside and outside the real interval where they are real
+    assert ask_number(Q.positive, asin(Rational(1, 7))) is True
+    assert ask_number(Q.positive, asin(1, evaluate=False)) is True
+    assert ask_number(Q.real, asin(3)) is False
+    assert ask_number(Q.real, -asin(-3)) is False
+    assert ask_number(Q.positive, acos(Rational(-1, 7))) is True
+    assert ask_number(Q.imaginary, acos(Rational(3, 2))) is True
+    assert ask_number(Q.real, acos(-2)) is False
+    assert ask_number(Q.positive, atan(10**10)) is True
+    assert ask_number(Q.negative, acot(-3)) is True
+    assert acot(0, evaluate=False) not in known(acot(0, evaluate=False))
+    assert ask_number(Q.positive, asec(3)) is True
+    assert ask_number(Q.imaginary, asec(half)) is True
+    assert ask_number(Q.negative, acsc(-3)) is True
+    assert ask_number(Q.real, acsc(half)) is False
+    assert ask_number(Q.negative, asinh(-2)) is True
+    assert ask_number(Q.positive, acosh(2)) is True
+    assert ask_number(Q.imaginary, acosh(Rational(1, 5))) is True
+    assert ask_number(Q.real, acosh(-2)) is False
+    assert ask_number(Q.positive, atanh(Rational(1, 5))) is True
+    assert ask_number(Q.real, atanh(2)) is False
+    assert atanh(1, evaluate=False) not in known(atanh(1, evaluate=False))
+    assert ask_number(Q.positive, acoth(2)) is True
+    assert ask_number(Q.real, acoth(half)) is False
+    assert ask_number(Q.positive, asech(Rational(2, 3))) is True
+    assert ask_number(Q.real, asech(Rational(-1, 3))) is False
+    assert ask_number(Q.negative, acsch(-2)) is True
+    # an interval across the end of the domain, and a complex argument
+    above_one = Float('1.000000000000000000001', 30)
+    assert asin(above_one, evaluate=False) not in known(asin(above_one, evaluate=False))
+    assert ask_number(Q.positive, acosh(above_one, evaluate=False)) is None
+    assert asin(1 + I) not in known(asin(1 + I))
 
 
 def test_preprocess_declared_symbols():
@@ -211,7 +351,7 @@ def test_ask_single_fact():
 
 
 def test_ask_single_fact_agrees_with_the_one_of_ask():
-    predicates = sorted(get_known_facts_dict(), key=str)
+    predicates = sorted(get_number_facts_combinations(), key=str)
     for key in predicates:
         for predicate in predicates:
             for value in (True, False):
@@ -220,6 +360,23 @@ def test_ask_single_fact_agrees_with_the_one_of_ask():
                     key, _extract_all_facts(CNF.from_prop(assumption), (x,)))
                 engine = _UnaryFactsEngine(preprocess(x, assumption))
                 assert engine.ask_single_fact(key, x) is expected
+
+
+def test_ask_single_fact_from_several_facts():
+    r = Symbol('r', real=True, nonnegative=False)
+    power = y**x
+    with old_assumptions_forbidden():
+        assert ask_by_rules(Q.negative, r, True, {}) is True
+        assert ask_by_rules(Q.zero, x, Q.nonnegative(x) & Q.nonpositive(x), {}) is True
+        assert ask_by_rules(Q.irrational, x, Q.real(x) & ~Q.rational(x), {}) is True
+        assert ask_by_rules(Q.infinite, x, Q.extended_real(x) & ~Q.finite(x), {}) is True
+        assert ask_by_rules(Q.irrational, x, Q.real(x) & Q.transcendental(x), {}) is True
+        assert ask_by_rules(Q.composite, x,
+                            Q.positive(x) & Q.even(x) & ~Q.prime(x), {}) is True
+        assert ask_by_rules(Q.infinite, x, ~Q.finite(x), {}) is None
+        assert ask_by_rules(Q.negative, x, ~Q.nonnegative(x), {}) is None
+        assert ask_number_rules(Q.odd, power,
+            Q.nonnegative(x) & Q.nonpositive(x) & Q.eq(y, -1)) is True
 
 
 def test_rule_about_an_argument():
@@ -305,6 +462,67 @@ def test_rules_of_a_base_class():
 
 
 SYMBOLS = (x, y, z, w)
+
+
+NUMBER_RULES: Rules = {
+    (Pow, Q.odd): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.integer), (FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (log, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (Expr, S.One): [
+        (FALSE_IF, [(SELF_IS, Q.prime)]),
+    ],
+}
+
+
+def ask_number_rules(predicate, expr, assumptions=True):
+    return ask_by_rules(predicate, expr, assumptions, NUMBER_RULES)
+
+
+def test_condition_about_a_number():
+    assert ask_number_rules(Q.odd, (-1)**x, Q.integer(x)) is True
+    assert ask_number_rules(Q.odd, (-1)**x) is None
+    assert ask_number_rules(Q.odd, (-3)**x, Q.integer(x)) is None
+    assert ask_number_rules(Q.odd, y**x, Q.integer(x)) is None
+    assert ask_number_rules(Q.zero, log(1, evaluate=False)) is True
+    assert ask_number_rules(Q.zero, log(x)) is None
+    # by the rule for S.One
+    assert ask_number_rules(Q.zero, log(x), Q.prime(x)) is False
+    assert ask_number_rules(Q.zero, log(x), Q.composite(x)) is None
+
+
+def test_a_number_is_itself():
+    # ask_single_fact looks at a number only if something is known of it
+    assert ask_by_rules(S.One, S.One, True, {}) is True
+    assert ask_by_rules(S.NegativeOne, S.NegativeOne, True, {}) is True
+    assert ask_by_rules(S.Half, S.Half, True, {}) is True
+    assert ask_by_rules(I, I, True, {}) is True
+    assert ask_by_rules(S.One, S.NegativeOne, True, {}) is None
+    assert ask_by_rules(S.One, x, True, {}) is None
+
+
+def test_assumed_equal_to_a_number():
+    assert preprocess(x, Q.eq(x, 2)) == {x: [(Integer(2), True), *number_facts(Integer(2))]}
+    assert preprocess(x, Q.ne(x, 2)) == {x: [(Integer(2), False)]}
+    assert preprocess(x, ~Q.eq(x, I)) == {x: [(I, False)]}
+    assert preprocess(x, Q.eq(x, y) & Q.eq(x, pi) & Q.gt(x, 1)) == {}
+    assert ask_number_rules(Q.zero, log(x), Q.eq(x, 1)) is True
+    assert ask_number_rules(Q.zero, log(x), ~Q.ne(x, 1)) is True
+    assert ask_number_rules(Q.zero, log(x), Q.ne(x, 1)) is False
+    assert ask_number_rules(Q.zero, log(x), ~Q.eq(x, 1)) is False
+    assert ask_number_rules(Q.zero, log(x), Q.ne(x, 2)) is None
+    assert ask_number_rules(Q.zero, log(x), Q.eq(x, 2)) is False
+    assert ask_number_rules(Q.odd, y**x, Q.integer(x) & Q.eq(y, -1)) is True
+    assert ask_number_rules(Q.positive, x, Q.eq(x, 2)) is True
+    assert ask_number_rules(Q.prime, x, Q.eq(x, 1)) is False
+
+
+def test_assumption_about_a_number_is_not_kept():
+    facts = list(number_facts(pi))
+    assert preprocess(pi, Q.negative(pi))[pi] == facts + [(Q.negative, True)]
+    assert number_facts(pi) == facts
 
 
 def is_not(predicate):

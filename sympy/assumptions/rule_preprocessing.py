@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from sympy.assumptions.ask import Q
 from sympy.assumptions.assume import AppliedPredicate
 from sympy.assumptions.number_facts import EVALUATED, number_facts
+from sympy.core.numbers import I
 from sympy.core.symbol import Symbol
 from sympy.logic.boolalg import And, Not
 
@@ -14,8 +15,9 @@ if TYPE_CHECKING:
     from sympy.core.basic import Basic
     from sympy.logic.boolalg import Boolean
 
-    # expr -> [(predicate, whether it is true)]
-    Known = dict[Basic, list[tuple[Predicate, bool]]]
+    # expr -> [(predicate, whether it is true)]; a number in the place of the
+    # predicate is for whether expr is that number
+    Known = dict[Basic, list[tuple[Predicate | Basic, bool]]]
 
 
 def preprocess(expr: Basic, assumptions: Boolean | bool) -> Known:
@@ -62,11 +64,35 @@ def _declared(symbol: Symbol) -> list[tuple[Predicate, bool]]:
             and (predicate := getattr(Q, name, None)) is not None]
 
 
+_EQUALITY = {Q.eq: True, Q.ne: False}
+
+
 def _assumed(assumptions: Boolean | bool, known: Known) -> None:
-    """Only a predicate, its negation and a conjunction of these are read."""
+    """
+    Only a predicate, its negation and a conjunction of these are read, and
+    ``Q.eq(x, 1)`` and ``Q.ne(x, 1)`` with a rational number or ``I``.
+    """
     literals = assumptions.args if isinstance(assumptions, And) else (assumptions,)
     for literal in literals:
         applied = literal.args[0] if isinstance(literal, Not) else literal
         is_true = not isinstance(literal, Not)
-        if isinstance(applied, AppliedPredicate) and len(applied.arguments) == 1:
-            known.setdefault(applied.arg, []).append((applied.function, is_true))
+        if not isinstance(applied, AppliedPredicate):
+            continue
+        # (predicate, expr) or (predicate, expr, number)
+        args = applied.args
+        if len(args) == 2:
+            predicate, expr = args
+            facts = [(predicate, is_true)]
+        elif args[0] in _EQUALITY:
+            predicate, expr, number = args
+            if not (number.is_Rational or number is I):
+                continue
+            is_equal = is_true is _EQUALITY[predicate]
+            facts = [(number, is_equal)]
+            if is_equal:
+                facts += number_facts(number)
+        else:
+            continue
+        before = known.get(expr)
+        # not changed in place: the list of a number is shared between calls
+        known[expr] = facts if before is None else before + facts

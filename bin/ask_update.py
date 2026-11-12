@@ -29,7 +29,8 @@ if os.path.isdir(sympy_dir):
 from sympy.core.assumptions import _generate_assumption_rules
 from sympy.assumptions.cnf import CNF, Literal
 from sympy.assumptions.facts import (get_known_facts,
-    generate_known_facts_dict, get_known_facts_keys, get_matrix_facts, get_number_facts)
+    generate_combinations_dict, generate_known_facts_dict, get_known_facts_keys,
+    get_matrix_facts, get_number_facts)
 from sympy.core import Symbol
 from textwrap import dedent, wrap
 
@@ -87,6 +88,16 @@ def generate_code():
         return {
             %s
         }
+
+    @cacheit
+    def get_number_facts_combinations():
+        """
+        For each predicate of the number facts, an integer with one bit for each
+        combination of true and false which they allow, set where it is true.
+        """
+        return {
+            %s
+        }
     ''')
 
     x = Symbol('x')
@@ -132,7 +143,11 @@ def generate_code():
             break_long_words=False))
         for k, v in zip(keys, values)]) + ','
 
-    return code_string % (all_clauses, matrix_clauses, number_clauses, m)
+    combinations = generate_combinations_dict(number_fact)
+    c = LINE.join('%s: 0x%016x' % item
+                  for item in sorted(combinations.items(), key=str)) + ','
+
+    return code_string % (all_clauses, matrix_clauses, number_clauses, m, c)
 
 code = generate_code()
 Path('sympy/assumptions/ask_generated.py').write_text(code, encoding='utf-8')
