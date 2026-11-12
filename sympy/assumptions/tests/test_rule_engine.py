@@ -19,7 +19,8 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     EVEN_NUMBER_OF_ARGS_ARE_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
     IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE, ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
-    SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules)
+    SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE, SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF,
+    _UnaryFactsEngine, ask_by_rules)
 from sympy.assumptions.rule_preprocessing import preprocess
 from sympy.core.add import Add
 from sympy.core.basic import Basic
@@ -640,6 +641,57 @@ def test_counting_with_an_undecided_argument():
     assert ask_each(Q.even, g, [Q.zero, Q.zero, Q.real], rules) == {None}
 
 
+def test_some_even_and_odd_number_of_args():
+    rules = {
+        (Mul, Q.nonnegative): [
+            (TRUE_IF, [
+                (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+                (OTHER_ARGS_ARE, Q.nonnegative),
+            ]),
+        ],
+        (Mul, Q.nonpositive): [
+            (TRUE_IF, [
+                (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+                (OTHER_ARGS_ARE, Q.nonnegative),
+            ]),
+        ],
+    }
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.nonnegative], rules) == {True}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.nonpositive, Q.nonnegative, Q.positive], rules) == {True}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.negative, Q.nonpositive, Q.nonpositive, Q.nonnegative],
+                    rules) == {True}
+    assert ask_each(Q.nonnegative, Mul,
+                    [Q.nonpositive, Q.negative, Q.nonnegative], rules) == {True}
+    assert ask_each(Q.nonnegative, Mul, [Q.nonnegative, Q.positive], rules) == {True}
+    assert ask_each(Q.nonnegative, Mul, [Q.nonpositive, Q.nonnegative], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.nonpositive, Q.nonpositive, Q.nonnegative], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.real], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.imaginary], rules) == {None}
+
+    class g(Function):
+        pass
+
+    # not true of anything: only the shape is tested
+    rules = {(g, Q.even): [(IF_AND_ONLY_IF, [(SOME_ODD_NUMBER_OF_ARGS_ARE, Q.zero)])]}
+    assert ask_each(Q.even, g, [Q.zero, Q.real], rules) == {True}
+    assert ask_each(Q.even, g, [Q.zero, Q.zero], rules) == {None}
+    assert ask_each(Q.even, g, [Q.positive, Q.positive], rules) == {None}
+
+
+def test_counting_which_needs_every_argument_decided():
+    rules = {
+        (Mul, Q.real): [
+            (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real), (OTHER_ARGS_ARE_NOT, Q.zero)]),
+        ],
+    }
+    assert ask_by_rules(Q.real, I*y, Q.real(y) & ~Q.zero(y), rules) is False
+    # y may be I
+    assert ask_by_rules(Q.real, I*y, ~Q.zero(y), rules) is None
+
+
 def test_conditions_which_must_not_hold_for_the_arguments():
     assert ask_each(Q.zero, Mul, [Q.positive, Q.negative]) == {False}
     assert ask_each(Q.zero, Mul, [Q.positive, Q.negative, is_not(Q.zero)]) == {False}
@@ -777,7 +829,8 @@ def test_conditions_about_the_arguments_of_an_expression_without_any():
     selectors = [ALL_ARGS_ARE, ALL_ARGS_ARE_NOT, ANY_ARG_IS, ANY_ARG_IS_NOT,
         ONE_ARG_IS, ONE_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
         EVEN_NUMBER_OF_ARGS_ARE_NOT, ODD_NUMBER_OF_ARGS_ARE,
-        ODD_NUMBER_OF_ARGS_ARE_NOT]
+        ODD_NUMBER_OF_ARGS_ARE_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
+        SOME_ODD_NUMBER_OF_ARGS_ARE]
     for selector in selectors:
         for kind in (TRUE_IF, FALSE_IF, IF_AND_ONLY_IF):
             rules = {(g, Q.even): [(kind, [(selector, Q.even)])]}

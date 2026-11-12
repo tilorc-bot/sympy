@@ -17,7 +17,8 @@ if TYPE_CHECKING:
     RuleKind = int
     # (FIRST_ARG_IS, Q.even): Q.even is true of the first argument
     # (FIRST_ARG_IS, S.NegativeOne): the first argument is the number -1; only
-    # S.One, S.NegativeOne, S.Half and S.ImaginaryUnit, which are compared with "is"
+    # S.One, S.NegativeOne, S.Half, S.ImaginaryUnit and S.Exp1, which are compared
+    # with "is"
     Condition = tuple[tuple[int, bool], Predicate | Basic]
     # all of the conditions must hold
     Rule = tuple[RuleKind, list[Condition]]
@@ -51,6 +52,10 @@ ONE_ARG = -4
 EVEN_NUMBER_OF_ARGS = -5
 ODD_NUMBER_OF_ARGS = -6
 OTHER_ARGS = -7
+# As an argument: an even or an odd number of the arguments, which are the ones
+# known to have it; nothing is said of the others, which are the OTHER_ARGS
+SOME_EVEN_NUMBER_OF_ARGS = -8
+SOME_ODD_NUMBER_OF_ARGS = -9
 
 ALL_ARGS_ARE = (ALL_ARGS, True)
 ALL_ARGS_ARE_NOT = (ALL_ARGS, False)
@@ -64,6 +69,8 @@ ODD_NUMBER_OF_ARGS_ARE = (ODD_NUMBER_OF_ARGS, True)
 ODD_NUMBER_OF_ARGS_ARE_NOT = (ODD_NUMBER_OF_ARGS, False)
 OTHER_ARGS_ARE = (OTHER_ARGS, True)
 OTHER_ARGS_ARE_NOT = (OTHER_ARGS, False)
+SOME_EVEN_NUMBER_OF_ARGS_ARE = (SOME_EVEN_NUMBER_OF_ARGS, True)
+SOME_ODD_NUMBER_OF_ARGS_ARE = (SOME_ODD_NUMBER_OF_ARGS, True)
 
 
 class _UnaryFactsEngine:
@@ -234,6 +241,11 @@ class _RuleEngine:
                 if value is None:
                     holds = None
             return holds, others
+        if argument <= SOME_EVEN_NUMBER_OF_ARGS:
+            rest = [arg for arg in args if self.visit(predicate, arg) is not expected]
+            odd = (len(args) - len(rest)) % 2 == 1
+            # not false if it fails: more of the arguments may have it
+            return (odd is (argument == SOME_ODD_NUMBER_OF_ARGS)) or None, rest
         rest = []
         for arg in args:
             value = self.visit(predicate, arg)
