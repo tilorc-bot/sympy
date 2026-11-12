@@ -1678,6 +1678,23 @@ class Mul(Expr, AssocOp):
                     ).is_nonnegative:
                 return False
 
+    def _eval_is_composite(self):
+        """
+        Here we count the number of arguments that have a minimum value
+        greater than two.
+        If there are more than one of such a symbol then the result is composite.
+        Else, the result cannot be determined.
+        """
+        number_of_args = 0 # count of symbols with minimum value greater than one
+        for arg in self.args:
+            if not (arg.is_integer and arg.is_positive):
+                return None
+            if (arg-1).is_positive:
+                number_of_args += 1
+
+        if number_of_args > 1:
+            return True
+
     def _eval_subs(self, old, new):
         from sympy.functions.elementary.complexes import sign
         from sympy.ntheory.factor_ import multiplicity
