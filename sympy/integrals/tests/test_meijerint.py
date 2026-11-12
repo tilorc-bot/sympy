@@ -3,7 +3,8 @@ from sympy.core.function import expand, expand_func, expand_mul
 from sympy.core.numbers import (I, Rational, oo, pi)
 from sympy.core.singleton import S
 from sympy.core.sorting import default_sort_key
-from sympy.functions.elementary.complexes import Abs, arg, re, unpolarify
+from sympy.core.relational import Eq
+from sympy.functions.elementary.complexes import Abs, arg, im, re, unpolarify
 from sympy.functions.elementary.exponential import (exp, exp_polar, log)
 from sympy.functions.elementary.hyperbolic import cosh, acosh, sinh
 from sympy.functions.elementary.miscellaneous import sqrt
@@ -331,7 +332,9 @@ def test_inversion_exp_real_nonreal_shift():
     z = Symbol('z')
     assert not meijerint_inversion(exp(r*s), s, t).is_Piecewise
     assert meijerint_inversion(exp(a*s), s, t) is None
-    assert meijerint_inversion(exp(c*s), s, t) is None
+    # im(zoo) is nan
+    assert meijerint_inversion(exp(c*s), s, t) == Piecewise(
+        (DiracDelta(c + t), Eq(im(c), 0)))
     f = meijerint_inversion(exp(z*s), s, t)
     assert f.is_Piecewise
     assert isinstance(f.args[0][0], DiracDelta)

@@ -405,8 +405,9 @@ def test_exp_assumptions():
         assert e(i).is_imaginary is None
         assert e(r).is_real is True
         assert e(r).is_imaginary is False
-        assert e(re(x)).is_extended_real is True
-        assert e(re(x)).is_imaginary is False
+        # re(zoo) is nan
+        assert e(re(x)).is_extended_real is None
+        assert e(re(x)).is_imaginary is None
 
     assert Pow(E, I*pi, evaluate=False).is_imaginary == False
     assert Pow(E, 2*I*pi, evaluate=False).is_imaginary == False

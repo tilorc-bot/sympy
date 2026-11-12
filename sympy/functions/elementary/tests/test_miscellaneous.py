@@ -157,8 +157,9 @@ def test_Min():
     assert Min(Abs(x), -Abs(y) - 1) == -Abs(y) - 1
     assert Min(Abs(x), -2) == -2
     assert Min(Abs(x), 0) == 0
-    assert Min(exp(re(x)), -Abs(y)) == -Abs(y)
-    assert Min(re(x)**2, -Abs(y)**2 - 1) == -Abs(y)**2 - 1
+    # re(zoo) is nan
+    assert unchanged(Min, exp(re(x)), -Abs(y))
+    assert unchanged(Min, re(x)**2, -Abs(y)**2 - 1)
 
     # same idea with real symbols (x**2 is nonnegative without Abs)
     xr = Symbol('xr', real=True)

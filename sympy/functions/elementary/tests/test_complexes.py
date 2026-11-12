@@ -94,7 +94,7 @@ def test_re():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
     assert re(S.ComplexInfinity) is S.NaN
 
@@ -191,7 +191,7 @@ def test_im():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
     assert im(S.ComplexInfinity) is S.NaN
 
@@ -402,7 +402,11 @@ def test_Abs():
     assert Abs(2*pi*x*y) == 2*pi*Abs(x*y)
     assert Abs(conjugate(x)) == Abs(x)
     assert conjugate(Abs(x)) == Abs(x)
-    assert Abs(x).expand(complex=True) == sqrt(re(x)**2 + im(x)**2)
+    # re(zoo) is nan, so re(x)**2 + im(x)**2 is not known to be nonnegative
+    w = re(x)**2 + im(x)**2
+    r = expand(w**2)**Rational(1, 4)
+    assert Abs(x).expand(complex=True) == (
+        r*cos(atan2(0, w)/2) + I*r*sin(atan2(0, w)/2))
 
     a = Symbol('a', positive=True)
     assert Abs(2*pi*x*a) == 2*pi*a*Abs(x)
@@ -457,7 +461,7 @@ def test_Abs():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
     assert Abs(x).fdiff() == sign(x)
     raises(ArgumentIndexError, lambda: Abs(x).fdiff(2))
 
@@ -728,7 +732,7 @@ def test_conjugate():
     t = Symbol('t', transcendental=True)
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
 
 def test_conjugate_transpose():
@@ -1014,8 +1018,40 @@ def test_zero_assumptions():
     assert re(ni).is_zero is None
     assert im(ni).is_zero is None
 
-    assert re(nzni).is_zero is False
+    assert re(nzni).is_zero is None
     assert im(nzni).is_zero is None
+
+    nznic = Symbol('nznic', complex=True, zero=False, imaginary=False)
+    assert re(nznic).is_zero is False
+
+
+def test_assumptions_where_the_argument_may_be_infinite_or_zero():
+    x = Symbol('x')
+    r = Symbol('r', real=True)
+    c = Symbol('c', complex=True)
+    cnz = Symbol('cnz', complex=True, zero=False)
+    inf = Symbol('inf', infinite=True)
+    t = Symbol('t', transcendental=True)
+
+    # re(zoo) and im(zoo) are nan, re(oo*I) is zero
+    assert re(x).is_extended_real is None
+    assert im(x).is_extended_real is None
+    assert re(x).is_imaginary is None
+    assert re(r, evaluate=False).is_extended_real is True
+    assert re(-oo, evaluate=False).is_extended_negative is True
+    assert re(-oo, evaluate=False).is_extended_nonzero is True
+    assert re(c).is_real is True
+    assert im(c).is_real is True
+    assert re(inf).is_zero is None
+    # sign(oo*I) is I
+    assert sign(inf).is_imaginary is None
+    # arg(0) and arg(zoo) are nan
+    assert arg(x).is_real is None
+    assert arg(r).is_real is None
+    assert arg(cnz).is_real is True
+    # Abs(exp(I)) is 1, re(I*pi) and im(pi) are 0
+    assert Abs(t).is_algebraic is None
+    assert im(t).is_algebraic is None
 
 
 @_both_exp_pow

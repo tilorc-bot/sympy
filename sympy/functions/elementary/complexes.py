@@ -69,7 +69,6 @@ class re(DefinedFunction):
 
     args: tuple[Expr]
 
-    is_extended_real = True
     unbranched = True  # implicitly works on the projection to C
     _singularities = True  # non-holomorphic
 
@@ -130,6 +129,9 @@ class re(DefinedFunction):
         """
         return (self, S.Zero)
 
+    def _eval_conjugate(self):
+        return self
+
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:
             return re(Derivative(self.args[0], x, evaluate=True))
@@ -141,7 +143,8 @@ class re(DefinedFunction):
         return self.args[0] - I*im(self.args[0])
 
     def _eval_is_algebraic(self):
-        return self.args[0].is_algebraic
+        if self.args[0].is_algebraic:
+            return True
 
     def _eval_is_zero(self):
         # is_imaginary implies nonzero
@@ -200,7 +203,6 @@ class im(DefinedFunction):
 
     args: tuple[Expr]
 
-    is_extended_real = True
     unbranched = True  # implicitly works on the projection to C
     _singularities = True  # non-holomorphic
 
@@ -249,6 +251,9 @@ class im(DefinedFunction):
         """
         return (self, S.Zero)
 
+    def _eval_conjugate(self):
+        return self
+
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:
             return im(Derivative(self.args[0], x, evaluate=True))
@@ -260,7 +265,8 @@ class im(DefinedFunction):
         return -I*(self.args[0] - re(self.args[0]))
 
     def _eval_is_algebraic(self):
-        return self.args[0].is_algebraic
+        if self.args[0].is_algebraic:
+            return True
 
     def _eval_is_zero(self):
         return self.args[0].is_extended_real
@@ -640,7 +646,8 @@ class Abs(DefinedFunction):
             return self.args[0].is_odd
 
     def _eval_is_algebraic(self):
-        return self.args[0].is_algebraic
+        if self.args[0].is_algebraic:
+            return True
 
     def _eval_power(self, exponent):
         if self.args[0].is_extended_real and exponent.is_integer:
@@ -735,9 +742,6 @@ class arg(DefinedFunction):
 
     """
 
-    is_extended_real = True
-    is_real = True
-    is_finite = True
     _singularities = True  # non-holomorphic
 
     @classmethod
@@ -780,6 +784,12 @@ class arg(DefinedFunction):
             return rv
         if arg_ != arg:
             return cls(arg_, evaluate=False)
+
+    def as_real_imag(self, deep=True, **hints):
+        return (self, S.Zero)
+
+    def _eval_conjugate(self):
+        return self
 
     def _eval_derivative(self, t):
         x, y = self.args[0].as_real_imag()
