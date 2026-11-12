@@ -1397,18 +1397,18 @@ def test_Pow_is_zero():
         [ yf2, F, F, F, F, F, F, F, F, F, N, N, N, N, N, N, N, N],
         [ af2, F, F, F, F, F, F, F, F, F, N, N, N, N, N, N, N, N],
         [ cf2, F, F, F, F, F, F, F, F, F, N, N, N, N, N, N, N, N],
-        [ zf2, N, N, N, N, F, N, N, N, N, N, N, N, N, N, N, N, N],
-        [ xf2, N, N, N, N, F, N, N, N, N, N, N, N, N, N, N, N, N],
-        [ bf2, N, N, N, N, F, N, N, N, N, N, N, N, N, N, N, N, N],
-        [ df2, N, N, N, N, F, N, N, N, N, N, N, N, N, N, N, N, N],
-        [ zi2, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
+        [ zf2, F, N, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N],
+        [ xf2, F, N, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N],
+        [ bf2, F, N, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N],
+        [ df2, F, N, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N],
+        [ zi2, F, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
         [ wi2, F, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N, N],
-        [ xi2, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
+        [ xi2, F, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
         [ yi2, F, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N, N],
         [ ai2, F, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N, N],
-        [ bi2, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
+        [ bi2, F, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N],
         [ ci2, F, N, N, F, N, N, N, F, N, N, N, N, N, N, N, N, N],
-        [ di2, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N]
+        [ di2, F, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N]
     ]
 
     test_table(pow_iszero_sym)
@@ -1423,7 +1423,7 @@ def test_Pow_is_zero():
     assert (zf ** zf).is_zero is None
     assert (xf ** xf).is_zero is None
     assert (bf ** bf).is_zero is False # None in table
-    assert (df ** df).is_zero is None
+    assert (df ** df).is_zero is False
     assert (zi ** zi).is_zero is None
     assert (wi ** wi).is_zero is None
     assert (xi ** xi).is_zero is None

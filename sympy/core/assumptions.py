@@ -486,9 +486,6 @@ class StdFactKB(FactKB):
     """
     # whether the facts of the number which the object is have been looked for
     number_facts_tried = False
-    # whether the object may be nan for what is known of its arguments; None
-    # until that has been asked
-    may_be_nan = None
 
     def __init__(self, facts=None):
         super().__init__(_assume_rules)

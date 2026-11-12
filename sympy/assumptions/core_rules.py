@@ -12,6 +12,7 @@ from sympy.core.assumptions import _assume_defined, _set_ask_rules
 from sympy.core.logic import fuzzy_and
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
+from sympy.core.singleton import S
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -25,6 +26,7 @@ _SIGN_OF_INFINITY = {
     Q.positive_infinite: 'is_extended_positive',
     Q.negative_infinite: 'is_extended_negative',
 }
+_OPPOSITE = {Q.finite: Q.infinite, Q.infinite: Q.finite}
 
 
 class _CoreRuleEngine(_RuleEngine):
@@ -66,11 +68,11 @@ class _CoreRuleEngine(_RuleEngine):
                     if value is not None:
                         return value
         value = self._from_rules(predicate, obj)
-        if value is not None:
-            if known.may_be_nan is None:
-                known.may_be_nan = _may_be_nan(obj)
-            if known.may_be_nan:
-                return None
+        if value is False and predicate in _OPPOSITE:
+            # for the rules an expression can be neither finite nor infinite
+            value = False if self._from_rules(_OPPOSITE[predicate], obj) else None
+        if value is not None and _may_be_nan(obj):
+            return None
         return value
 
     def _decided(self, facts: Facts) -> Iterator[tuple[str, bool]]:
@@ -127,12 +129,15 @@ class _CoreRuleEngine(_RuleEngine):
 
 def _may_be_nan(expr: Basic) -> bool:
     """
-    Whether a sum, a product or a power may be ``nan`` for what is known of
-    its arguments (``0*oo``, ``oo - oo``, ``1**oo``, ``0**I``, ``oo**I``).
-    Nothing is said of such an expression: the rules answer ``False`` where
+    Whether an expression has the argument ``nan``, or is a sum, a product
+    or a power which may be ``nan`` for what is known of its arguments
+    (``0*oo``, ``oo - oo``, ``1**oo``, ``0**I``, ``oo**I``). Nothing is said
+    of such an expression: the rules answer ``False`` where
     ``nan.is_<fact>`` is ``None``.
     """
     args = expr.args
+    if any(arg is S.NaN for arg in args):
+        return True
     if isinstance(expr, Mul):
         zero = [arg for arg in args if getattr(arg, 'is_zero', None) is not False]
         if not zero:

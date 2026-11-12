@@ -567,7 +567,7 @@ def test_issue_14815():
     x = Symbol('x', real=True)
     assert sqrt(x).is_extended_negative is False
     x = Symbol('x', real=False)
-    assert sqrt(x).is_extended_negative is None
+    assert sqrt(x).is_extended_negative is False
     x = Symbol('x', complex=True)
     assert sqrt(x).is_extended_negative is False
     x = Symbol('x', extended_real=True)
