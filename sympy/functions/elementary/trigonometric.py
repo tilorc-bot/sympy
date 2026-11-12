@@ -72,6 +72,12 @@ class TrigonometricFunction(DefinedFunction):
         else:
             return s.is_algebraic
 
+    def _eval_is_transcendental(self):
+        # algebraic or zoo
+        pi_coeff = _pi_coeff(self.args[0])
+        if pi_coeff is not None and pi_coeff.is_rational:
+            return False
+
     def _eval_expand_complex(self, deep=True, **hints):
         re_part, im_part = self.as_real_imag(deep=deep, **hints)
         return re_part + im_part*S.ImaginaryUnit
@@ -1260,8 +1266,13 @@ class tan(TrigonometricFunction):
 
     def _eval_is_extended_real(self):
         arg = self.args[0]
-        if arg.is_real and (arg/pi - S.Half).is_integer is False:
-            return True
+        if arg.is_real:
+            pole = (expand_mul(arg/pi) - S.Half).is_integer
+            if pole is not None:
+                return not pole
+        if arg.is_extended_real is False and (
+                im(arg).is_nonzero or (arg/S.ImaginaryUnit).is_extended_nonzero):
+            return False
 
     def _eval_is_finite(self):
         arg = self.args[0]
@@ -1547,8 +1558,13 @@ class cot(TrigonometricFunction):
 
     def _eval_is_extended_real(self):
         arg = self.args[0]
-        if arg.is_real and (arg/pi).is_integer is False:
-            return True
+        if arg.is_real:
+            pole = expand_mul(arg/pi).is_integer
+            if pole is not None:
+                return not pole
+        if arg.is_extended_real is False and (
+                im(arg).is_nonzero or (arg/S.ImaginaryUnit).is_extended_nonzero):
+            return False
 
     def _eval_expand_trig(self, **hints):
         arg = self.args[0]
@@ -1704,6 +1720,8 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
         return self._calculate_reciprocal("_eval_expand_trig", **hints)
 
     def _eval_is_extended_real(self):
+        if self.args[0].is_real and self._eval_is_complex():
+            return True
         if self.args[0].is_finite:
             return (1/self._reciprocal_of(self.args[0])).is_extended_real
 
@@ -1712,6 +1730,11 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
 
     def _eval_is_finite(self):
         return (1/self._reciprocal_of(self.args[0])).is_finite
+
+    def _eval_is_zero(self):
+        # zero only where the reciprocal is infinite
+        if self.args[0].is_extended_real is False and im(self.args[0]).is_finite:
+            return False
 
     def _eval_nseries(self, x, n, logx, cdir=0):
         return (1/self._reciprocal_of(self.args[0]))._eval_nseries(x, n, logx)
@@ -2086,6 +2109,9 @@ class sinc(DefinedFunction):
         return Piecewise((sin(arg)/arg, Ne(arg, S.Zero)), (S.One, S.true))
 
     def _eval_is_zero(self):
+        # sin is bounded where the imaginary part is
+        if self.args[0].is_infinite and im(self.args[0]).is_finite:
+            return True
         rest, pi_mult = _peeloff_pi(self.args[0])
         if rest.is_zero:
             return fuzzy_and([pi_mult.is_integer, pi_mult.is_nonzero])
@@ -3710,6 +3736,13 @@ class atan2(InverseTrigonometricFunction):
         n = x + S.ImaginaryUnit*y
         d = x**2 + y**2
         return arg_f(n/sqrt(d)) - S.ImaginaryUnit*log(abs(n)/sqrt(abs(d)))
+
+    def _eval_is_extended_real(self):
+        # -I*log((x + I*y)/sqrt(x**2 + y**2)) is real where x*conjugate(y) is,
+        # and nan where x + I*y is zero
+        y, x = self.args
+        if x.is_finite and y.is_finite and (x + S.ImaginaryUnit*y).is_zero is False:
+            return (x*y.conjugate()).is_extended_real
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate(), self.args[1].conjugate())

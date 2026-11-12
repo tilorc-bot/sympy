@@ -1819,6 +1819,42 @@ def test_reciprocal_trigonometric_assumptions():
     assert csc(I*oo, evaluate=False).is_negative is False
 
 
+def test_assumptions_from_the_form_of_the_argument():
+    a = Symbol('a', extended_real=True)
+    q = Symbol('q', infinite=True, extended_real=True)
+    irr = Symbol('irr', irrational=True)
+    n = Symbol('n', integer=True)
+    # tan(oo + I) and cot(oo + I) are not real, tan(oo*I) is I
+    assert tan(a + I).is_extended_real is False
+    assert cot(a + I).is_extended_real is False
+    assert tan(I*q, evaluate=False).is_extended_real is False
+    # tan(pi/2), cot(0) and cot(pi) are zoo
+    assert tan(pi/2, evaluate=False).is_extended_real is False
+    assert cot(0, evaluate=False).is_extended_real is False
+    assert cot(pi, evaluate=False).is_positive is False
+    # |sec(a + I)| and |csc(a + I)| are at least 1/cosh(1)
+    assert sec(a + I).is_zero is False
+    assert csc(a + I).is_zero is False
+    assert sec(pi*irr).is_real is True
+    assert csc(pi*irr).is_real is True
+    for f in (sin, cos, tan, cot, sec, csc):
+        assert f(pi*n/2).is_transcendental is False
+    # cot(1) is real, sinc(oo + I) is zero
+    o = Symbol('o', odd=True)
+    assert cot(o + pi, evaluate=False).is_extended_real is True
+    assert tan(pi*n + 1, evaluate=False).is_extended_real is True
+    assert sinc(q + I).is_zero is True
+    assert sinc(I*q).is_zero is None
+    b = Symbol('b', positive=True)
+    r = Symbol('r', real=True)
+    # atan2(1 + I, 2 + 2*I) is pi/4, atan2(I, 1) is nan, atan2(b, b*I + I) is not real
+    assert atan2(1 + I, 2 + 2*I, evaluate=False).is_extended_real is True
+    assert atan2(I, 1, evaluate=False).is_extended_real is None
+    assert atan2(-I, 1, evaluate=False).is_extended_real is False
+    assert atan2(b, b*I + I).is_extended_real is False
+    assert atan2(r + I, b).is_extended_real is None
+
+
 def test_sec_rewrite():
     assert sec(x).rewrite(exp) == 1/(exp(I*x)/2 + exp(-I*x)/2)
     assert sec(x).rewrite(cos) == 1/cos(x)
