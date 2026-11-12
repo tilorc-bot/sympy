@@ -349,18 +349,6 @@ class sinh(HyperbolicFunction):
             return re.is_finite
         return im_is_n_pi
 
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_positive
-
-    def _eval_is_negative(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_negative
-
-    def _eval_is_finite(self):
-        arg = self.args[0]
-        return arg.is_finite
-
     def _eval_is_zero(self):
         rest, ipi_mult = _peeloff_ipi(self.args[0])
         if rest.is_zero:
@@ -618,10 +606,6 @@ class cosh(HyperbolicFunction):
                 ])
             ])
 
-    def _eval_is_finite(self):
-        arg = self.args[0]
-        return arg.is_finite
-
     def _eval_derivative_n_times(self, s, n):
         if self.args[0] == s and n.is_integer and n.is_nonnegative:
             if n.is_even:
@@ -825,14 +809,6 @@ class tanh(HyperbolicFunction):
         if im_is_n_pi_2 is False and re.is_finite:
             return False
 
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_positive
-
-    def _eval_is_negative(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_negative
-
     def _eval_is_finite(self):
         arg = self.args[0]
 
@@ -981,14 +957,6 @@ class coth(HyperbolicFunction):
 
     def _eval_rewrite_as_tanh(self, arg, **kwargs):
         return 1/tanh(arg)
-
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_positive
-
-    def _eval_is_negative(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_negative
 
     def _eval_as_leading_term(self, x, logx, cdir):
         from sympy.series.order import Order
@@ -1160,14 +1128,6 @@ class csch(ReciprocalHyperbolicFunction):
 
     def _eval_rewrite_as_sinh(self, arg, **kwargs):
         return 1 / sinh(arg)
-
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_positive
-
-    def _eval_is_negative(self):
-        if self.args[0].is_extended_real:
-            return self.args[0].is_negative
 
 
 class sech(ReciprocalHyperbolicFunction):
@@ -1406,15 +1366,6 @@ class asinh(InverseHyperbolicFunction):
         """
         return sinh
 
-    def _eval_is_zero(self):
-        return self.args[0].is_zero
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
-
-    def _eval_is_finite(self):
-        return self.args[0].is_finite
-
 
 class acosh(InverseHyperbolicFunction):
     """
@@ -1600,9 +1551,6 @@ class acosh(InverseHyperbolicFunction):
     def _eval_is_extended_real(self):
         return fuzzy_and([self.args[0].is_extended_real, (self.args[0] - 1).is_extended_nonnegative])
 
-    def _eval_is_finite(self):
-        return self.args[0].is_finite
-
 
 class atanh(InverseHyperbolicFunction):
     """
@@ -1752,18 +1700,11 @@ class atanh(InverseHyperbolicFunction):
         return (pi*x/(2*sqrt(-x**2)) -
                 sqrt(-x)*sqrt(1 - x**2)/sqrt(x)*f*asinh(f))
 
-    def _eval_is_zero(self):
-        if self.args[0].is_zero:
-            return True
-
     def _eval_is_extended_real(self):
         return fuzzy_and([self.args[0].is_extended_real, (1 - self.args[0]).is_nonnegative, (self.args[0] + 1).is_nonnegative])
 
     def _eval_is_finite(self):
         return fuzzy_not(fuzzy_or([(self.args[0] - 1).is_zero, (self.args[0] + 1).is_zero]))
-
-    def _eval_is_imaginary(self):
-        return self.args[0].is_imaginary
 
     def inverse(self, argindex=1):
         """
@@ -2112,9 +2053,6 @@ class asech(InverseHyperbolicFunction):
     def _eval_is_extended_real(self):
         return fuzzy_and([self.args[0].is_extended_real, self.args[0].is_nonnegative, (1 - self.args[0]).is_nonnegative])
 
-    def _eval_is_finite(self):
-        return fuzzy_not(self.args[0].is_zero)
-
 
 class acsch(InverseHyperbolicFunction):
     """
@@ -2311,12 +2249,3 @@ class acsch(InverseHyperbolicFunction):
         arg2p1 = arg2 + 1
         return sqrt(-arg2)/arg*(pi*S.Half -
                                 sqrt(-arg2p1**2)/arg2p1*atanh(sqrt(arg2p1)))
-
-    def _eval_is_zero(self):
-        return self.args[0].is_infinite
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
-
-    def _eval_is_finite(self):
-        return fuzzy_not(self.args[0].is_zero)
