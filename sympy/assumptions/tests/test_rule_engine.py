@@ -33,8 +33,10 @@ from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.hyperbolic import (cosh, coth, csch, sech, sinh,
+    tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
-from sympy.functions.elementary.trigonometric import acos, cos, sin, tan
+from sympy.functions.elementary.trigonometric import acos, cos, csc, sec, sin, tan
 from sympy.logic.boolalg import And
 from sympy.testing.pytest import raises
 
@@ -182,6 +184,71 @@ def test_numbers_without_symbols():
     assert sqrt(2) not in known(sqrt(2) - 1)
     assert known(sqrt(2) - 1)[sqrt(2) - 1] == positive
     assert known(acos(Rational(1, 7)) + sqrt(2))[sqrt(2)] == positive
+
+
+def test_exact_numbers_without_symbols():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    # rational numbers
+    assert ask_number(Q.integer, Pow(half, 3, evaluate=False)) is False
+    assert ask_number(Q.rational, Pow(3, -2, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(half, -2, evaluate=False)) is True
+    assert ask_number(Q.prime, Pow(4, half, evaluate=False)) is True
+    assert ask_number(Q.positive, Pow(Rational(1, 8), Rational(-2, 3), evaluate=False)) is True
+    assert ask_number(Q.integer, Pow(Rational(1, 8), Rational(-2, 3), evaluate=False)) is True
+    assert ask_number(Q.zero, Add(-1, 1, evaluate=False)) is True
+    assert ask_number(Q.zero, Pow(0, half, evaluate=False)) is True
+    assert ask_number(Q.odd, Pow(0, 0, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(2, 512, evaluate=False)) is True
+    assert ask_number(Q.even, Pow(2, 600, evaluate=False)) is None
+    assert ask_number(Q.positive, Pow(2, 600, evaluate=False)) is True
+    # roots which are not rational, and the root of a negative number
+    assert ask_number(Q.integer, Pow(8, half, evaluate=False)) is None
+    assert ask_number(Q.real, Pow(-8, Rational(1, 3), evaluate=False)) is False
+    # values at 0 and at multiples of pi/2
+    assert ask_number(Q.zero, sin(Add(-1, 1, evaluate=False))) is True
+    assert ask_number(Q.zero, cos(5*pi/2, evaluate=False)) is True
+    assert ask_number(Q.zero, cosh(5*I*pi/2, evaluate=False)) is True
+    assert ask_number(Q.zero, sinh(2*I*pi, evaluate=False)) is True
+    assert ask_number(Q.odd, exp(-I*pi, evaluate=False)) is True
+    assert tan(pi/2, evaluate=False) not in known(tan(pi/2, evaluate=False))
+    assert ask_number(Q.algebraic, exp(I*pi/3)) is True
+    assert ask_number(Q.algebraic, cos(2*pi/7)) is True
+    assert ask_number(Q.algebraic, sinh(pi/7)) is None
+
+
+def test_functions_of_numbers_without_symbols():
+    def ask_number(predicate, number):
+        with old_assumptions_forbidden():
+            return ask(predicate, number)
+
+    def known(expr):
+        with old_assumptions_forbidden():
+            return preprocess(expr, True)
+
+    half = Rational(1, 2)
+    # sec, csc and the hyperbolic functions
+    assert ask_number(Q.positive, sec(1)) is True
+    assert ask_number(Q.negative, sec(2)) is True
+    assert ask_number(Q.negative, csc(-1)) is True
+    assert ask_number(Q.negative, sinh(-2)) is True
+    assert ask_number(Q.positive, cosh(2)) is True
+    assert ask_number(Q.negative, cosh(2*I, evaluate=False)) is True
+    assert ask_number(Q.real, cosh(1 + 2*I)) is False
+    assert ask_number(Q.real, tanh(1 + I*pi/3)) is False
+    assert ask_number(Q.positive, coth(half)) is True
+    assert ask_number(Q.positive, sech(3)) is True
+    assert ask_number(Q.negative, csch(-3)) is True
+    # poles
+    assert sec(pi/2, evaluate=False) not in known(sec(pi/2, evaluate=False))
+    assert csc(0, evaluate=False) not in known(csc(0, evaluate=False))
 
 
 def test_preprocess_declared_symbols():

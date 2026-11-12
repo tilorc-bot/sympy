@@ -1,6 +1,8 @@
 """What a number is, from its class and its value, without the old assumptions."""
 from __future__ import annotations
 
+from fractions import Fraction
+from math import prod
 from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask import Q
@@ -10,12 +12,15 @@ from sympy.core.numbers import (Catalan, ComplexInfinity, EulerGamma, Exp1, Floa
     GoldenRatio, Half, ImaginaryUnit, Infinity, Integer, NegativeInfinity, NegativeOne,
     One, Pi, Rational, TribonacciConstant, Zero, int_valued)
 from sympy.core.power import Pow
+from sympy.external.gmpy import iroot
 from sympy.external.mpmath import (fone, from_int, fzero, mpci_abs, mpci_add,
     mpci_cos, mpci_div, mpci_exp, mpci_log, mpci_mul, mpci_pow, mpci_sin, mpf_e,
     mpf_pi, mpf_sign, mpi_div, mpi_neg, round_ceiling, round_floor)
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re
 from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.trigonometric import cos, cot, sin, tan
+from sympy.functions.elementary.hyperbolic import (cosh, coth, csch, sech, sinh,
+    tanh)
+from sympy.functions.elementary.trigonometric import cos, cot, csc, sec, sin, tan
 from sympy.ntheory.primetest import isprime
 
 if TYPE_CHECKING:
@@ -59,11 +64,8 @@ def number_facts(expr: Basic) -> Facts | None:
     facts = _CONSTANTS.get(type(expr))
     if facts is not None:
         return facts
-    if isinstance(expr, Integer):
-        return _integer_facts(expr.p)
     if isinstance(expr, Rational):
-        return [(Q.positive if expr.p > 0 else Q.negative, True),
-                (Q.rational, True), (Q.integer, False), _NOT_ANTIHERMITIAN]
+        return _rational_facts(expr.p, expr.q)
     if isinstance(expr, Float):
         sign = mpf_sign(expr._mpf_)
         if sign == 0:
@@ -74,8 +76,21 @@ def number_facts(expr: Basic) -> Facts | None:
         return facts
     if expr.is_Atom:
         return None
+    value = _exact(expr)
+    if value is not None:
+        return _rational_facts(value.numerator, value.denominator)
     z = _interval(expr)
-    return None if z is None else _interval_facts(z)
+    facts = None if z is None else _interval_facts(z)
+    if _is_algebraic(expr):
+        return (facts or []) + [(Q.algebraic, True)]
+    return facts
+
+
+def _rational_facts(p: int, q: int) -> Facts:
+    if q == 1:
+        return _integer_facts(p)
+    return [(Q.positive if p > 0 else Q.negative, True), (Q.rational, True),
+            (Q.integer, False), _NOT_ANTIHERMITIAN]
 
 
 def _integer_facts(n: int) -> Facts:
@@ -92,14 +107,106 @@ def _integer_facts(n: int) -> Facts:
 
 _PREC = 53
 # no interval has an endpoint of 2**_MAX_MAG or more in absolute value, which
-# keeps exp, sin and cos of them fast
+# keeps exp, sin and cos of them fast, and no exact power has a numerator or a
+# denominator of more than _MAX_MAG bits
 _MAX_MAG = 1024
 _ZERO_PART = (fzero, fzero)
+_ONE = ((fone, fone), _ZERO_PART)
 _ATOM_INTERVALS: dict[type, Interval] = {
     Pi: ((mpf_pi(_PREC, round_floor), mpf_pi(_PREC, round_ceiling)), _ZERO_PART),
     Exp1: ((mpf_e(_PREC, round_floor), mpf_e(_PREC, round_ceiling)), _ZERO_PART),
     ImaginaryUnit: (_ZERO_PART, (fone, fone)),
 }
+_EXACT_VALUES: dict[tuple[type, Fraction | int | None], int] = {
+    (sin, 0): 0, (tan, 0): 0, (sinh, 0): 0, (tanh, 0): 0, (cos, 0): 1, (cosh, 0): 1,
+    (exp, 0): 1, (log, 1): 0}
+# (function, whether its argument is r*I*pi rather than r*pi): its values at
+# r = 0, 1/2, 1, 3/2, which repeat with period 2, None where they are not rational
+_AT_HALF_TURNS: dict[tuple[type, bool], tuple[int | None, ...]] = {
+    (sin, False): (0, 1, 0, -1), (cos, False): (1, 0, -1, 0),
+    (tan, False): (0, None, 0, None), (exp, True): (1, None, -1, None),
+    (cosh, True): (1, 0, -1, 0), (sinh, True): (0, None, 0, None)}
+
+
+def _exact(expr: Basic) -> Fraction | int | None:
+    """The value of *expr* if exact arithmetic on rational numbers finds it."""
+    cls = type(expr)
+    if isinstance(expr, Rational):
+        return expr.p if expr.q == 1 else Fraction(expr.p, expr.q)
+    if cls is Add or cls is Mul:
+        values = []
+        # the rational coefficient comes first, and is not converted if another argument fails
+        for arg in reversed(expr.args):
+            value = _exact(arg)
+            if value is None:
+                return None
+            values.append(value)
+        return sum(values) if cls is Add else prod(values)
+    if cls is Pow:
+        base, exponent = expr.args
+        if not isinstance(exponent, Rational):
+            return None
+        value = _exact(base)
+        return None if value is None else _exact_power(value, exponent.p, exponent.q)
+    if cls in _FUNCTIONS:
+        multiple = _pi_multiple(expr.args[0])
+        if multiple is None:
+            return _EXACT_VALUES.get((cls, _exact(expr.args[0])))
+        r, imaginary = multiple
+        turns = _AT_HALF_TURNS.get((cls, imaginary))
+        if turns is not None and (2*r).denominator == 1:
+            return turns[int(2*r) % 4]
+    return None
+
+
+def _exact_power(base: Fraction | int, p: int, q: int) -> Fraction | int | None:
+    """``base**(p/q)`` if it is rational and not too large."""
+    if q != 1:
+        if base < 0 or q > _MAX_MAG:
+            return None
+        numerator, numerator_exact = iroot(base.numerator, q)
+        denominator, denominator_exact = iroot(base.denominator, q)
+        if not (numerator_exact and denominator_exact):
+            return None
+        base = Fraction(int(numerator), int(denominator))
+    bits = max(base.numerator.bit_length(), base.denominator.bit_length())
+    if base == 0 and p < 0 or abs(p) * bits > _MAX_MAG:
+        return None
+    return Fraction(base)**p if p < 0 else base**p
+
+
+def _pi_multiple(expr: Basic) -> tuple[Fraction | int, bool] | None:
+    """``(r, False)`` if *expr* is ``r*pi``, ``(r, True)`` if it is ``r*I*pi``, for a rational ``r``."""
+    if type(expr) is Pi:
+        return 1, False
+    if type(expr) is not Mul:
+        return None
+    r: Fraction | int = 1
+    pi_count = i_count = 0
+    for arg in expr.args:
+        if type(arg) is Pi:
+            pi_count += 1
+        elif type(arg) is ImaginaryUnit:
+            i_count += 1
+        elif isinstance(arg, Rational):
+            r *= Fraction(arg.p, arg.q)
+        else:
+            return None
+    return (r, i_count == 1) if pi_count == 1 and i_count <= 1 else None
+
+
+# the functions which are algebraic at r*pi, or at r*I*pi, for a rational r
+_ALGEBRAIC_AT_PI_MULTIPLES: dict[type, bool] = {
+    sin: False, cos: False, exp: True, cosh: True, sinh: True}
+
+
+def _is_algebraic(expr: Basic) -> bool:
+    """Whether *expr* is a function of ``_ALGEBRAIC_AT_PI_MULTIPLES`` at such an argument."""
+    imaginary = _ALGEBRAIC_AT_PI_MULTIPLES.get(type(expr))
+    if imaginary is None:
+        return False
+    multiple = _pi_multiple(expr.args[0])
+    return multiple is not None and multiple[1] is imaginary
 
 
 def _sin(z: Interval) -> Interval:
@@ -108,6 +215,32 @@ def _sin(z: Interval) -> Interval:
 
 def _cos(z: Interval) -> Interval:
     return mpci_cos(z, _PREC)
+
+
+def _div(z: Interval, w: Interval) -> Interval:
+    return mpci_div(z, w, _PREC)
+
+
+def _reciprocal(z: Interval) -> Interval:
+    return mpci_div(_ONE, z, _PREC)
+
+
+def _times_i(z: Interval) -> Interval:
+    """``I*z``"""
+    return mpi_neg(z[1]), z[0]
+
+
+def _times_minus_i(z: Interval) -> Interval:
+    """``-I*z``"""
+    return z[1], mpi_neg(z[0])
+
+
+def _cosh(z: Interval) -> Interval:
+    return _cos(_times_i(z))
+
+
+def _sinh(z: Interval) -> Interval:
+    return _times_minus_i(_sin(_times_i(z)))
 
 
 def _log(z: Interval) -> Interval | None:
@@ -126,8 +259,16 @@ _FUNCTIONS: dict[type, Callable[[Interval], Interval | None]] = {
     log: _log,
     sin: _sin,
     cos: _cos,
-    tan: lambda z: mpci_div(_sin(z), _cos(z), _PREC),
-    cot: lambda z: mpci_div(_cos(z), _sin(z), _PREC),
+    tan: lambda z: _div(_sin(z), _cos(z)),
+    cot: lambda z: _div(_cos(z), _sin(z)),
+    sec: lambda z: _reciprocal(_cos(z)),
+    csc: lambda z: _reciprocal(_sin(z)),
+    sinh: _sinh,
+    cosh: _cosh,
+    tanh: lambda z: _div(_sinh(z), _cosh(z)),
+    coth: lambda z: _div(_cosh(z), _sinh(z)),
+    sech: lambda z: _reciprocal(_cosh(z)),
+    csch: lambda z: _reciprocal(_sinh(z)),
     Abs: lambda z: (mpci_abs(z, _PREC), _ZERO_PART),
     re: lambda z: (z[0], _ZERO_PART),
     im: lambda z: (z[1], _ZERO_PART),
