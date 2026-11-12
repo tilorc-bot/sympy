@@ -89,11 +89,6 @@ class elliptic_k(DefinedFunction):
     def _eval_rewrite_as_meijerg(self, m, **kwargs):
         return meijerg(((S.Half, S.Half), []), ((S.Zero,), (S.Zero,)), -m)/2
 
-    def _eval_is_zero(self):
-        m = self.args[0]
-        if m.is_infinite:
-            return True
-
     def _eval_rewrite_as_Integral(self, *args, **kwargs):
         from sympy.integrals.integrals import Integral
         t = Dummy(uniquely_named_symbol('t', args).name)
@@ -177,14 +172,6 @@ class elliptic_f(DefinedFunction):
         t = Dummy(uniquely_named_symbol('t', args).name)
         z, m = self.args[0], self.args[1]
         return Integral(1/(sqrt(1 - m*sin(t)**2)), (t, 0, z))
-
-    def _eval_is_zero(self):
-        z, m = self.args
-        if z.is_zero:
-            return True
-        if m.is_extended_real and m.is_infinite:
-            return True
-
 
 class elliptic_e(DefinedFunction):
     r"""

@@ -4,7 +4,6 @@ from functools import reduce
 from sympy.core import S, sympify, Dummy, Mod
 from sympy.core.cache import cacheit
 from sympy.core.function import DefinedFunction, ArgumentIndexError, PoleError
-from sympy.core.logic import fuzzy_and
 from sympy.core.numbers import Integer, pi, I
 from sympy.core.relational import Eq
 from sympy.external.gmpy import gmpy as _gmpy
@@ -255,11 +254,6 @@ class factorial(CombinatorialFunction):
         x = self.args[0]
         if x.is_integer and x.is_nonnegative:
             return (x - 3).is_nonnegative
-
-    def _eval_is_real(self):
-        x = self.args[0]
-        if x.is_nonnegative or x.is_noninteger:
-            return True
 
     def _eval_as_leading_term(self, x, logx, cdir):
         arg = self.args[0].as_leading_term(x)
@@ -617,11 +611,6 @@ class RisingFactorial(CombinatorialFunction):
                 return (S.NegativeOne**k*gamma(1 - x) / gamma(-k - x + 1).rewrite('tractable', deep=True))
         return self.rewrite(gamma).rewrite('tractable', deep=True)
 
-    def _eval_is_integer(self):
-        return fuzzy_and((self.args[0].is_integer, self.args[1].is_integer,
-                          self.args[1].is_nonnegative))
-
-
 class FallingFactorial(CombinatorialFunction):
     r"""
     Falling factorial (related to rising factorial) is a double valued
@@ -770,11 +759,6 @@ class FallingFactorial(CombinatorialFunction):
             elif k_lim is S.NegativeInfinity:
                 return (gamma(x + 1) / gamma(x - k + 1).rewrite('tractable', deep=True))
         return self.rewrite(gamma).rewrite('tractable', deep=True)
-
-    def _eval_is_integer(self):
-        return fuzzy_and((self.args[0].is_integer, self.args[1].is_integer,
-                          self.args[1].is_nonnegative))
-
 
 rf = RisingFactorial
 ff = FallingFactorial
@@ -1071,21 +1055,6 @@ class binomial(CombinatorialFunction):
     def _eval_rewrite_as_FallingFactorial(self, n, k, **kwargs):
         if k.is_integer:
             return ff(n, k) / factorial(k)
-
-    def _eval_is_integer(self):
-        n, k = self.args
-        if n.is_integer and k.is_integer:
-            return True
-        elif k.is_integer is False:
-            return False
-
-    def _eval_is_nonnegative(self):
-        n, k = self.args
-        if n.is_integer and k.is_integer:
-            if n.is_nonnegative or k.is_negative or k.is_even:
-                return True
-            elif k.is_even is False:
-                return  False
 
     def _eval_as_leading_term(self, x, logx, cdir):
         from sympy.functions.special.gamma_functions import gamma

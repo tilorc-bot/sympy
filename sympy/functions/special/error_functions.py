@@ -192,27 +192,8 @@ class erf(DefinedFunction):
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
 
-    def _eval_is_real(self):
-        if self.args[0].is_extended_real is True:
-            return True
         # There are cases where erf(z) becomes a real number
         # even if z is a complex number
-
-    def _eval_is_finite(self):
-        z = self.args[0]
-        return fuzzy_or([z.is_finite, z.is_extended_real])
-
-    def _eval_is_zero(self):
-        if self.args[0].is_extended_real is True:
-            return self.args[0].is_zero
-
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real is True:
-            return self.args[0].is_extended_positive
-
-    def _eval_is_negative(self):
-        if self.args[0].is_extended_real is True:
-            return self.args[0].is_extended_negative
 
     def _eval_rewrite_as_uppergamma(self, z, **kwargs):
         from sympy.functions.special.gamma_functions import uppergamma
@@ -600,12 +581,6 @@ class erfi(DefinedFunction):
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
 
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
-
-    def _eval_is_zero(self):
-        return self.args[0].is_zero
-
     def _eval_rewrite_as_tractable(self, z, limitvar=None, **kwargs):
         return self.rewrite(erf).rewrite("tractable", deep=True, limitvar=limitvar)
 
@@ -771,9 +746,6 @@ class erf2(DefinedFunction):
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate(), self.args[1].conjugate())
 
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real and self.args[1].is_extended_real
-
     def _eval_rewrite_as_erf(self, x, y, **kwargs):
         return erf(y) - erf(x)
 
@@ -900,10 +872,6 @@ class erfinv(DefinedFunction):
 
     def _eval_rewrite_as_erfcinv(self, z, **kwargs):
         return erfcinv(1-z)
-
-    def _eval_is_zero(self):
-        return self.args[0].is_zero
-
 
 class erfcinv (DefinedFunction):
     r"""
@@ -1078,11 +1046,6 @@ class erf2inv(DefinedFunction):
                 return erfinv(y)
         if y.is_zero:
             return x
-
-    def _eval_is_zero(self):
-        x, y = self.args
-        if x.is_zero and y.is_zero:
-            return True
 
 ###############################################################################
 #################### EXPONENTIAL INTEGRALS ####################################
@@ -1660,11 +1623,6 @@ class li(DefinedFunction):
         s = [(log(z))**k / (factorial(k) * k) for k in range(1, n)]
         return EulerGamma + log(log(z)) + Add(*s)
 
-    def _eval_is_zero(self):
-        z = self.args[0]
-        if z.is_zero:
-            return True
-
 class Li(DefinedFunction):
     r"""
     The offset logarithmic integral.
@@ -1954,12 +1912,6 @@ class Si(TrigonometricIntegral):
         # All other points are not handled
         return super(Si, self)._eval_aseries(n, args0, x, logx)
 
-    def _eval_is_zero(self):
-        z = self.args[0]
-        if z.is_zero:
-            return True
-
-
 class Ci(TrigonometricIntegral):
     r"""
     Cosine integral.
@@ -2187,11 +2139,6 @@ class Shi(TrigonometricIntegral):
         # XXX should we polarify z?
         return (E1(z) - E1(exp_polar(I*pi)*z))/2 - I*pi/2
 
-    def _eval_is_zero(self):
-        z = self.args[0]
-        if z.is_zero:
-            return True
-
     def _eval_as_leading_term(self, x, logx, cdir):
         arg = self.args[0].as_leading_term(x)
         arg0 = arg.subs(x, 0)
@@ -2364,14 +2311,6 @@ class FresnelIntegral(DefinedFunction):
             return self._trigfunc(S.Half*pi*self.args[0]**2)
         else:
             raise ArgumentIndexError(self, argindex)
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
-
-    _eval_is_finite = _eval_is_extended_real
-
-    def _eval_is_zero(self):
-        return self.args[0].is_zero
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
@@ -2824,34 +2763,6 @@ class owens_t(DefinedFunction):
         # T(h, a) is odd in a: T(h, -a) = -T(h, a)
         if a.could_extract_minus_sign():
             return -cls(h, -a)
-
-    def _eval_is_extended_real(self):
-        # T(h, a) depends on h only through h**2, so a non-real h does
-        # not rule out a real result (e.g. T(I, 1) is real); this can
-        # only ever confirm realness, never deny it.
-        h, a = self.args
-        if h.is_extended_real and a.is_extended_real:
-            return True
-
-    def _eval_is_positive(self):
-        # The integrand is strictly positive for real h, so T(h, a)
-        # has the same sign as a whenever h is real (and thus finite --
-        # if h were literally +-oo, T would be exactly 0 instead).
-        h, a = self.args
-        if h.is_real:
-            return a.is_extended_positive
-
-    def _eval_is_negative(self):
-        h, a = self.args
-        if h.is_real:
-            return a.is_extended_negative
-
-    def _eval_is_zero(self):
-        h, a = self.args
-        if a.is_zero or h is S.Infinity or h is S.NegativeInfinity:
-            return True
-        if h.is_real and a.is_real:
-            return a.is_zero
 
     def _eval_conjugate(self):
         h, a = self.args

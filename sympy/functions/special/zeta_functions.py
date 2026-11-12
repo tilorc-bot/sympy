@@ -351,11 +351,6 @@ class polylog(DefinedFunction):
             return expand_mul(start).subs(u, z)
         return polylog(s, z)
 
-    def _eval_is_zero(self):
-        z = self.args[1]
-        if z.is_zero:
-            return True
-
     def _eval_nseries(self, x, n, logx, cdir=0):
         from sympy.series.order import Order
         nu, z = self.args

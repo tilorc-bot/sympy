@@ -243,11 +243,6 @@ class besselj(BesselBase):
 
         return super(besselj, self)._eval_as_leading_term(x, logx=logx, cdir=cdir)
 
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_extended_real:
-            return True
-
     def _eval_nseries(self, x, n, logx, cdir=0):
         # Refer https://functions.wolfram.com/Bessel-TypeFunctions/BesselJ/06/01/04/01/01/0003/
         # for more information on nseries expansion of besselj function.
@@ -528,11 +523,6 @@ class besseli(BesselBase):
 
     def _eval_rewrite_as_jn(self, nu, z, **kwargs):
         return self._eval_rewrite_as_besselj(*self.args).rewrite(jn)
-
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_extended_real:
-            return True
 
     def _eval_as_leading_term(self, x, logx, cdir):
         nu, z = self.args
@@ -1347,9 +1337,6 @@ class AiryBase(DefinedFunction):
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
 
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
-
     def as_real_imag(self, deep=True, **hints):
         z = self.args[0]
         zc = z.conjugate()
@@ -2131,10 +2118,6 @@ class marcumq(DefinedFunction):
             if m.is_Integer and m >= 2:
                 s = sum(besseli(i, a**2) for i in range(1, m))
                 return S.Half + exp(-a**2) * besseli(0, a**2) / 2 + exp(-a**2) * s
-
-    def _eval_is_zero(self):
-        if all(arg.is_zero for arg in self.args):
-            return True
 
 class _besseli(DefinedFunction):
     """

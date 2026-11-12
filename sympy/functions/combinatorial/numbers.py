@@ -1623,10 +1623,6 @@ class andre(DefinedFunction):
         from sympy.functions.special.zeta_functions import polylog
         return (-I)**(s+1) * polylog(-s, I) + I**(s+1) * polylog(-s, -I)
 
-    def _eval_is_positive(self):
-        if self.args[0].is_nonnegative:
-            return True
-
     def _eval_evalf(self, prec):
         if not self.args[0].is_number:
             return
@@ -1689,10 +1685,6 @@ class partition(DefinedFunction):
             return S.One
         if n.is_Integer is True:
             return S(_partition(as_int(n)))
-
-    def _eval_is_positive(self):
-        if self.args[0].is_nonnegative is True:
-            return True
 
     def _eval_Mod(self, q):
         # Ramanujan's congruences

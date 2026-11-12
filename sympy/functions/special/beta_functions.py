@@ -149,9 +149,6 @@ class beta(DefinedFunction):
         x, y = self.args
         return gamma(x)*gamma(y) / gamma(x + y)
 
-    def _eval_is_real(self):
-        return self.args[0].is_real and self.args[1].is_real
-
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate(), self.args[1].conjugate())
 
@@ -261,10 +258,6 @@ class betainc(DefinedFunction):
             if isinstance(res, int):
                 res = ctx.mpf(res)
         return Expr._from_mpmath(res, prec)
-
-    def _eval_is_real(self):
-        if all(arg.is_real for arg in self.args):
-            return True
 
     def _eval_conjugate(self):
         return self.func(*map(conjugate, self.args))
@@ -377,10 +370,6 @@ class betainc_regularized(DefinedFunction):
             return (1 - x2)**(b - 1)*x2**(a - 1) / beta(a, b)
         else:
             raise ArgumentIndexError(self, argindex)
-
-    def _eval_is_real(self):
-        if all(arg.is_real for arg in self.args):
-            return True
 
     def _eval_conjugate(self):
         return self.func(*map(conjugate, self.args))
