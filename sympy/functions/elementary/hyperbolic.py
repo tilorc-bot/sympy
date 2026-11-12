@@ -346,10 +346,6 @@ class sinh(HyperbolicFunction):
         re, im = arg.as_real_imag()
         return (im%pi).is_zero
 
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
-
     def _eval_is_positive(self):
         if self.args[0].is_extended_real:
             return self.args[0].is_positive
@@ -617,11 +613,6 @@ class cosh(HyperbolicFunction):
         arg = self.args[0]
         return arg.is_finite
 
-    def _eval_is_zero(self):
-        rest, ipi_mult = _peeloff_ipi(self.args[0])
-        if ipi_mult and rest.is_zero:
-            return (ipi_mult - S.Half).is_integer
-
     def _eval_derivative_n_times(self, s, n):
         if self.args[0] == s and n.is_integer and n.is_nonnegative:
             if n.is_even:
@@ -817,10 +808,6 @@ class tanh(HyperbolicFunction):
         # if not, im could be a number, return False in that case
         return (im % (pi/2)).is_zero
 
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
-
     def _eval_is_positive(self):
         if self.args[0].is_extended_real:
             return self.args[0].is_positive
@@ -840,12 +827,6 @@ class tanh(HyperbolicFunction):
             return True
         if arg.is_extended_real:
             return True
-
-    def _eval_is_zero(self):
-        arg = self.args[0]
-        if arg.is_zero:
-            return True
-
 
 class coth(HyperbolicFunction):
     r"""
@@ -1226,11 +1207,6 @@ class sech(ReciprocalHyperbolicFunction):
 
     def _eval_rewrite_as_cosh(self, arg, **kwargs):
         return 1 / cosh(arg)
-
-    def _eval_is_positive(self):
-        if self.args[0].is_extended_real:
-            return True
-
 
 ###############################################################################
 ############################# HYPERBOLIC INVERSES #############################
