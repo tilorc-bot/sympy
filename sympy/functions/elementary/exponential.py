@@ -475,9 +475,7 @@ class exp(ExpBase, metaclass=ExpMeta):
                 return False
 
     def _eval_is_extended_positive(self):
-        if self.exp.is_extended_real:
-            return self.args[0] is not S.NegativeInfinity
-        elif self.exp.is_imaginary:
+        if self.exp.is_imaginary:
             arg2 = -I * self.args[0] / pi
             return arg2.is_even
 
@@ -929,13 +927,22 @@ class log(DefinedFunction):
         return fuzzy_and([arg.is_finite, fuzzy_not(arg.is_zero)])
 
     def _eval_is_extended_positive(self):
-        return (self.args[0] - 1).is_extended_positive
+        is_positive = (self.args[0] - 1).is_extended_positive
+        if is_positive or self._arg_is_not_negative_infinity():
+            return is_positive
 
     def _eval_is_zero(self):
         return (self.args[0] - 1).is_zero
 
     def _eval_is_extended_nonnegative(self):
-        return (self.args[0] - 1).is_extended_nonnegative
+        is_nonnegative = (self.args[0] - 1).is_extended_nonnegative
+        if is_nonnegative or self._arg_is_not_negative_infinity():
+            return is_nonnegative
+
+    def _arg_is_not_negative_infinity(self):
+        # log(-oo) is oo
+        arg = self.args[0]
+        return fuzzy_or([arg.is_finite, fuzzy_not(arg.is_extended_negative)])
 
     def _eval_nseries(self, x, n, logx, cdir=0):
         # NOTE Please see the comment at the beginning of this file, labelled
@@ -1201,19 +1208,24 @@ class LambertW(DefinedFunction):
         if k.is_zero:
             if (x + 1/S.Exp1).is_positive:
                 return True
-            elif (x + 1/S.Exp1).is_nonpositive:
+            elif (x + 1/S.Exp1).is_negative:
                 return False
         elif (k + 1).is_zero:
             if x.is_negative and (x + 1/S.Exp1).is_positive:
                 return True
-            elif x.is_nonpositive or (x + 1/S.Exp1).is_nonnegative:
+            elif x.is_positive or (x + 1/S.Exp1).is_negative:
                 return False
         elif fuzzy_not(k.is_zero) and fuzzy_not((k + 1).is_zero):
-            if x.is_extended_real:
+            if fuzzy_and([x.is_extended_real, fuzzy_not(x.is_zero)]):
                 return False
 
     def _eval_is_finite(self):
-        return self.args[0].is_finite
+        x = self.args[0]
+        if len(self.args) == 1:
+            return x.is_finite
+        # LambertW(0, k) is -oo for k != 0
+        return fuzzy_and([x.is_finite,
+                          fuzzy_or([fuzzy_not(x.is_zero), self.args[1].is_zero])])
 
     def _eval_is_algebraic(self):
         s = self.func(*self.args)
