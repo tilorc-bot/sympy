@@ -66,7 +66,9 @@ class TrigonometricFunction(DefinedFunction):
                 return False
             pi_coeff = _pi_coeff(self.args[0])
             if pi_coeff is not None and pi_coeff.is_rational:
-                return True
+                # tan, cot, sec and csc have poles at rational multiples of pi
+                is_finite = getattr(self, '_eval_is_finite', None)
+                return True if is_finite is None else is_finite()
         else:
             return s.is_algebraic
 
@@ -1275,8 +1277,9 @@ class tan(TrigonometricFunction):
         return self.func(x0) if x0.is_finite else self
 
     def _eval_is_extended_real(self):
-        # FIXME: currently tan(pi/2) return zoo
-        return self.args[0].is_extended_real
+        arg = self.args[0]
+        if arg.is_real and (arg/pi - S.Half).is_integer is False:
+            return True
 
     def _eval_is_finite(self):
         arg = self.args[0]
@@ -1561,7 +1564,9 @@ class cot(TrigonometricFunction):
         return self.func(x0) if x0.is_finite else self
 
     def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
+        arg = self.args[0]
+        if arg.is_real and (arg/pi).is_integer is False:
+            return True
 
     def _eval_expand_trig(self, **hints):
         arg = self.args[0]
@@ -1614,8 +1619,6 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
 
     _reciprocal_of = None       # mandatory, to be defined in subclass
     _singularities = (S.ComplexInfinity,)
-
-    is_zero = False # Assuming that the subclasses are sec and csc
 
     # _is_even and _is_odd are used for correct evaluation of csc(-x), sec(-x)
     # TODO refactor into TrigonometricFunction common parts of
@@ -1719,7 +1722,8 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
         return self._calculate_reciprocal("_eval_expand_trig", **hints)
 
     def _eval_is_extended_real(self):
-        return self._reciprocal_of(self.args[0])._eval_is_extended_real()
+        if self.args[0].is_finite:
+            return (1/self._reciprocal_of(self.args[0])).is_extended_real
 
     def _eval_as_leading_term(self, x, logx, cdir):
         return (1/self._reciprocal_of(self.args[0]))._eval_as_leading_term(x, logx=logx, cdir=cdir)
@@ -1737,10 +1741,14 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
         return self._reciprocal_of(self.args[0]).is_positive
 
     def _eval_is_nonnegative(self):
-        return self._reciprocal_of(self.args[0]).is_positive
+        reciprocal = self._reciprocal_of(self.args[0])
+        if reciprocal.is_finite:
+            return reciprocal.is_positive
 
     def _eval_is_extended_nonnegative(self):
-        return self._reciprocal_of(self.args[0]).is_positive
+        reciprocal = self._reciprocal_of(self.args[0])
+        if reciprocal.is_finite:
+            return reciprocal.is_positive
 
     def _eval_is_negative(self):
         return self._reciprocal_of(self.args[0]).is_negative
@@ -1749,10 +1757,14 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
         return self._reciprocal_of(self.args[0]).is_negative
 
     def _eval_is_nonpositive(self):
-        return self._reciprocal_of(self.args[0]).is_negative
+        reciprocal = self._reciprocal_of(self.args[0])
+        if reciprocal.is_finite:
+            return reciprocal.is_negative
 
     def _eval_is_extended_nonpositive(self):
-        return self._reciprocal_of(self.args[0]).is_negative
+        reciprocal = self._reciprocal_of(self.args[0])
+        if reciprocal.is_finite:
+            return reciprocal.is_negative
 
 
 class sec(ReciprocalTrigonometricFunction):
@@ -2092,8 +2104,6 @@ class sinc(DefinedFunction):
         return Piecewise((sin(arg)/arg, Ne(arg, S.Zero)), (S.One, S.true))
 
     def _eval_is_zero(self):
-        if self.args[0].is_infinite:
-            return True
         rest, pi_mult = _peeloff_pi(self.args[0])
         if rest.is_zero:
             return fuzzy_and([pi_mult.is_integer, pi_mult.is_nonzero])
@@ -2252,7 +2262,7 @@ class asin(InverseTrigonometricFunction):
     def _eval_is_rational(self):
         s = self.func(*self.args)
         if s.func == self.func:
-            if s.args[0].is_rational:
+            if s.args[0].is_rational and fuzzy_not(s.args[0].is_zero):
                 return False
         else:
             return s.is_rational
@@ -2496,7 +2506,7 @@ class acos(InverseTrigonometricFunction):
     def _eval_is_rational(self):
         s = self.func(*self.args)
         if s.func == self.func:
-            if s.args[0].is_rational:
+            if s.args[0].is_rational and fuzzy_not((s.args[0] - 1).is_zero):
                 return False
         else:
             return s.is_rational
@@ -2736,7 +2746,7 @@ class atan(InverseTrigonometricFunction):
     def _eval_is_rational(self):
         s = self.func(*self.args)
         if s.func == self.func:
-            if s.args[0].is_rational:
+            if s.args[0].is_rational and fuzzy_not(s.args[0].is_zero):
                 return False
         else:
             return s.is_rational
@@ -3330,9 +3340,9 @@ class asec(InverseTrigonometricFunction):
 
     def _eval_is_extended_real(self):
         x = self.args[0]
-        if x.is_extended_real is False:
-            return False
-        return fuzzy_or(((x - 1).is_nonnegative, (-x - 1).is_nonnegative))
+        if x.is_extended_real:
+            return fuzzy_or(((x - 1).is_extended_nonnegative,
+                             (-x - 1).is_extended_nonnegative))
 
     def _eval_rewrite_as_log(self, arg, **kwargs):
         return pi/2 + S.ImaginaryUnit*log(S.ImaginaryUnit/arg + sqrt(1 - 1/arg**2))
