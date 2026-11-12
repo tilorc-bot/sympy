@@ -8,15 +8,15 @@ from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
 from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
-    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF, TRUE_IF,
-    ask_by_rules)
+    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF,
+    SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.function import DefinedFunction, Function
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
-from sympy.core.numbers import I, pi
+from sympy.core.numbers import E, I, pi
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
@@ -34,10 +34,12 @@ from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
     cos, cot, csc, sec, sin, sinc, tan)
 from sympy.functions.special.error_functions import erf, erf2, erfc, erfcinv, erfi
 from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
+from sympy.integrals.integrals import Integral
 
 VARYING = (Add, DefinedFunction, Max, Min, Mul)
+SOME_ARGS = (SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
-                  OTHER_ARGS)
+                  OTHER_ARGS) + SOME_ARGS
 NUMBERS = (S.One, S.NegativeOne, S.Half, S.ImaginaryUnit)
 
 
@@ -55,6 +57,7 @@ def number_of_arguments(cls):
     if issubclass(cls, Function) and cls.nargs.is_finite_set:
         return max(cls.nargs)
     return {
+        Integral: 1,
         Pow: 2,
         exp_polar: 1,
     }[cls]
@@ -76,6 +79,7 @@ def test_rules_are_well_formed():
                 assert type(argument) is int and type(expected) is bool
                 if cls in VARYING:
                     assert argument in ABOUT_ALL_ARGS
+                    assert expected or argument not in SOME_ARGS
                 else:
                     assert argument == SELF or 0 <= argument < number_of_arguments(cls)
                 assert (isinstance(condition_predicate, Predicate)
@@ -218,8 +222,6 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.nonnegative, x*y*z,
                          Q.negative(x) & Q.nonnegative(y) & Q.negative(z)) is True
     assert ask_generated(Q.positive, x*y, Q.negative(x) & Q.nonnegative(y)) is False
-    # a product of factors which may be zero and of either sign
-    assert ask_generated(Q.positive, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is None
     assert ask_generated(Q.positive, 2*x, ~Q.positive(x)) is False
     assert ask_generated(Q.positive, -x, ~Q.negative(x)) is False
     assert ask_generated(Q.negative, -x, ~Q.positive(x)) is None
@@ -242,6 +244,70 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.integer, x**y, Q.integer(x) & Q.negative(y)) is None
     assert ask_generated(Q.algebraic, x**y, Q.algebraic(x) & Q.irrational(x)
                          & Q.algebraic(y) & Q.irrational(y)) is False
+
+
+def test_products_of_factors_which_may_be_zero():
+    assert ask_generated(Q.nonpositive, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is True
+    assert ask_generated(Q.positive, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is False
+    assert ask_generated(Q.nonnegative, x*y, Q.nonpositive(x) & Q.nonpositive(y)) is True
+    assert ask_generated(Q.negative, x*y, Q.nonpositive(x) & Q.nonpositive(y)) is False
+    assert ask_generated(Q.nonnegative, x*y*z, Q.negative(x) & Q.nonnegative(y)
+                         & Q.nonpositive(z)) is True
+    assert ask_generated(Q.nonpositive, -x*y*z, Q.negative(x) & Q.nonnegative(y)
+                         & Q.nonpositive(z)) is True
+    assert ask_generated(Q.nonpositive, 17*x*y*z, Q.positive(x) & Q.nonnegative(y)
+                         & Q.nonpositive(z)) is True
+    assert ask_generated(Q.real, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is True
+    assert ask_generated(Q.nonnegative, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is None
+    assert ask_generated(Q.zero, x*y, Q.nonnegative(x) & Q.nonpositive(y)) is None
+    assert ask_generated(Q.nonpositive, x*y, Q.nonnegative(x) & Q.real(y)) is None
+    assert ask_generated(Q.nonpositive, x*y*z, Q.nonnegative(x) & Q.nonpositive(y)
+                         & Q.nonpositive(z)) is None
+    # 0*oo is nan
+    assert ask_generated(Q.extended_nonpositive, x*y, Q.extended_nonnegative(x)
+                         & Q.extended_nonpositive(y)) is None
+    # y may be I
+    assert ask_generated(Q.real, I*y, ~Q.zero(y)) is None
+    assert ask_generated(Q.real, I*y, Q.nonzero(y)) is False
+
+
+def test_sums_with_one_and_minus_one():
+    positive_integer = Q.integer(x) & Q.positive(x)
+    assert ask_generated(Q.nonnegative, x - 1, positive_integer) is True
+    assert ask_generated(Q.negative, x - 1, positive_integer) is False
+    assert ask_generated(Q.nonnegative, x + y - 1, positive_integer & Q.prime(y)) is True
+    assert ask_generated(Q.nonpositive, 1 - x, positive_integer) is True
+    assert ask_generated(Q.nonnegative, atan(x - 1), positive_integer) is True
+    assert ask_generated(Q.positive, factorial2(x - 1), Q.even(x) & Q.positive(x)) is True
+    assert ask_generated(Q.nonnegative, x - 1, Q.positive(x)) is None
+    assert ask_generated(Q.nonnegative, x - 1, Q.integer(x) & Q.nonnegative(x)) is None
+    assert ask_generated(Q.nonnegative, x - 2, positive_integer) is None
+    assert ask_generated(Q.positive, x - 1, positive_integer) is None
+    assert ask_generated(Q.integer, (x + 1)**-2, positive_integer) is False
+    assert ask_generated(Q.integer, (x + 1)**-2, Q.integer(x) & Q.nonnegative(x)) is None
+    assert ask_generated(Q.prime, x**(y + 1), positive_integer & Q.integer(y)
+                         & Q.positive(y)) is False
+    assert ask_generated(Q.prime, x**(y + 1), positive_integer & Q.integer(y)
+                         & Q.nonnegative(y)) is None
+
+
+def test_composite_products_and_powers():
+    positive_integers = (Q.integer(x) & Q.positive(x) & Q.integer(y) & Q.positive(y))
+    assert ask_generated(Q.composite, (x + 1)*(y + 1), positive_integers) is True
+    assert ask_generated(Q.prime, (x + 1)*(y + 1), positive_integers) is False
+    assert ask_generated(Q.composite, (x + 1)**(y + 1), positive_integers) is True
+    assert ask_generated(Q.composite, (-x - 1)**(2*y), positive_integers) is True
+    assert ask_generated(Q.composite, x*y, Q.prime(x) & Q.integer(y) & Q.positive(y)
+                         & Q.ne(y, 1)) is True
+    assert ask_generated(Q.composite, x**y, Q.prime(x) & Q.even(y) & Q.positive(y)
+                         ) is True
+    # x or y may be 1
+    assert ask_generated(Q.composite, x*(y + 1), positive_integers) is None
+    assert ask_generated(Q.composite, (x + 1)**y, positive_integers) is None
+    # -1 to an even power is 1
+    assert ask_generated(Q.composite, (-x)**(2*y), positive_integers) is None
+    # an odd power of a negative number is negative
+    assert ask_generated(Q.composite, (-x - 1)**(y + 1), positive_integers) is None
 
 
 def test_min_and_max():
@@ -333,6 +399,23 @@ def test_combinatorial_and_special_functions():
     assert ask_generated(Q.zero, genocchi(x), Q.zero(x)) is True
     assert ask_generated(Q.odd, genocchi(x), Q.zero(x)) is False
     assert ask_generated(Q.real, polygamma(x, y), Q.positive(x) & Q.positive(y)) is True
+    assert ask_generated(Q.positive, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.positive(y)) is True
+    assert ask_generated(Q.positive, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.negative(y) & ~Q.integer(y)) is True
+    assert ask_generated(Q.negative, polygamma(x, y), Q.even(x) & Q.positive(x)
+                         & Q.positive(y)) is True
+    assert ask_generated(Q.positive, polygamma(3, x), Q.eq(x, S.Half)) is True
+    # polygamma(1, -2) is zoo
+    assert ask_generated(Q.positive, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.real(y)) is None
+    # polygamma(2, -3/10) is positive and polygamma(2, -7/10) is negative
+    assert ask_generated(Q.negative, polygamma(x, y), Q.even(x) & Q.positive(x)
+                         & Q.negative(y) & ~Q.integer(y)) is None
+    assert ask_generated(Q.positive, polygamma(x, y), Q.positive(x) & Q.positive(y)
+                         ) is None
+    assert ask_generated(Q.zero, Integral(x, (y, 0, 1)), Q.zero(x)) is True
+    assert ask_generated(Q.zero, Integral(x, (y, 0, 1))) is None
     assert ask_generated(Q.zero, erf(x), Q.zero(x)) is True
     assert ask_generated(Q.real, erf(x), Q.imaginary(x)) is False
     # erf has zeros which are not real
@@ -345,6 +428,23 @@ def test_combinatorial_and_special_functions():
     assert ask_generated(Q.positive, erfc(x), Q.extended_real(x)) is None
     assert ask_generated(Q.infinite, erfcinv(x), Q.zero(x)) is True
     assert ask_generated(Q.zero, erf2(x, y), Q.zero(x) & Q.zero(y)) is True
+
+
+def test_powers_of_e():
+    def power(exponent):
+        return Pow(E, exponent, evaluate=False)
+
+    assert ask_generated(Q.positive, power(x), Q.real(x)) is True
+    assert ask_generated(Q.zero, power(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.zero, power(x), Q.finite(x)) is False
+    assert ask_generated(Q.transcendental, power(x), Q.algebraic(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.integer, power(x), Q.zero(x)) is True
+    assert ask_generated(Q.positive_infinite, power(x), Q.positive_infinite(x)) is True
+    assert ask_generated(Q.transcendental, power(x), Q.algebraic(x)) is None
+    assert ask_generated(Q.positive, power(x), Q.extended_real(x)) is None
+    assert ask(Q.zero, power(x), Q.negative_infinite(x)) is None
+    assert ask_generated(Q.transcendental, Pow(y, x, evaluate=False),
+                         Q.algebraic(x) & ~Q.zero(x) & Q.transcendental(y)) is None
 
 
 def test_commutative():

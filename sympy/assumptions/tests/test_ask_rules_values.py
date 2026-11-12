@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from itertools import combinations_with_replacement
+from itertools import combinations_with_replacement, product
 
 from sympy.assumptions.ask import Q, ask
 from sympy.assumptions.ask_rules_generated import RULES
@@ -9,7 +9,7 @@ from sympy.assumptions.rule_engine import ask_by_rules
 from sympy.core.add import Add
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
-from sympy.core.numbers import I, Rational, nan, oo, pi, zoo
+from sympy.core.numbers import E, I, Rational, nan, oo, pi, zoo
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
@@ -18,7 +18,7 @@ from sympy.functions.combinatorial.factorials import (FallingFactorial,
 from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi, mobius,
     partition, primenu, primeomega, primepi, reduced_totient, totient)
 from sympy.functions.elementary.complexes import Abs, re, sign
-from sympy.functions.elementary.exponential import LambertW, exp_polar, log
+from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
 from sympy.functions.elementary.hyperbolic import (asinh, cosh, coth, csch, sech, sinh,
     tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
@@ -46,6 +46,11 @@ POSITIVE_INTEGERS = (S.One, S(2), S(3), S(4), S(6), S(12))
 POWERS = (S.Zero, S.One, S.NegativeOne, S(2), S(-2), Rational(1, 2), Rational(-1, 2),
           sqrt(2), pi, oo, nan, I, -I, 2*I)
 PAIRS = (S.Zero, S.One, S.NegativeOne, S(2), S(-3), Rational(1, 2), pi, oo, I)
+SIGNED = (S.Zero, S.One, S.NegativeOne, oo, -oo)
+# (predicate, whether it is true)
+SIGNS = ((Q.zero, True), (Q.zero, False), (Q.positive, True), (Q.negative, True),
+         (Q.nonnegative, True), (Q.nonpositive, True), (Q.extended_nonnegative, True),
+         (Q.extended_nonpositive, True))
 SYMBOLS = symbols('x:3')
 _truth: dict = {}
 
@@ -86,6 +91,24 @@ def check(cls, pool, sizes):
                         predicate, cls, values, answer)
 
 
+def check_told_one_fact(cls, pool, sizes, facts):
+    """As ``check``, with only one of *facts* told of each argument, in every way."""
+    predicates = sorted({p for c, p in RULES if c is cls}, key=str)
+    for size in sizes:
+        args = cls(*SYMBOLS[:size])
+        for values in combinations_with_replacement(pool, size):
+            result = cls(*values)
+            known = [[literal(p, symbol, t) for p, t in facts if truth(p, value) is t]
+                     for symbol, value in zip(SYMBOLS, values)]
+            for told in product(*known):
+                assumptions = And(*told)
+                for predicate in predicates:
+                    answer = ask_by_rules(predicate, args, assumptions, RULES)
+                    if answer is not None:
+                        assert truth(predicate, result) in (answer, None), (
+                            predicate, cls, values, told, answer)
+
+
 def test_sums_of_real_numbers():
     check(Add, REAL, (2, 3))
 
@@ -102,10 +125,27 @@ def test_products_of_finite_numbers():
     check(Mul, FINITE, (2, 3))
 
 
+def test_products_told_one_fact_of_each_factor():
+    check_told_one_fact(Mul, SIGNED, (2, 3), SIGNS)
+
+
 def test_powers():
     check(Pow, POWERS, (2,))
     check(Pow, POWERS[::-1], (2,))
     check(Pow, (zoo, S.Zero, S(2), Rational(-1, 2), I), (2,))
+
+
+def test_powers_of_e_have_the_answers_of_exp():
+    predicates = sorted({p for c, p in RULES if c is exp}, key=str)
+    x = SYMBOLS[0]
+    power = Pow(E, x, evaluate=False)
+    for value in COMPLEX:
+        known = And(*(literal(p, x, t) for p in predicates
+                      if (t := truth(p, value)) is not None))
+        for predicate in predicates:
+            answer = ask_by_rules(predicate, exp(x), known, RULES)
+            if answer is not None:
+                assert ask_by_rules(predicate, power, known, RULES) is answer
 
 
 def test_minimum_and_maximum():

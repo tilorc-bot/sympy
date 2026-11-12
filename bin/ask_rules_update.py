@@ -32,7 +32,8 @@ from textwrap import wrap
 
 from sympy.assumptions import rule_engine
 from sympy.assumptions.ask_rules import RULES
-from sympy.assumptions.rule_closing import close_rules, remove_implied_rules
+from sympy.assumptions.rule_closing import (close_rules, exp_rules_for_powers,
+    remove_implied_rules)
 from sympy.assumptions.rule_engine import FALSE_IF, TRUE_IF
 from sympy.core.singleton import S
 
@@ -43,9 +44,10 @@ SELECTOR_NAMES = {getattr(rule_engine, name): name for name in [
     'ANY_ARG_IS_NOT', 'ONE_ARG_IS', 'ONE_ARG_IS_NOT', 'EVEN_NUMBER_OF_ARGS_ARE',
     'EVEN_NUMBER_OF_ARGS_ARE_NOT', 'ODD_NUMBER_OF_ARGS_ARE',
     'ODD_NUMBER_OF_ARGS_ARE_NOT', 'OTHER_ARGS_ARE', 'OTHER_ARGS_ARE_NOT',
+    'SOME_EVEN_NUMBER_OF_ARGS_ARE', 'SOME_ODD_NUMBER_OF_ARGS_ARE',
 ]}
 NUMBER_NAMES = {S.One: 'S.One', S.NegativeOne: 'S.NegativeOne', S.Half: 'S.Half',
-                S.ImaginaryUnit: 'S.ImaginaryUnit'}
+                S.ImaginaryUnit: 'S.ImaginaryUnit', S.Exp1: 'S.Exp1'}
 INDENT = ' ' * 8
 
 
@@ -73,7 +75,7 @@ def rule_lines(rule, used):
 
 
 def generate_code():
-    rules = remove_implied_rules(close_rules(RULES))
+    rules = exp_rules_for_powers(remove_implied_rules(close_rules(RULES)))
     used = set()
     lines = ['RULES: Rules = {']
     for cls in dict.fromkeys(cls for cls, _ in RULES):

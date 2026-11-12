@@ -6,13 +6,18 @@ from typing import TYPE_CHECKING
 from sympy.assumptions.ask_generated import get_known_facts_dict
 from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG,
-    EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG,
-    OTHER_ARGS, SELF, TRUE_IF)
+    EVEN_NUMBER_OF_ARGS, FALSE_IF, FIRST_ARG_IS, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS,
+    ONE_ARG, OTHER_ARGS, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
+    TRUE_IF)
+from sympy.core.power import Pow
+from sympy.core.singleton import S
+from sympy.functions.elementary.exponential import exp
 
 if TYPE_CHECKING:
     from sympy.assumptions.rule_engine import Condition, Rule, Rules
 
-_HOW_MANY_ARGS = (ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS, OTHER_ARGS)
+_HOW_MANY_ARGS = (ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS, OTHER_ARGS,
+                  SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS)
 _FLIPPED_ARGUMENT = {ALL_ARGS: ANY_ARG, ANY_ARG: ALL_ARGS}
 
 
@@ -72,6 +77,19 @@ def remove_implied_rules(rules: Rules) -> Rules:
                 and (i < j or not _applies_whenever(groups[j], groups[i], facts))
                 for i in range(len(groups)))
         ]
+    return result
+
+
+def exp_rules_for_powers(rules: Rules) -> Rules:
+    """Repeat each rule of ``exp`` for ``Pow`` with the base ``E``."""
+    result = {key: list(rules_for_key) for key, rules_for_key in rules.items()}
+    for (cls, predicate), rules_for_key in rules.items():
+        if cls is exp:
+            result.setdefault((Pow, predicate), []).extend(
+                (kind, [(FIRST_ARG_IS, S.Exp1)] + [
+                    ((1 if argument == 0 else argument, expected), condition)
+                    for (argument, expected), condition in conditions])
+                for kind, conditions in rules_for_key)
     return result
 
 
