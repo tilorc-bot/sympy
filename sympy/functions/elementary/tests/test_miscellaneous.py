@@ -338,6 +338,31 @@ def test_minmax_assumptions():
             else:
                 assert ext(x, y).is_prime is None
 
+def test_minmax_signs_with_infinite_arguments():
+    x = Symbol('x')
+    p = Symbol('p', positive=True)
+    nn = Symbol('nn', nonnegative=True)
+    ep = Symbol('ep', extended_positive=True)
+    i = Symbol('i', infinite=True)
+    f = Symbol('f', finite=True)
+    # Max(oo, 1) is oo and Max(-1, -oo) is -1
+    assert Max(x, p).is_positive is None
+    assert Max(x, p).is_extended_positive is True
+    assert Max(nn, ep).is_positive is None
+    assert Max(nn, ep).is_finite is None
+    assert Max(nn, ep).is_nonzero is None
+    assert Max(-1, i).is_negative is None
+    assert Max(-1, i).is_positive is False
+    assert Min(x, -1).is_negative is None
+    assert Min(x, -1).is_extended_negative is True
+    assert Min(1, i).is_positive is None
+    assert Min(0, i).is_nonnegative is None
+    # Max and Min have a value only if every argument is extended real
+    assert Max(f, p).is_finite is True
+    assert Max(2, f).is_complex is True
+    assert Max(1, x).is_extended_real is True
+
+
 def test_minmax_infinite_symbols():
     r = Symbol('r', real=True)
     w = Symbol('w', extended_real=True, infinite=True)

@@ -434,6 +434,11 @@ def test_exp_of_extended_real():
     er = Symbol('er', extended_real=True)
     assert exp(er).is_extended_positive is None
     assert exp(er).is_extended_nonnegative is True
+    assert exp(er).is_zero is None
+    assert exp(y).is_zero is None
+    en = Symbol('en', extended_negative=True)
+    assert exp(en).is_complex is True
+    assert exp(en).is_extended_positive is None
 
 
 @_both_exp_pow
@@ -474,6 +479,8 @@ def test_log_assumptions():
 
     # log(-oo) is oo
     en = symbols('en', extended_negative=True)
+    assert log(en).is_extended_real is None
+    assert log(-oo, evaluate=False).is_extended_real is True
     assert log(en).is_extended_positive is None
     assert log(en).is_extended_nonnegative is None
     assert log(n).is_extended_positive is False

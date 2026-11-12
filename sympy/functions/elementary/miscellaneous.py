@@ -18,7 +18,7 @@ from sympy.core.singleton import Singleton
 from sympy.core.sorting import ordered
 from sympy.core.symbol import Symbol
 from sympy.core.rules import Transform
-from sympy.core.logic import fuzzy_and, fuzzy_or, _torf
+from sympy.core.logic import _torf
 from sympy.core.traversal import walk
 from sympy.core.numbers import Integer
 from sympy.logic.boolalg import And, Or
@@ -700,29 +700,9 @@ class MinMaxBase(Expr, LatticeOp):
 
     _eval_is_algebraic = lambda s: _torf(i.is_algebraic for i in s.args)
     _eval_is_antihermitian = lambda s: _torf(i.is_antihermitian for i in s.args)
-    _eval_is_commutative = lambda s: _torf(i.is_commutative for i in s.args)
-    _eval_is_complex = lambda s: _torf(i.is_complex for i in s.args)
-    _eval_is_composite = lambda s: _torf(i.is_composite for i in s.args)
-    _eval_is_even = lambda s: _torf(i.is_even for i in s.args)
-    _eval_is_finite = lambda s: _torf(i.is_finite for i in s.args)
     _eval_is_hermitian = lambda s: _torf(i.is_hermitian for i in s.args)
-    _eval_is_imaginary = lambda s: _torf(i.is_imaginary for i in s.args)
-    _eval_is_infinite = lambda s: _torf(i.is_infinite for i in s.args)
-    _eval_is_integer = lambda s: _torf(i.is_integer for i in s.args)
-    _eval_is_irrational = lambda s: _torf(i.is_irrational for i in s.args)
     _eval_is_noninteger = lambda s: _torf(i.is_noninteger for i in s.args)
-    _eval_is_nonpositive = lambda s: _torf(i.is_nonpositive for i in s.args)
-    _eval_is_nonzero = lambda s: _torf(i.is_nonzero for i in s.args)
-    _eval_is_odd = lambda s: _torf(i.is_odd for i in s.args)
     _eval_is_polar = lambda s: _torf(i.is_polar for i in s.args)
-    _eval_is_prime = lambda s: _torf(i.is_prime for i in s.args)
-    _eval_is_rational = lambda s: _torf(i.is_rational for i in s.args)
-    _eval_is_real = lambda s: _torf(i.is_real for i in s.args)
-    _eval_is_extended_real = lambda s: _torf(i.is_extended_real for i in s.args)
-    _eval_is_transcendental = lambda s: _torf(i.is_transcendental for i in s.args)
-    _eval_is_zero = lambda s: _torf(i.is_zero for i in s.args)
-
-
 class Max(MinMaxBase, Application):
     r"""
     Return, if possible, the maximum value of the list.
@@ -831,16 +811,6 @@ class Max(MinMaxBase, Application):
     def _eval_rewrite_as_Piecewise(self, *args, **kwargs):
         return _minmax_as_Piecewise('>=', *args)
 
-    def _eval_is_positive(self):
-        return fuzzy_or(a.is_positive for a in self.args)
-
-    def _eval_is_nonnegative(self):
-        return fuzzy_or(a.is_nonnegative for a in self.args)
-
-    def _eval_is_negative(self):
-        return fuzzy_and(a.is_negative for a in self.args)
-
-
 class Min(MinMaxBase, Application):
     """
     Return, if possible, the minimum value of the list.
@@ -893,16 +863,6 @@ class Min(MinMaxBase, Application):
 
     def _eval_rewrite_as_Piecewise(self, *args, **kwargs):
         return _minmax_as_Piecewise('<=', *args)
-
-    def _eval_is_positive(self):
-        return fuzzy_and(a.is_positive for a in self.args)
-
-    def _eval_is_nonnegative(self):
-        return fuzzy_and(a.is_nonnegative for a in self.args)
-
-    def _eval_is_negative(self):
-        return fuzzy_or(a.is_negative for a in self.args)
-
 
 class Rem(DefinedFunction):
     """Returns the remainder when ``p`` is divided by ``q`` where ``p`` is finite

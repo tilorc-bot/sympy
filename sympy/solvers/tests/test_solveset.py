@@ -2146,12 +2146,16 @@ def test_nonlinsolve_complex():
         (ImageSet(Lambda(n, 2*n*I*pi + log(sin(Rational(1, 3)))), S.Integers), Rational(1, 3))})
 
     system = [exp(x) - sin(y), 1/exp(y) - 3]
-    assert dumeq(nonlinsolve(system, [x, y]), {
-        (ImageSet(Lambda(n, I*(2*n*pi + pi)
-                         + log(sin(log(3)))), S.Integers), -log(3)),
-        (ImageSet(Lambda(n, I*(2*n*pi + arg(sin(2*n*I*pi - log(3))))
-                         + log(Abs(sin(2*n*I*pi - log(3))))), S.Integers),
-        ImageSet(Lambda(n, 2*n*I*pi - log(3)), S.Integers))})
+    # exp(y) is 0 for y = -oo
+    assert dumeq(nonlinsolve(system, [x, y]), Union(
+        ConditionSet((x, y), Eq(y, -log(3)) & Contains(x, ImageSet(
+            Lambda(n, I*(2*n*pi + pi) + log(sin(log(3)))), S.Integers)),
+            S.Complexes**2),
+        ConditionSet((x, y), Ne(exp(y), 0)
+            & Contains(y, ImageSet(Lambda(n, 2*n*I*pi - log(3)), S.Integers))
+            & Contains(x, ImageSet(Lambda(n, I*(2*n*pi + arg(sin(2*n*I*pi - log(3))))
+                + log(Abs(sin(2*n*I*pi - log(3))))), S.Integers)),
+            S.Complexes**2)))
 
     system = [exp(x) - sin(y), y**2 - 4]
     assert dumeq(nonlinsolve(system, [x, y]), {
@@ -2452,6 +2456,11 @@ def test_issue_5132_1():
                                             (s_complex_y, s_complex_z_2)
                                         )
     soln = soln_real + soln_complex
+    # exp(y) is 0 for y = -oo
+    soln = Union(*[ConditionSet((y, z), Eq(y, s_real_y) & Eq(z, sz), S.Complexes**2)
+        for sz in (s_real_z, -s_real_z)], *[ConditionSet((y, z), Ne(exp(y), 0)
+        & Contains(y, s_complex_y) & Contains(z, sz), S.Complexes**2)
+        for sz in (s_complex_z_1, s_complex_z_2)])
     assert dumeq(nonlinsolve(eqs, [y, z]), soln)
 
 
@@ -2729,8 +2738,10 @@ def test_issue_17933_bis():
 
 def test_issue_14565():
     # removed redundancy
-    assert dumeq(nonlinsolve([k + m, k + m*exp(-2*pi*k)], [k, m]) ,
-        FiniteSet((-n*I, ImageSet(Lambda(n, n*I), S.Integers))))
+    # exp(-2*pi*n*I) is nan for n = oo
+    assert dumeq(nonlinsolve([k + m, k + m*exp(-2*pi*k)], [k, m]), ConditionSet(
+        (k, m), Eq(k, -n*I) & Ne(exp(-2*n*I*pi), 0)
+        & Contains(m, ImageSet(Lambda(n, n*I), S.Integers)), S.Complexes**2))
 
 
 # end of tests for nonlinsolve

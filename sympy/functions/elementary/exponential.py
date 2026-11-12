@@ -98,16 +98,6 @@ class ExpBase(DefinedFunction):
     def _eval_transpose(self):
         return self.func(self.exp.transpose())
 
-    def _eval_is_finite(self):
-        arg = self.exp
-        if arg.is_infinite:
-            if arg.is_extended_negative:
-                return True
-            if arg.is_extended_positive:
-                return False
-        if arg.is_finite:
-            return True
-
     def _eval_is_rational(self):
         s = self.func(*self.args)
         if s.func == self.func:
@@ -118,9 +108,6 @@ class ExpBase(DefinedFunction):
                 return False
         else:
             return s.is_rational
-
-    def _eval_is_zero(self):
-        return self.exp is S.NegativeInfinity
 
     def _eval_power(self, other):
         """exp(arg)**e -> exp(arg*e) if assumptions allow it.
@@ -200,10 +187,6 @@ class exp_polar(ExpBase):
 
     def _eval_power(self, other):
         return self.func(self.args[0]*other)
-
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
 
     def as_base_exp(self):
         # XXX exp_polar(0) is special!
@@ -458,12 +441,6 @@ class exp(ExpBase, metaclass=ExpMeta):
         elif self.args[0].is_imaginary:
             arg2 = -S(2) * I * self.args[0] / pi
             return arg2.is_even
-
-    def _eval_is_complex(self):
-        def complex_extended_negative(arg):
-            yield arg.is_complex
-            yield arg.is_extended_negative
-        return fuzzy_or(complex_extended_negative(self.args[0]))
 
     def _eval_is_algebraic(self):
         if (self.exp / pi / I).is_rational:
@@ -918,13 +895,6 @@ class log(DefinedFunction):
                     return False
         else:
             return s.is_algebraic
-
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_positive
-
-    def _eval_is_finite(self):
-        arg = self.args[0]
-        return fuzzy_and([arg.is_finite, fuzzy_not(arg.is_zero)])
 
     def _eval_is_extended_positive(self):
         is_positive = (self.args[0] - 1).is_extended_positive
