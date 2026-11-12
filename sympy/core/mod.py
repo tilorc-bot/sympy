@@ -3,7 +3,6 @@ from .add import Add
 from .exprtools import gcd_terms
 from .function import DefinedFunction
 from .kind import NumberKind
-from .logic import fuzzy_and, fuzzy_not
 from .mul import Mul
 from .numbers import equal_valued
 from .relational import is_le, is_lt, is_ge, is_gt
@@ -234,11 +233,6 @@ class Mod(DefinedFunction):
             p = G.args[0]*p
             G = Mul._from_args(G.args[1:])
         return G*cls(p, q, evaluate=(p, q) != (pwas, qwas))
-
-    def _eval_is_integer(self):
-        p, q = self.args
-        if fuzzy_and([p.is_integer, q.is_integer, fuzzy_not(q.is_zero)]):
-            return True
 
     def _eval_is_nonnegative(self):
         if self.args[1].is_positive:

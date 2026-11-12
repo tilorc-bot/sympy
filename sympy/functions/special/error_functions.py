@@ -198,10 +198,6 @@ class erf(DefinedFunction):
         # There are cases where erf(z) becomes a real number
         # even if z is a complex number
 
-    def _eval_is_imaginary(self):
-        if self.args[0].is_imaginary is True:
-            return True
-
     def _eval_is_finite(self):
         z = self.args[0]
         return fuzzy_or([z.is_finite, z.is_extended_real])
@@ -425,12 +421,6 @@ class erfc(DefinedFunction):
 
     def _eval_conjugate(self):
         return self.func(self.args[0].conjugate())
-
-    def _eval_is_real(self):
-        if self.args[0].is_extended_real is True:
-            return True
-        if self.args[0].is_imaginary is True:
-            return False
 
     def _eval_rewrite_as_tractable(self, z, limitvar=None, **kwargs):
         return self.rewrite(erf).rewrite("tractable", deep=True, limitvar=limitvar)
@@ -2836,14 +2826,6 @@ class owens_t(DefinedFunction):
         # T(h, a) depends on h only through h**2, so a non-real h does
         # not rule out a real result (e.g. T(I, 1) is real); this can
         # only ever confirm realness, never deny it.
-        h, a = self.args
-        if h.is_extended_real and a.is_extended_real:
-            return True
-
-    def _eval_is_finite(self):
-        # |T(h, a)| <= 1/4 for all real h, a (the integrand is bounded
-        # by 1/(1+t**2), whose integral over all of R is pi), so T stays
-        # finite even when h or a is infinite.
         h, a = self.args
         if h.is_extended_real and a.is_extended_real:
             return True

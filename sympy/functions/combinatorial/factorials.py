@@ -246,14 +246,6 @@ class factorial(CombinatorialFunction):
             i = Dummy('i', integer=True)
             return Product(i, (i, 1, n))
 
-    def _eval_is_integer(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_positive(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
     def _eval_is_even(self):
         x = self.args[0]
         if x.is_integer and x.is_nonnegative:
@@ -347,14 +339,6 @@ class subfactorial(CombinatorialFunction):
             elif arg is S.Infinity:
                 return S.Infinity
 
-    def _eval_is_even(self):
-        if self.args[0].is_odd and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_integer(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
     def _eval_rewrite_as_factorial(self, arg, **kwargs):
         from sympy.concrete.summations import summation
         i = Dummy('i')
@@ -370,15 +354,6 @@ class subfactorial(CombinatorialFunction):
     def _eval_rewrite_as_uppergamma(self, arg, **kwargs):
         from sympy.functions.special.gamma_functions import uppergamma
         return uppergamma(arg + 1, -1)/S.Exp1
-
-    def _eval_is_nonnegative(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_odd(self):
-        if self.args[0].is_even and self.args[0].is_nonnegative:
-            return True
-
 
 class factorial2(CombinatorialFunction):
     r"""The double factorial `n!!`, not to be confused with `(n!)!`
@@ -441,18 +416,6 @@ class factorial2(CombinatorialFunction):
             raise ValueError("argument must be nonnegative integer "
                                 "or negative odd integer")
 
-
-    def _eval_is_even(self):
-        # Double factorial is even for every positive even input
-        n = self.args[0]
-        if n.is_integer:
-            if n.is_odd:
-                return False
-            if n.is_even:
-                if n.is_positive:
-                    return True
-                if n.is_zero:
-                    return False
 
     def _eval_is_integer(self):
         # Double factorial is an integer for every nonnegative input, and for

@@ -736,7 +736,7 @@ def test_cot():
     assert cot(r).is_real is None
     assert cot(r).is_extended_real is True
 
-    assert cot(a).is_algebraic is None
+    assert cot(a).is_algebraic is False
     assert cot(na).is_algebraic is False
 
     assert cot(pi*Rational(10, 7)) == cot(pi*Rational(3, 7))

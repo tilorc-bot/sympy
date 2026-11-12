@@ -381,11 +381,6 @@ class bessely(BesselBase):
 
         return super(bessely, self)._eval_as_leading_term(x, logx=logx, cdir=cdir)
 
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_positive:
-            return True
-
     def _eval_nseries(self, x, n, logx, cdir=0):
         # Refer https://functions.wolfram.com/Bessel-TypeFunctions/BesselY/06/01/04/01/02/0008/
         # for more information on nseries expansion of bessely function.
@@ -680,11 +675,6 @@ class besselk(BesselBase):
         ay = self._eval_rewrite_as_bessely(*self.args)
         if ay:
             return ay.rewrite(yn)
-
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_positive:
-            return True
 
     def _eval_rewrite_as_tractable(self, nu, z, limitvar=None, **kwargs):
         if z.is_extended_real:

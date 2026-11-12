@@ -924,10 +924,6 @@ class log(DefinedFunction):
     def _eval_is_extended_real(self):
         return self.args[0].is_extended_positive
 
-    def _eval_is_complex(self):
-        z = self.args[0]
-        return fuzzy_and([z.is_complex, fuzzy_not(z.is_zero)])
-
     def _eval_is_finite(self):
         arg = self.args[0]
         return fuzzy_and([arg.is_finite, fuzzy_not(arg.is_zero)])

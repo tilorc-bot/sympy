@@ -304,6 +304,15 @@ def _generate_assumption_rules():
 
 
 _assume_rules = _load_pre_generated_assumption_rules()
+
+# A function ``(fact, obj)`` which answers from the rules about expressions.
+# ``sympy.assumptions.core_rules`` sets it when SymPy has been imported.
+_ask_rules = None
+
+
+def _set_ask_rules(ask_rules):
+    global _ask_rules
+    _ask_rules = ask_rules
 _assume_defined = _assume_rules.defined_facts.copy()
 _assume_defined.add('polar')
 _assume_defined = frozenset(_assume_defined)
@@ -475,6 +484,9 @@ class StdFactKB(FactKB):
 
     This is the only kind of FactKB that Basic objects should use.
     """
+    # whether the facts of the number which the object is have been looked for
+    number_facts_tried = False
+
     def __init__(self, facts=None):
         super().__init__(_assume_rules)
         # save a copy of the facts dict
@@ -561,11 +573,17 @@ def _ask(fact, obj):
         if fact_i in assumptions:
             continue
 
-        # Now we call the associated handler for fact_i if it exists.
+        # The rules about expressions are asked first, for the fact of the
+        # question only: each rule is repeated for every fact which its
+        # conclusion decides. The associated handler for fact_i, if it
+        # exists, is called if they do not answer.
         fact_i_value = None
-        handler_i = handler_map.get(fact_i)
-        if handler_i is not None:
-            fact_i_value = handler_i(obj)
+        if fact_i is fact and _ask_rules is not None:
+            fact_i_value = _ask_rules(fact_i, obj)
+        if fact_i_value is None:
+            handler_i = handler_map.get(fact_i)
+            if handler_i is not None:
+                fact_i_value = handler_i(obj)
 
         # If we get a new value for fact_i then we should update our knowledge
         # of fact_i as well as any related facts that can be inferred using the

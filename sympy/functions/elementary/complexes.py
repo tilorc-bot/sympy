@@ -408,22 +408,11 @@ class sign(DefinedFunction):
             return 2 * Derivative(self.args[0], x, evaluate=True) \
                 * DiracDelta(-I * self.args[0])
 
-    def _eval_is_nonnegative(self):
-        if self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_nonpositive(self):
-        if self.args[0].is_nonpositive:
-            return True
-
     def _eval_is_imaginary(self):
         return self.args[0].is_imaginary
 
     def _eval_is_integer(self):
         return self.args[0].is_extended_real
-
-    def _eval_is_zero(self):
-        return self.args[0].is_zero
 
     def _eval_power(self, other):
         if (
@@ -631,21 +620,11 @@ class Abs(DefinedFunction):
             if not unk or not all(conj.has(conjugate(u)) for u in unk):
                 return sqrt(expand_mul(arg*conj))
 
-    def _eval_is_real(self):
-        if self.args[0].is_finite:
-            return True
-
     def _eval_is_integer(self):
         if self.args[0].is_extended_real:
             return self.args[0].is_integer
 
     def _eval_is_extended_nonzero(self):
-        return fuzzy_not(self._args[0].is_zero)
-
-    def _eval_is_zero(self):
-        return self._args[0].is_zero
-
-    def _eval_is_extended_positive(self):
         return fuzzy_not(self._args[0].is_zero)
 
     def _eval_is_rational(self):

@@ -982,7 +982,7 @@ def test_solve_trig():
         ImageSet(Lambda(n, 30*n*pi + 15*pi/4), S.Integers)))
 
     assert dumeq(solveset(sec(sqrt(2)*x/3) + 5), Union(
-        ImageSet(Lambda(n, 3*sqrt(2)*(2*n*pi - asec(-5))/2), S.Integers),
+        ImageSet(Lambda(n, 3*sqrt(2)*(2*n*pi - asec(-5) + 2*pi)/2), S.Integers),
         ImageSet(Lambda(n, 3*sqrt(2)*(2*n*pi + asec(-5))/2), S.Integers)))
 
     assert dumeq(simplify(solveset(tan(pi*x) - cot(pi/2*x))), Union(

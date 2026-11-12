@@ -264,6 +264,10 @@ from .interactive import init_session, init_printing, interactive_traversal
 
 evalf._create_evalf_table()
 
+# After everything else: the rules name classes of the whole of SymPy, and
+# importing them makes ``expr.is_<fact>`` ask them.
+from .assumptions import core_rules as _core_rules  # noqa: F401,E402
+
 __all__ = [
     '__version__',
 

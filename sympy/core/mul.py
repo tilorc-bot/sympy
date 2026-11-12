@@ -1404,15 +1404,6 @@ class Mul(Expr, AssocOp):
             if all(a.is_zero is False for a in self.args):
                 return False
 
-    def _eval_is_algebraic(self):
-        r = _fuzzy_group((a.is_algebraic for a in self.args), quick_exit=True)
-        if r:
-            return r
-        elif r is False:
-            # All args except one are algebraic
-            if all(a.is_zero is False for a in self.args):
-                return False
-
     # without involving odd/even checks this code would suffice:
     #_eval_is_integer = lambda self: _fuzzy_group(
     #    (a.is_integer for a in self.args), quick_exit=True)
