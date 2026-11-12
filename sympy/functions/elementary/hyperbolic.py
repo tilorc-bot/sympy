@@ -220,7 +220,13 @@ class sinh(HyperbolicFunction):
                 x, m = _peeloff_ipi(arg)
                 if m:
                     m = m*pi*I
-                    return sinh(m)*cosh(x) + cosh(m)*sinh(x)
+                    sinhm, coshm = sinh(m), cosh(m)
+                    # sinh(oo + I*pi) = -oo, not 0*oo
+                    if sinhm.is_zero:
+                        return coshm*sinh(x)
+                    if coshm.is_zero:
+                        return sinhm*cosh(x)
+                    return sinhm*cosh(x) + coshm*sinh(x)
 
             if arg.is_zero:
                 return S.Zero
@@ -420,7 +426,13 @@ class cosh(HyperbolicFunction):
                 x, m = _peeloff_ipi(arg)
                 if m:
                     m = m*pi*I
-                    return cosh(m)*cosh(x) + sinh(m)*sinh(x)
+                    coshm, sinhm = cosh(m), sinh(m)
+                    # cosh(oo + I*pi) = -oo, not 0*oo
+                    if sinhm.is_zero:
+                        return coshm*cosh(x)
+                    if coshm.is_zero:
+                        return sinhm*sinh(x)
+                    return coshm*cosh(x) + sinhm*sinh(x)
 
             if arg.is_zero:
                 return S.One

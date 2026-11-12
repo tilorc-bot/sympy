@@ -1604,6 +1604,15 @@ def test_assumptions_at_infinity_and_poles():
     assert atanh(ep).is_imaginary is None
 
 
+def test_infinity_plus_multiple_of_I_pi():
+    assert sinh(oo + I*pi) is -oo
+    assert cosh(oo + I*pi) is -oo
+    assert cosh(oo + 2*I*pi) is oo
+    assert sinh(-oo + I*pi/2) == oo*I
+    assert cosh(oo + I*pi/2) == oo*I
+    assert sech(oo + 2*I*pi) == 0
+
+
 def test_issue_25847():
     x = Symbol('x')
 
