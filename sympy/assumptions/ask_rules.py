@@ -12,9 +12,12 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     OTHER_ARGS_ARE_NOT, OTHER_ARGS_BUT_AT_MOST_ONE_ARE, SECOND_ARG_IS,
     SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
     SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF)
+from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import DefinedFunction
+from sympy.core.function import Derivative
+from sympy.core.function import Subs
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import I
@@ -155,6 +158,9 @@ RULES: Rules = {
     ],
     (Abs, Q.zero): [
         (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (AccumulationBounds, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
     ],
     (acsc, Q.composite): [
         ALWAYS_FALSE,
@@ -395,6 +401,9 @@ RULES: Rules = {
     ],
     (DefinedFunction, Q.commutative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
+    ],
+    (Derivative, Q.commutative): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.commutative)]),
     ],
     (Expr, S.NegativeOne): [
         (FALSE_IF, [(SELF_IS_NOT, Q.negative)]),
@@ -1198,6 +1207,9 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.nonnegative),
         ]),
+    ],
+    (Subs, Q.commutative): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.commutative)]),
     ],
     (Symbol, Q.commutative): [
         ALWAYS_TRUE,

@@ -14,9 +14,12 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, OTHER_ARGS_BUT_AT_MOST_ONE_ARE,
     SECOND_ARG_IS, SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT,
     SOME_EVEN_NUMBER_OF_ARGS_ARE, SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF)
+from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import DefinedFunction
+from sympy.core.function import Derivative
+from sympy.core.function import Subs
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import NaN
@@ -237,6 +240,36 @@ RULES: Rules = {
     (Abs, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (AccumulationBounds, Q.commutative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.hermitian): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.negative_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.positive_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (AccumulationBounds, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
     ],
     (acsc, Q.algebraic): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
@@ -1988,6 +2021,94 @@ RULES: Rules = {
     ],
     (DefinedFunction, Q.commutative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
+    ],
+    (Derivative, Q.algebraic): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.commutative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.commutative)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.complex): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.even): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_negative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_nonnegative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_positive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.finite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.integer): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.irrational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.negative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.negative_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.nonnegative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.positive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.positive_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.rational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.transcendental): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Derivative, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (Expr, S.NegativeOne): [
         (FALSE_IF, [(SELF_IS_NOT, Q.negative)]),
@@ -5462,6 +5583,94 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.nonnegative),
         ]),
+    ],
+    (Subs, Q.algebraic): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.commutative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.commutative)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.complex): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.even): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_negative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_nonnegative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_positive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.finite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.integer): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.irrational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.negative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.negative_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.nonnegative): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.positive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.positive_infinite): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.rational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.transcendental): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (Subs, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (Symbol, Q.commutative): [
         ALWAYS_TRUE,

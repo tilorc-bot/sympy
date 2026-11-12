@@ -11,16 +11,20 @@ from sympy.assumptions.rule_engine import (ALL_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, A
     EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS,
     OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
     TRUE_IF, ask_by_rules)
+from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
+    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF,
+    SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
+from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
-from sympy.core.function import DefinedFunction, Function
+from sympy.core.function import DefinedFunction, Derivative, Function, Subs
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, pi
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.core.symbol import Symbol
+from sympy.core.symbol import Symbol, symbols
 from sympy.functions.combinatorial.factorials import (FallingFactorial, binomial,
     factorial, factorial2, subfactorial)
 from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_symbol,
@@ -59,7 +63,10 @@ def number_of_arguments(cls):
     if issubclass(cls, Function) and cls.nargs.is_finite_set:
         return max(cls.nargs)
     return {
+        AccumulationBounds: 2,
+        Derivative: 1,
         Integral: 1,
+        Subs: 1,
         Pow: 2,
         exp_polar: 1,
     }[cls]
@@ -762,6 +769,13 @@ def test_combinatorial_and_special_functions():
     assert ask_generated(Q.zero, erf2(x, y), Q.zero(x) & Q.zero(y)) is True
 
 
+def test_accumulation_bounds():
+    r, t = symbols('r t', extended_real=True)
+    assert ask_generated(Q.real, AccumulationBounds(r, t), Q.real(r) & Q.real(t)) is True
+    assert ask_generated(Q.finite, AccumulationBounds(r, t), Q.real(r) & Q.real(t)) is True
+    assert ask_generated(Q.real, AccumulationBounds(r, t), Q.real(r)) is None
+
+
 def test_powers_of_e():
     def power(exponent):
         return Pow(E, exponent, evaluate=False)
@@ -802,6 +816,11 @@ def test_commutative():
     assert ask_generated(Q.commutative, exp(c)) is None
     # Function('f', commutative=False)(x) is not commutative
     assert ask_generated(Q.commutative, f(x)) is None
+    assert ask_generated(Q.commutative, Derivative(f(x), x)) is None
+    assert ask_generated(Q.commutative, Derivative(x*y, x)) is True
+    assert ask_generated(Q.commutative, Derivative(c, x)) is False
+    assert ask_generated(Q.commutative, Subs(x*y, x, 1)) is True
+    assert ask_generated(Q.commutative, Subs(c, x, 1)) is False
 
 
 def test_wrong_answers_of_ask():
