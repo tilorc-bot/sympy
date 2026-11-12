@@ -32,7 +32,7 @@ from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.exponential import LambertW, exp, log
 from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
     asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
@@ -248,6 +248,15 @@ def test_powers_with_infinities():
     assert ask_number(Q.zero, Pow(0, oo, evaluate=False)) is True
     assert ask_number(Q.infinite, Pow(0, -oo, evaluate=False)) is True
     assert ask_number(Q.infinite, Pow(0, -sqrt(2), evaluate=False)) is True
+    # a base which is not real, by its absolute value
+    assert ask_number(Q.infinite, (2*I)**oo) is True
+    assert ask_number(Q.zero, (2*I)**-oo) is True
+    assert ask_number(Q.infinite, (-2*I)**oo) is True
+    assert ask_number(Q.zero, (I/2)**oo) is True
+    assert ask_number(Q.infinite, (-I/2)**-oo) is True
+    assert ask_number(Q.infinite, (1 + I)**oo) is True
+    assert ask_number(Q.zero, (1 + I)**-oo) is True
+    assert I**oo not in known(I**oo)
     # nan in SymPy
     one_to_oo = Pow(1, oo, evaluate=False)
     assert one_to_oo not in known(one_to_oo)
@@ -259,6 +268,9 @@ def test_powers_with_infinities():
     assert negative_to_minus_oo not in known(negative_to_minus_oo)
     minus_oo_to_oo = Pow(-oo, oo, evaluate=False)
     assert minus_oo_to_oo not in known(minus_oo_to_oo)
+    # zoo in SymPy, which is not consistent for negative bases
+    minus_two_to_oo = Pow(-2, oo, evaluate=False)
+    assert minus_two_to_oo not in known(minus_two_to_oo)
     # 0 in SymPy
     zoo_to_oo = Pow(zoo, oo, evaluate=False)
     assert zoo_to_oo not in known(zoo_to_oo)
@@ -321,6 +333,19 @@ def test_functions_of_numbers_without_symbols():
     assert asin(above_one, evaluate=False) not in known(asin(above_one, evaluate=False))
     assert ask_number(Q.positive, acosh(above_one, evaluate=False)) is None
     assert asin(1 + I) not in known(asin(1 + I))
+    # LambertW, by its branch and by the side of -1/e and 0 of its argument
+    assert ask_number(Q.real, LambertW(-1)) is False
+    assert ask_number(Q.positive, LambertW(-1)) is False
+    assert ask_number(Q.positive, LambertW(2)) is True
+    assert ask_number(Q.negative, LambertW(Rational(-1, 10))) is True
+    assert ask_number(Q.negative, LambertW(Rational(-1, 10), -1)) is True
+    assert ask_number(Q.real, LambertW(Rational(-1, 10), 1)) is False
+    assert ask_number(Q.real, LambertW(-10, -1)) is False
+    assert ask_number(Q.real, LambertW(-2, 2)) is False
+    assert ask_number(Q.real, LambertW(half, -1)) is False
+    at_minus_one_over_e = LambertW(-exp(-1), -1, evaluate=False)
+    assert at_minus_one_over_e not in known(at_minus_one_over_e)
+    assert LambertW(I) not in known(LambertW(I))
 
 
 def test_preprocess_declared_symbols():

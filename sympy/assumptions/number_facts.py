@@ -19,7 +19,7 @@ from sympy.external.mpmath import (fnone, fone, from_int, fzero, mpci_abs,
     mpf_gt, mpf_le, mpf_lt, mpf_perturb, mpf_pi, mpf_pos, mpf_shift, mpf_sign,
     mpi_div, mpi_neg, round_ceiling, round_floor)
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re
-from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.exponential import LambertW, exp, log
 from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
     asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
@@ -86,6 +86,8 @@ def number_facts(expr: Basic) -> Facts | None:
         facts = _power_limit_facts(*expr.args)
         if facts is not None:
             return facts
+    if type(expr) is LambertW:
+        return _lambertw_facts(*expr.args)
     z = _interval(expr)
     facts = None if z is None else _interval_facts(z)
     if _is_algebraic(expr):
@@ -226,7 +228,7 @@ _SIZE: dict[type, int] = {Infinity: 1, Zero: -1}
 def _power_limit_facts(base: Basic, exponent: Basic) -> Facts | None:
     """
     Whether ``base**exponent`` is zero or infinite, when *base* is ``0`` or
-    ``oo``, or *exponent* is ``oo`` or ``-oo`` and *base* is positive.
+    ``oo``, or *exponent* is ``oo`` or ``-oo`` and *base* is positive or not real.
     """
     direction = _DIRECTION.get(type(exponent))
     size = _SIZE.get(type(base))
@@ -250,11 +252,18 @@ def _sign_of_real_part(expr: Basic, real: bool) -> int:
 
 
 def _compared_with_one(expr: Basic) -> int:
-    """1 if *expr* is real and above 1, -1 if it is between 0 and 1, else 0."""
+    """1 if ``abs(expr)`` is above 1, -1 if it is below 1, for *expr* positive or not real; else 0."""
     z = _interval(expr)
-    if z is None or z[1] != _ZERO_PART or mpf_sign(z[0][0]) <= 0:
+    if z is None:
         return 0
-    return 1 if mpf_gt(z[0][0], fone) else -1 if mpf_lt(z[0][1], fone) else 0
+    (re_a, _), (im_a, im_b) = z
+    if mpf_sign(im_a) > 0 or mpf_sign(im_b) < 0:
+        a, b = mpci_abs(z, _PREC)
+    elif z[1] == _ZERO_PART and mpf_sign(re_a) > 0:
+        a, b = z[0]
+    else:
+        return 0
+    return 1 if mpf_gt(a, fone) else -1 if mpf_lt(b, fone) else 0
 
 
 def _sin(z: Interval) -> Interval:
@@ -438,7 +447,7 @@ _FUNCTIONS: dict[type, Callable[[Interval], Interval | None]] = {
 # the classes of the numbers which number_facts evaluates if it evaluates their arguments
 EVALUATED = frozenset({Integer, Zero, One, NegativeOne, Rational, Half, Float, Pi,
                        Exp1, ImaginaryUnit, Infinity, NegativeInfinity, Add, Mul, Pow,
-                       *_FUNCTIONS})
+                       LambertW, *_FUNCTIONS})
 
 
 def _interval(expr: Basic) -> Interval | None:
@@ -528,3 +537,28 @@ def _interval_facts(z: Interval) -> Facts | None:
     if re_nonzero:
         return _NOT_IMAGINARY
     return None
+
+
+_MINUS_ONE_OVER_E = mpi_neg(mpi_div(_ONE[0], _ATOM_INTERVALS[Exp1][0], _PREC))
+# (branch, -1 for an argument below -1/e, 0 between -1/e and 0, 1 above 0)
+_LAMBERTW_REAL: dict[tuple[int, int], Facts] = {
+    (0, 1): _POSITIVE, (0, 0): _NEGATIVE, (-1, 0): _NEGATIVE}
+
+
+def _lambertw_facts(x: Basic, k: Basic = Integer(0)) -> Facts | None:
+    """Whether ``LambertW(x, k)`` is real, and its sign, for a real *x* clearly apart from ``-1/e`` and ``0``."""
+    if not isinstance(k, Integer):
+        return None
+    z = _interval(x)
+    if z is None or z[1] != _ZERO_PART:
+        return None
+    a, b = z[0]
+    if mpf_sign(a) > 0:
+        side = 1
+    elif mpf_sign(b) < 0 and mpf_gt(a, _MINUS_ONE_OVER_E[1]):
+        side = 0
+    elif mpf_lt(b, _MINUS_ONE_OVER_E[0]):
+        side = -1
+    else:
+        return None
+    return _LAMBERTW_REAL.get((k.p, side), _NOT_REAL)
