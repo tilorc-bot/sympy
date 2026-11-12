@@ -211,10 +211,6 @@ class AccumulationBounds(Expr):
     # setting the operation priority
     _op_priority = 11.0
 
-    def _eval_is_real(self):
-        if self.min.is_real and self.max.is_real:
-            return True
-
     @property
     def min(self):
         """
