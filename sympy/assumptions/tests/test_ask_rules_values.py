@@ -23,8 +23,8 @@ from sympy.functions.elementary.hyperbolic import (asinh, cosh, coth, csch, sech
     tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
-from sympy.functions.elementary.trigonometric import (acot, asec, atan, cot, csc, sec,
-    sinc, tan)
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
 from sympy.functions.special.bessel import (airyai, besseli, besselj, besselk,
     bessely)
 from sympy.functions.special.error_functions import (erf, erf2, erfc, fresnelc,
@@ -155,13 +155,19 @@ def test_minimum_and_maximum():
 
 def test_functions_of_one_argument():
     for cls in (Abs, re, sign, exp_polar, sinh, cosh, tanh, coth, sech, csch, asinh,
-                floor, ceiling, frac, cot, tan, sec, csc, sinc, LambertW, factorial,
+                floor, ceiling, frac, sin, cos, cot, tan, sec, csc, sinc, LambertW, factorial,
                 gamma, loggamma, erf, fresnels, fresnelc, airyai):
         check(cls, COMPLEX, (1,))
     # ask raises AttributeError for erfc(-I)
     check(erfc, EXTENDED_REAL + (zoo, nan, I, 2*I), (1,))
-    for cls in (atan, acot, asec):
+    for cls in (atan, acot):
         check(cls, EXTENDED_REAL + (zoo, nan), (1,))
+    # ask raises for asec(-1/2)
+    for cls in (asec, acsc):
+        check(cls, EXTENDED_REAL[:4] + EXTENDED_REAL[6:] + (zoo, nan), (1,))
+    # ask raises for asin(oo), asin(sqrt(2)) and acos(I)
+    for cls in (asin, acos):
+        check(cls, EXTENDED_REAL[:6] + (zoo, nan), (1,))
     check(log, EXTENDED_REAL[:5] + EXTENDED_REAL[6:] + (zoo, nan, I, -I), (1,))
 
 
@@ -181,3 +187,5 @@ def test_functions_of_two_arguments():
     check(Mod, PAIRS[:0:-1], (2,))
     check(erf2, (S.Zero, S.One, S.NegativeOne, oo, -oo), (2,))
     check(KroneckerDelta, (S.Zero, S.One, S(2), Rational(1, 2), I), (2,))
+    check(atan2, PAIRS + (-oo,), (2,))
+    check(atan2, (-oo,) + PAIRS[::-1], (2,))

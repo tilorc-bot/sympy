@@ -32,8 +32,8 @@ from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech, a
     cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
-from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
-    cos, cot, csc, sec, sin, sinc, tan)
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
 from sympy.functions.special.error_functions import erf, erf2, erfc, erfcinv, erfi
 from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
 from sympy.integrals.integrals import Integral
@@ -495,6 +495,131 @@ def test_hyperbolic_functions():
     assert ask_generated(Q.infinite, one) is True
     assert ask_generated(Q.extended_negative, minus_one) is True
     assert ask_generated(Q.zero, minus_one) is False
+def test_trigonometric_functions():
+    # sin(oo) and cos(oo) are AccumBounds(-1, 1)
+    assert ask_generated(Q.complex, sin(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.finite, cos(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.extended_real, sin(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.transcendental, cot(x), Q.algebraic(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.transcendental, cot(x), Q.algebraic(x)) is None
+    # sinc(oo) and sinc(-oo) are zero, sinc(oo*I) is oo
+    assert ask_generated(Q.real, sinc(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, sinc(x), Q.extended_real(x) & Q.infinite(x)) is True
+    assert ask_generated(Q.zero, sinc(x), Q.infinite(x)) is None
+    # tan(pi/2), cot(0), sec(pi/2) and csc(0) are zoo
+    for f in (tan, cot, sec, csc):
+        assert ask_generated(Q.real, f(x), Q.real(x)) is None
+        # tan(oo), cot(oo), sec(oo) and csc(oo) are AccumBounds(-oo, oo)
+        assert ask_generated(Q.extended_real, f(x), Q.extended_real(x)
+                             & Q.infinite(x)) is True
+    assert ask_generated(Q.real, tan(x), Q.algebraic(x) & Q.real(x)) is True
+    assert ask_generated(Q.real, sec(x), Q.rational(x)) is True
+    assert ask_generated(Q.real, cot(x), Q.rational(x)) is None
+    assert ask_generated(Q.real, cot(x), Q.rational(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.real, csc(x), Q.algebraic(x) & Q.real(x)
+                         & ~Q.zero(x)) is True
+    assert ask_generated(Q.imaginary, sec(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.imaginary, csc(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, sec(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, csc(x), Q.extended_real(x)) is False
+
+
+def test_inverse_trigonometric_functions():
+    assert ask_generated(Q.complex, asin(x), Q.complex(x)) is True
+    assert ask_generated(Q.complex, acos(x), Q.complex(x)) is True
+    # asin(oo) is -oo*I, acos(zoo) is zoo
+    assert ask_generated(Q.real, asin(x), Q.infinite(x)) is False
+    assert ask_generated(Q.extended_real, asin(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.extended_real, acos(x), Q.infinite(x)) is False
+    assert ask_generated(Q.extended_real, acos(x), Q.real(x)) is None
+    assert ask_generated(Q.zero, asin(x), ~Q.zero(x)) is False
+    assert ask_generated(Q.zero, acos(x), Q.negative(x)) is False
+    assert ask_generated(Q.zero, acos(x), Q.positive(x)) is None
+    # atan(oo*I) is pi/2
+    assert ask_generated(Q.positive, atan(x), ~Q.extended_positive(x)) is None
+    assert ask_generated(Q.positive, atan(x), ~Q.extended_positive(x)
+                         & Q.finite(x)) is False
+    assert ask_generated(Q.negative, atan(x), ~Q.extended_negative(x)
+                         & Q.finite(x)) is False
+    # the real parts of asin, atan, acot and acsc are at most pi/2, acos(cos(2)) is 2
+    for f in (asin, atan, acot, acsc):
+        assert ask_generated(Q.prime, f(x)) is False
+        assert ask_generated(Q.composite, f(x)) is False
+    assert ask_generated(Q.prime, acos(x)) is None
+    # asin(0) and atan(0) are zero, acos(1) is zero, acos(-1) is pi
+    for f in (asin, acos, atan):
+        assert ask_generated(Q.odd, f(x), Q.integer(x)) is False
+        assert ask_generated(Q.prime, f(x), Q.algebraic(x)) is False
+        assert ask_generated(Q.composite, f(x), Q.rational(x)) is False
+        assert ask_generated(Q.even, f(x), Q.integer(x)) is None
+    # acot(oo), acot(-oo), acot(zoo) and acot(oo*I) are zero
+    assert ask_generated(Q.zero, acot(x), Q.infinite(x)) is True
+    assert ask_generated(Q.zero, acot(x), Q.finite(x)) is False
+    assert ask_generated(Q.positive, acot(x), ~Q.nonnegative(x)) is False
+    assert ask_generated(Q.negative, acot(x), ~Q.negative(x)) is False
+    assert ask_generated(Q.real, acot(x), Q.infinite(x)) is True
+    # acot(oo + I) is zero, acot(1 + I) is not real
+    assert ask_generated(Q.extended_nonzero, acot(x), ~Q.real(x)) is False
+    # atan(oo + I) is pi/2, atan(1 + I) is not real
+    assert ask_generated(Q.rational, atan(x), ~Q.real(x)) is False
+    # asec(oo), asec(-oo), asec(zoo) and asec(oo*I) are pi/2
+    assert ask_generated(Q.positive, asec(x), Q.infinite(x)) is True
+    assert ask_generated(Q.nonnegative, asec(x), Q.integer(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.positive, asec(x), Q.integer(x) & Q.negative(x)) is True
+    assert ask_generated(Q.positive, asec(x), Q.integer(x) & Q.positive(x)) is None
+    assert ask_generated(Q.zero, asec(x), Q.negative(x)) is False
+    assert ask_generated(Q.negative, asec(x)) is False
+    assert ask_generated(Q.extended_negative, asec(x)) is False
+    assert ask_generated(Q.nonpositive, asec(x), ~Q.real(x)) is False
+    assert ask_generated(Q.nonpositive, asec(x), Q.real(x)) is None
+    assert ask_generated(Q.rational, asec(x), ~Q.real(x)) is False
+    assert ask_generated(Q.rational, asec(x), Q.real(x)) is None
+    assert ask_generated(Q.zero, acsc(x), Q.infinite(x)) is True
+    assert ask_generated(Q.zero, acsc(x), Q.finite(x)) is False
+    assert ask_generated(Q.positive, acsc(x), Q.integer(x) & Q.positive(x)) is True
+    assert ask_generated(Q.negative, acsc(x), Q.integer(x) & Q.negative(x)) is True
+    assert ask_generated(Q.real, acsc(x), Q.positive(x)) is None
+    assert ask_generated(Q.real, acsc(x), Q.finite(x) & ~Q.real(x)) is False
+
+
+def test_atan2():
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.real(y)
+                         & ~Q.zero(x)) is True
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.extended_real(y)
+                         & ~Q.zero(y)) is True
+    # atan2(0, 0), atan2(oo, 0) and atan2(oo, -1) are nan
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.real(y)) is None
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & Q.extended_real(y)
+                         & ~Q.zero(x) & ~Q.zero(y)) is None
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & ~Q.zero(x)
+                         & Q.real(y)) is None
+    # atan2(oo, 1) is pi/2, atan2(y, oo) is 0, atan2(oo, -oo) is pi
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x)
+                         & Q.extended_positive(y)) is True
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & Q.extended_real(y)
+                         & Q.infinite(y)) is True
+    # atan2(I, 0) is pi/2, atan2(0, I) and atan2(I, -oo) are zero,
+    # atan2(I*sin(1), I*cos(1)) is 1
+    assert ask_generated(Q.irrational, atan2(x, y), Q.imaginary(x) & Q.zero(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.zero(x) & Q.imaginary(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.imaginary(x) & Q.extended_real(y)
+                         & Q.infinite(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.composite, atan2(x, y), Q.imaginary(x)
+                         & Q.imaginary(y)) is False
+    assert ask_generated(Q.integer, atan2(x, y), Q.imaginary(x) & Q.imaginary(y)) is None
+    # atan2(1, 1 + I) is not real, atan2(1, -I) is nan
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.real(x) & ~Q.zero(x)
+                         & Q.finite(y) & ~Q.real(y) & ~Q.imaginary(y)) is False
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.finite(x) & ~Q.real(x)
+                         & ~Q.imaginary(x) & Q.real(y) & ~Q.zero(y)) is False
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.real(x) & ~Q.zero(x)
+                         & Q.imaginary(y)) is None
+    assert ask_generated(Q.positive, atan2(x, y), Q.positive(x) & Q.real(y)) is True
+    assert ask_generated(Q.negative, atan2(x, y), Q.negative(x) & Q.real(y)) is True
+    # atan2(1, oo) is zero
+    assert ask_generated(Q.positive, atan2(x, y), Q.positive(x)
+                         & Q.extended_real(y)) is None
 
 
 def test_combinatorial_and_special_functions():
