@@ -13,14 +13,17 @@ from sympy.core.numbers import (Catalan, ComplexInfinity, EulerGamma, Exp1, Floa
     One, Pi, Rational, TribonacciConstant, Zero, int_valued)
 from sympy.core.power import Pow
 from sympy.external.gmpy import iroot
-from sympy.external.mpmath import (fone, from_int, fzero, mpci_abs, mpci_add,
-    mpci_cos, mpci_div, mpci_exp, mpci_log, mpci_mul, mpci_pow, mpci_sin, mpf_e,
-    mpf_pi, mpf_sign, mpi_div, mpi_neg, round_ceiling, round_floor)
+from sympy.external.mpmath import (fnone, fone, from_int, fzero, mpci_abs,
+    mpci_add, mpci_cos, mpci_div, mpci_exp, mpci_log, mpci_mul, mpci_pow, mpci_sin,
+    mpf_acos, mpf_acosh, mpf_asin, mpf_asinh, mpf_atan, mpf_atanh, mpf_e, mpf_ge,
+    mpf_gt, mpf_le, mpf_lt, mpf_perturb, mpf_pi, mpf_pos, mpf_shift, mpf_sign,
+    mpi_div, mpi_neg, round_ceiling, round_floor)
 from sympy.functions.elementary.complexes import Abs, conjugate, im, re
 from sympy.functions.elementary.exponential import exp, log
-from sympy.functions.elementary.hyperbolic import (cosh, coth, csch, sech, sinh,
-    tanh)
-from sympy.functions.elementary.trigonometric import cos, cot, csc, sec, sin, tan
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
+    asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, cos, cot, csc, sec, sin, tan)
 from sympy.ntheory.primetest import isprime
 
 if TYPE_CHECKING:
@@ -79,6 +82,10 @@ def number_facts(expr: Basic) -> Facts | None:
     value = _exact(expr)
     if value is not None:
         return _rational_facts(value.numerator, value.denominator)
+    if type(expr) is Pow:
+        facts = _power_limit_facts(*expr.args)
+        if facts is not None:
+            return facts
     z = _interval(expr)
     facts = None if z is None else _interval_facts(z)
     if _is_algebraic(expr):
@@ -118,8 +125,9 @@ _ATOM_INTERVALS: dict[type, Interval] = {
     ImaginaryUnit: (_ZERO_PART, (fone, fone)),
 }
 _EXACT_VALUES: dict[tuple[type, Fraction | int | None], int] = {
-    (sin, 0): 0, (tan, 0): 0, (sinh, 0): 0, (tanh, 0): 0, (cos, 0): 1, (cosh, 0): 1,
-    (exp, 0): 1, (log, 1): 0}
+    (sin, 0): 0, (tan, 0): 0, (sinh, 0): 0, (tanh, 0): 0, (asin, 0): 0, (atan, 0): 0,
+    (asinh, 0): 0, (atanh, 0): 0, (cos, 0): 1, (cosh, 0): 1, (exp, 0): 1, (log, 1): 0,
+    (acos, 1): 0, (acosh, 1): 0}
 # (function, whether its argument is r*I*pi rather than r*pi): its values at
 # r = 0, 1/2, 1, 3/2, which repeat with period 2, None where they are not rational
 _AT_HALF_TURNS: dict[tuple[type, bool], tuple[int | None, ...]] = {
@@ -209,6 +217,46 @@ def _is_algebraic(expr: Basic) -> bool:
     return multiple is not None and multiple[1] is imaginary
 
 
+_INFINITE: Facts = [(Q.infinite, True)]
+# the sign of the real part of an exponent, and of log(abs(base)) of a base
+_DIRECTION: dict[type, int] = {Infinity: 1, NegativeInfinity: -1}
+_SIZE: dict[type, int] = {Infinity: 1, Zero: -1}
+
+
+def _power_limit_facts(base: Basic, exponent: Basic) -> Facts | None:
+    """
+    Whether ``base**exponent`` is zero or infinite, when *base* is ``0`` or
+    ``oo``, or *exponent* is ``oo`` or ``-oo`` and *base* is positive.
+    """
+    direction = _DIRECTION.get(type(exponent))
+    size = _SIZE.get(type(base))
+    if direction is None:
+        if size is None:
+            return None
+        direction = _sign_of_real_part(exponent, size < 0)
+    elif size is None:
+        size = _compared_with_one(base)
+    if not (size and direction):
+        return None
+    return _ZERO if size * direction < 0 else _INFINITE
+
+
+def _sign_of_real_part(expr: Basic, real: bool) -> int:
+    """The sign of the real part of *expr*, 0 if not known; with *real*, only for a real *expr*."""
+    z = _interval(expr)
+    if z is None or real and z[1] != _ZERO_PART:
+        return 0
+    return 1 if mpf_sign(z[0][0]) > 0 else -1 if mpf_sign(z[0][1]) < 0 else 0
+
+
+def _compared_with_one(expr: Basic) -> int:
+    """1 if *expr* is real and above 1, -1 if it is between 0 and 1, else 0."""
+    z = _interval(expr)
+    if z is None or z[1] != _ZERO_PART or mpf_sign(z[0][0]) <= 0:
+        return 0
+    return 1 if mpf_gt(z[0][0], fone) else -1 if mpf_lt(z[0][1], fone) else 0
+
+
 def _sin(z: Interval) -> Interval:
     return mpci_sin(z, _PREC)
 
@@ -254,6 +302,107 @@ def _log(z: Interval) -> Interval | None:
     return None
 
 
+# the inverse functions below are evaluated for real arguments only; their
+# endpoints are computed with _WP bits and rounded outward to _PREC bits with a
+# margin, which covers the error of the mpmath functions
+_WP = _PREC + 20
+_PI = _ATOM_INTERVALS[Pi][0]
+_HALF_PI = (mpf_shift(_PI[0], -1), mpf_shift(_PI[1], -1))
+
+
+def _real(z: Interval) -> tuple[tuple, tuple] | None:
+    """*z* rounded outward to ``_PREC`` bits if it is real."""
+    if z[1] != _ZERO_PART:
+        return None
+    a, b = z[0]
+    return mpf_pos(a, _PREC, round_floor), mpf_pos(b, _PREC, round_ceiling)
+
+
+def _monotone(f: Callable, a: tuple, b: tuple) -> tuple[tuple, tuple]:
+    """``f(a)`` rounded down and ``f(b)`` rounded up, for a function *f* of mpmath."""
+    return (mpf_perturb(f(a, _WP, round_floor), 1, _PREC, round_floor),
+            mpf_perturb(f(b, _WP, round_ceiling), 0, _PREC, round_ceiling))
+
+
+def _side(x: tuple[tuple, tuple]) -> int | None:
+    """1 if *x* lies above 1, -1 if below -1, 0 if within [-1, 1], else ``None``."""
+    a, b = x
+    if mpf_gt(a, fone):
+        return 1
+    if mpf_lt(b, fnone):
+        return -1
+    if mpf_ge(a, fnone) and mpf_le(b, fone):
+        return 0
+    return None
+
+
+def _increasing(f: Callable) -> Callable[[Interval], Interval | None]:
+    """The function of intervals for an increasing function *f* of mpmath which is real on the real line."""
+    def g(z: Interval) -> Interval | None:
+        x = _real(z)
+        return None if x is None else (_monotone(f, *x), _ZERO_PART)
+    return g
+
+
+def _of_reciprocal(f: Callable[[Interval], Interval | None]) -> Callable[[Interval], Interval | None]:
+    """The function ``f(1/x)`` of a real ``x`` which is not zero."""
+    def g(z: Interval) -> Interval | None:
+        x = _real(z)
+        if x is None or mpf_sign(x[0]) <= 0 <= mpf_sign(x[1]):
+            return None
+        return f((mpi_div(_ONE[0], x, _WP), _ZERO_PART))
+    return g
+
+
+def _asin(z: Interval) -> Interval | None:
+    x = _real(z)
+    side = None if x is None else _side(x)
+    if x is None or side is None:
+        return None
+    if side == 0:
+        return _monotone(mpf_asin, *x), _ZERO_PART
+    if side == 1:
+        return _HALF_PI, mpi_neg(_monotone(mpf_acosh, *x))
+    return mpi_neg(_HALF_PI), _monotone(mpf_acosh, *mpi_neg(x))
+
+
+def _acos(z: Interval) -> Interval | None:
+    x = _real(z)
+    side = None if x is None else _side(x)
+    if x is None or side is None:
+        return None
+    if side == 0:
+        return _monotone(mpf_acos, x[1], x[0]), _ZERO_PART
+    if side == 1:
+        return _ZERO_PART, _monotone(mpf_acosh, *x)
+    return _PI, mpi_neg(_monotone(mpf_acosh, *mpi_neg(x)))
+
+
+def _acosh(z: Interval) -> Interval | None:
+    x = _real(z)
+    side = None if x is None else _side(x)
+    if x is None or side is None:
+        return None
+    if side == 0:
+        return _ZERO_PART, _monotone(mpf_acos, x[1], x[0])
+    if side == 1:
+        return _monotone(mpf_acosh, *x), _ZERO_PART
+    return _monotone(mpf_acosh, *mpi_neg(x)), _PI
+
+
+def _atanh(z: Interval) -> Interval | None:
+    x = _real(z)
+    side = None if x is None else _side(x)
+    if x is None or side is None:
+        return None
+    if side == 0:
+        if mpf_le(x[0], fnone) or mpf_ge(x[1], fone):
+            return None
+        return _monotone(mpf_atanh, *x), _ZERO_PART
+    real_part = _monotone(mpf_atanh, *mpi_div(_ONE[0], x, _WP))
+    return real_part, mpi_neg(_HALF_PI) if side == 1 else _HALF_PI
+
+
 _FUNCTIONS: dict[type, Callable[[Interval], Interval | None]] = {
     exp: lambda z: mpci_exp(z, _PREC),
     log: _log,
@@ -269,6 +418,18 @@ _FUNCTIONS: dict[type, Callable[[Interval], Interval | None]] = {
     coth: lambda z: _div(_cosh(z), _sinh(z)),
     sech: lambda z: _reciprocal(_cosh(z)),
     csch: lambda z: _reciprocal(_sinh(z)),
+    asin: _asin,
+    acos: _acos,
+    atan: _increasing(mpf_atan),
+    acot: _of_reciprocal(_increasing(mpf_atan)),
+    asec: _of_reciprocal(_acos),
+    acsc: _of_reciprocal(_asin),
+    asinh: _increasing(mpf_asinh),
+    acosh: _acosh,
+    atanh: _atanh,
+    acoth: _of_reciprocal(_atanh),
+    asech: _of_reciprocal(_acosh),
+    acsch: _of_reciprocal(_increasing(mpf_asinh)),
     Abs: lambda z: (mpci_abs(z, _PREC), _ZERO_PART),
     re: lambda z: (z[0], _ZERO_PART),
     im: lambda z: (z[1], _ZERO_PART),
@@ -276,7 +437,8 @@ _FUNCTIONS: dict[type, Callable[[Interval], Interval | None]] = {
 }
 # the classes of the numbers which number_facts evaluates if it evaluates their arguments
 EVALUATED = frozenset({Integer, Zero, One, NegativeOne, Rational, Half, Float, Pi,
-                       Exp1, ImaginaryUnit, Add, Mul, Pow, *_FUNCTIONS})
+                       Exp1, ImaginaryUnit, Infinity, NegativeInfinity, Add, Mul, Pow,
+                       *_FUNCTIONS})
 
 
 def _interval(expr: Basic) -> Interval | None:
