@@ -19,7 +19,8 @@ from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
     EVEN_NUMBER_OF_ARGS_ARE_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
     IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE, ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS,
     ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS, SELF_IS,
-    SELF_IS_NOT, TRUE_IF, _UnaryFactsEngine, ask_by_rules)
+    SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE, SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF,
+    _UnaryFactsEngine, ask_by_rules)
 from sympy.assumptions.rule_preprocessing import preprocess
 from sympy.core.add import Add
 from sympy.core.basic import Basic
@@ -32,7 +33,7 @@ from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.exponential import LambertW, exp, log
 from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech,
     asinh, atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
@@ -248,6 +249,15 @@ def test_powers_with_infinities():
     assert ask_number(Q.zero, Pow(0, oo, evaluate=False)) is True
     assert ask_number(Q.infinite, Pow(0, -oo, evaluate=False)) is True
     assert ask_number(Q.infinite, Pow(0, -sqrt(2), evaluate=False)) is True
+    # a base which is not real, by its absolute value
+    assert ask_number(Q.infinite, (2*I)**oo) is True
+    assert ask_number(Q.zero, (2*I)**-oo) is True
+    assert ask_number(Q.infinite, (-2*I)**oo) is True
+    assert ask_number(Q.zero, (I/2)**oo) is True
+    assert ask_number(Q.infinite, (-I/2)**-oo) is True
+    assert ask_number(Q.infinite, (1 + I)**oo) is True
+    assert ask_number(Q.zero, (1 + I)**-oo) is True
+    assert I**oo not in known(I**oo)
     # nan in SymPy
     one_to_oo = Pow(1, oo, evaluate=False)
     assert one_to_oo not in known(one_to_oo)
@@ -259,6 +269,9 @@ def test_powers_with_infinities():
     assert negative_to_minus_oo not in known(negative_to_minus_oo)
     minus_oo_to_oo = Pow(-oo, oo, evaluate=False)
     assert minus_oo_to_oo not in known(minus_oo_to_oo)
+    # zoo in SymPy, which is not consistent for negative bases
+    minus_two_to_oo = Pow(-2, oo, evaluate=False)
+    assert minus_two_to_oo not in known(minus_two_to_oo)
     # 0 in SymPy
     zoo_to_oo = Pow(zoo, oo, evaluate=False)
     assert zoo_to_oo not in known(zoo_to_oo)
@@ -321,6 +334,19 @@ def test_functions_of_numbers_without_symbols():
     assert asin(above_one, evaluate=False) not in known(asin(above_one, evaluate=False))
     assert ask_number(Q.positive, acosh(above_one, evaluate=False)) is None
     assert asin(1 + I) not in known(asin(1 + I))
+    # LambertW, by its branch and by the side of -1/e and 0 of its argument
+    assert ask_number(Q.real, LambertW(-1)) is False
+    assert ask_number(Q.positive, LambertW(-1)) is False
+    assert ask_number(Q.positive, LambertW(2)) is True
+    assert ask_number(Q.negative, LambertW(Rational(-1, 10))) is True
+    assert ask_number(Q.negative, LambertW(Rational(-1, 10), -1)) is True
+    assert ask_number(Q.real, LambertW(Rational(-1, 10), 1)) is False
+    assert ask_number(Q.real, LambertW(-10, -1)) is False
+    assert ask_number(Q.real, LambertW(-2, 2)) is False
+    assert ask_number(Q.real, LambertW(half, -1)) is False
+    at_minus_one_over_e = LambertW(-exp(-1), -1, evaluate=False)
+    assert at_minus_one_over_e not in known(at_minus_one_over_e)
+    assert LambertW(I) not in known(LambertW(I))
 
 
 def test_preprocess_declared_symbols():
@@ -615,6 +641,57 @@ def test_counting_with_an_undecided_argument():
     assert ask_each(Q.even, g, [Q.zero, Q.zero, Q.real], rules) == {None}
 
 
+def test_some_even_and_odd_number_of_args():
+    rules = {
+        (Mul, Q.nonnegative): [
+            (TRUE_IF, [
+                (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+                (OTHER_ARGS_ARE, Q.nonnegative),
+            ]),
+        ],
+        (Mul, Q.nonpositive): [
+            (TRUE_IF, [
+                (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
+                (OTHER_ARGS_ARE, Q.nonnegative),
+            ]),
+        ],
+    }
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.nonnegative], rules) == {True}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.nonpositive, Q.nonnegative, Q.positive], rules) == {True}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.negative, Q.nonpositive, Q.nonpositive, Q.nonnegative],
+                    rules) == {True}
+    assert ask_each(Q.nonnegative, Mul,
+                    [Q.nonpositive, Q.negative, Q.nonnegative], rules) == {True}
+    assert ask_each(Q.nonnegative, Mul, [Q.nonnegative, Q.positive], rules) == {True}
+    assert ask_each(Q.nonnegative, Mul, [Q.nonpositive, Q.nonnegative], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul,
+                    [Q.nonpositive, Q.nonpositive, Q.nonnegative], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.real], rules) == {None}
+    assert ask_each(Q.nonpositive, Mul, [Q.nonpositive, Q.imaginary], rules) == {None}
+
+    class g(Function):
+        pass
+
+    # not true of anything: only the shape is tested
+    rules = {(g, Q.even): [(IF_AND_ONLY_IF, [(SOME_ODD_NUMBER_OF_ARGS_ARE, Q.zero)])]}
+    assert ask_each(Q.even, g, [Q.zero, Q.real], rules) == {True}
+    assert ask_each(Q.even, g, [Q.zero, Q.zero], rules) == {None}
+    assert ask_each(Q.even, g, [Q.positive, Q.positive], rules) == {None}
+
+
+def test_counting_which_needs_every_argument_decided():
+    rules = {
+        (Mul, Q.real): [
+            (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real), (OTHER_ARGS_ARE_NOT, Q.zero)]),
+        ],
+    }
+    assert ask_by_rules(Q.real, I*y, Q.real(y) & ~Q.zero(y), rules) is False
+    # y may be I
+    assert ask_by_rules(Q.real, I*y, ~Q.zero(y), rules) is None
+
+
 def test_conditions_which_must_not_hold_for_the_arguments():
     assert ask_each(Q.zero, Mul, [Q.positive, Q.negative]) == {False}
     assert ask_each(Q.zero, Mul, [Q.positive, Q.negative, is_not(Q.zero)]) == {False}
@@ -752,7 +829,8 @@ def test_conditions_about_the_arguments_of_an_expression_without_any():
     selectors = [ALL_ARGS_ARE, ALL_ARGS_ARE_NOT, ANY_ARG_IS, ANY_ARG_IS_NOT,
         ONE_ARG_IS, ONE_ARG_IS_NOT, EVEN_NUMBER_OF_ARGS_ARE,
         EVEN_NUMBER_OF_ARGS_ARE_NOT, ODD_NUMBER_OF_ARGS_ARE,
-        ODD_NUMBER_OF_ARGS_ARE_NOT]
+        ODD_NUMBER_OF_ARGS_ARE_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
+        SOME_ODD_NUMBER_OF_ARGS_ARE]
     for selector in selectors:
         for kind in (TRUE_IF, FALSE_IF, IF_AND_ONLY_IF):
             rules = {(g, Q.even): [(kind, [(selector, Q.even)])]}
