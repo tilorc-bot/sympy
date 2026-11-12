@@ -4,8 +4,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sympy.assumptions.ask import Q
+from sympy.assumptions.ask_rules import RULES as WRITTEN_RULES
 from sympy.assumptions.ask_rules_generated import RULES
 from sympy.assumptions.number_facts import EVALUATED, number_facts
+from sympy.assumptions.rule_closing import exp_rules_for_powers
 from sympy.assumptions.rule_engine import _RuleEngine, _UnaryFactsEngine
 from sympy.core.add import Add
 from sympy.core.assumptions import _assume_defined, _set_ask_rules
@@ -37,8 +39,9 @@ class _CoreRuleEngine(_RuleEngine):
     to the ``_eval_is_<fact>`` handlers.
     """
 
-    def __init__(self, rules: Rules):
+    def __init__(self, rules: Rules, written_rules: Rules):
         self.rules = rules
+        self.written_rules = written_rules
         self.unary_facts_engine = _UnaryFactsEngine({})
         where_true = self.unary_facts_engine.where_true
         self.predicates: dict[str, Predicate] = {}
@@ -53,12 +56,22 @@ class _CoreRuleEngine(_RuleEngine):
         self.handlers: dict[Predicate | Basic, str] = {
             predicate: '_eval_is_' + fact for fact, predicate in self.predicates.items()}
         self.class_rules: dict[tuple[type, Predicate | Basic], tuple[Rule, ...]] = {}
+        self.class_written_rules: dict[tuple[type, Predicate | Basic], tuple[Rule, ...]] = {}
 
-    def ask(self, fact: str, obj: Any) -> bool | None:
-        """``obj.is_<fact>`` from the facts of a number and from the rules."""
+    def ask(self, fact: str, obj: Any, queried: bool) -> bool | None:
+        """
+        ``obj.is_<fact>`` from the facts of a number and from the rules.
+
+        For the fact of the question (*queried*) the rules are the ones
+        closed under the implications between the facts. For a fact which is
+        tried to answer another one they are the rules as written: what
+        follows from the answer is deduced by the caller.
+        """
         predicate = self.predicates.get(fact)
         if predicate is None:
             return None
+        if not queried:
+            return self._ask_written(predicate, obj)
         known = obj._assumptions
         if not known.number_facts_tried:
             known.number_facts_tried = True
@@ -72,6 +85,21 @@ class _CoreRuleEngine(_RuleEngine):
         value = self._from_rules(predicate, obj)
         if value is False and predicate in _OPPOSITE:
             # for the rules an expression can be neither finite nor infinite
+            value = False if self._from_rules(_OPPOSITE[predicate], obj) else None
+        if value is not None and predicate is not Q.commutative and _may_be_nan(obj):
+            return None
+        return value
+
+    def _ask_written(self, predicate: Predicate, obj: Any) -> bool | None:
+        cls = type(obj)
+        rules = self.class_written_rules.get((cls, predicate))
+        if rules is None:
+            rules = self.class_written_rules[cls, predicate] = self._rules_of(
+                cls, predicate, self.written_rules)
+        if not rules:
+            return None
+        value = self._first_answer(rules, obj)
+        if value is False and predicate in _OPPOSITE:
             value = False if self._from_rules(_OPPOSITE[predicate], obj) else None
         if value is not None and predicate is not Q.commutative and _may_be_nan(obj):
             return None
@@ -107,14 +135,19 @@ class _CoreRuleEngine(_RuleEngine):
         cls = type(expr)
         rules = self.class_rules.get((cls, predicate))
         if rules is None:
-            rules = self.class_rules[cls, predicate] = self._rules_of(cls, predicate)
+            rules = self.class_rules[cls, predicate] = self._rules_of(
+                cls, predicate, self.rules)
+        return self._first_answer(rules, expr)
+
+    def _first_answer(self, rules: tuple[Rule, ...], expr: Basic) -> bool | None:
         for kind, conditions in rules:
             answer = self._apply(kind, conditions, expr)
             if answer is not None:
                 return answer
         return None
 
-    def _rules_of(self, cls: type, predicate: Predicate | Basic) -> tuple[Rule, ...]:
+    def _rules_of(self, cls: type, predicate: Predicate | Basic,
+                  table: Rules) -> tuple[Rule, ...]:
         """
         The rules for *predicate* of *cls* and of its base classes, unless a
         class between has a handler for it and no rules.
@@ -122,7 +155,7 @@ class _CoreRuleEngine(_RuleEngine):
         handler = self.handlers.get(predicate)
         found: list[Rule] = []
         for base in cls.__mro__:
-            rules = self.rules.get((base, predicate))
+            rules = table.get((base, predicate))
             if rules:
                 found += rules
             elif not found and handler in base.__dict__:
@@ -169,4 +202,4 @@ def _is_evaluated_number(expr: Basic) -> bool:
     return type(expr) in EVALUATED and all(map(_is_evaluated_number, expr.args))
 
 
-_set_ask_rules(_CoreRuleEngine(RULES).ask)
+_set_ask_rules(_CoreRuleEngine(RULES, exp_rules_for_powers(WRITTEN_RULES)).ask)

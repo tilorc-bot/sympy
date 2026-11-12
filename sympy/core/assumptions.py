@@ -479,6 +479,9 @@ def check_assumptions(expr, against=None, **assume):
     return known
 
 
+_FACT_BITS = {fact: 1 << i for i, fact in enumerate(sorted(_assume_defined))}
+
+
 class StdFactKB(FactKB):
     """A FactKB specialized for the built-in rules
 
@@ -486,6 +489,9 @@ class StdFactKB(FactKB):
     """
     # whether the facts of the number which the object is have been looked for
     number_facts_tried = False
+    # the facts for which the rules as written and the handler gave no answer
+    # (a bit of each, see _FACT_BITS)
+    tried = 0
 
     def __init__(self, facts=None):
         super().__init__(_assume_rules)
@@ -573,17 +579,24 @@ def _ask(fact, obj):
         if fact_i in assumptions:
             continue
 
-        # The rules about expressions are asked first, for the fact of the
-        # question only: each rule is repeated for every fact which its
-        # conclusion decides. The associated handler for fact_i, if it
-        # exists, is called if they do not answer.
+        # The rules about expressions are asked first. The associated handler
+        # for fact_i, if it exists, is called if they do not answer. Neither
+        # is asked again for the same object if they did not answer: what
+        # they say depends only on the object.
         fact_i_value = None
         if fact_i is fact and _ask_rules is not None:
-            fact_i_value = _ask_rules(fact_i, obj)
+            fact_i_value = _ask_rules(fact_i, obj, True)
         if fact_i_value is None:
-            handler_i = handler_map.get(fact_i)
-            if handler_i is not None:
-                fact_i_value = handler_i(obj)
+            bit = _FACT_BITS[fact_i]
+            if not assumptions.tried & bit:
+                if fact_i is not fact and _ask_rules is not None:
+                    fact_i_value = _ask_rules(fact_i, obj, False)
+                if fact_i_value is None:
+                    handler_i = handler_map.get(fact_i)
+                    if handler_i is not None:
+                        fact_i_value = handler_i(obj)
+                    if fact_i_value is None:
+                        assumptions.tried |= bit
 
         # If we get a new value for fact_i then we should update our knowledge
         # of fact_i as well as any related facts that can be inferred using the
