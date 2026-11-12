@@ -666,12 +666,8 @@ class Add(Expr, AssocOp):
     # assumption methods
     _eval_is_antihermitian = lambda self: _fuzzy_group(
         (a.is_antihermitian for a in self.args), quick_exit=True)
-    _eval_is_finite = lambda self: _fuzzy_group(
-        (a.is_finite for a in self.args), quick_exit=True)
     _eval_is_hermitian = lambda self: _fuzzy_group(
         (a.is_hermitian for a in self.args), quick_exit=True)
-    _eval_is_integer = lambda self: _fuzzy_group(
-        (a.is_integer for a in self.args), quick_exit=True)
     _eval_is_algebraic = lambda self: _fuzzy_group(
         (a.is_algebraic for a in self.args), quick_exit=True)
     _eval_is_commutative = lambda self: _fuzzy_group(
@@ -770,19 +766,6 @@ class Add(Expr, AssocOp):
             return False
         if l[0].is_odd:
             return self._new_rawargs(*l[1:]).is_even
-
-    def _eval_is_irrational(self):
-        for t in self.args:
-            a = t.is_irrational
-            if a:
-                others = list(self.args)
-                others.remove(t)
-                if all(x.is_rational is True for x in others):
-                    return True
-                return None
-            if a is None:
-                return
-        return False
 
     def _all_nonneg_or_nonppos(self):
         nn = np = 0
