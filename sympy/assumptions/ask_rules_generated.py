@@ -236,7 +236,6 @@ RULES: Rules = {
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.algebraic)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [
@@ -244,7 +243,6 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -260,32 +258,23 @@ RULES: Rules = {
     (Add, Q.commutative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.complex): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
             (ANY_ARG_IS, Q.positive_infinite),
         ]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.composite): [
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.algebraic)]),
@@ -482,44 +471,33 @@ RULES: Rules = {
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real), (ONE_ARG_IS_NOT, Q.real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
     ],
     (Add, Q.finite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
             (ANY_ARG_IS, Q.positive_infinite),
         ]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.hermitian): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.hermitian)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.hermitian)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.imaginary), (OTHER_ARGS_ARE, Q.hermitian)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
     ],
     (Add, Q.imaginary): [
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.antihermitian)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.nonzero), (OTHER_ARGS_ARE, Q.imaginary)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -531,27 +509,21 @@ RULES: Rules = {
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_real), (ONE_ARG_IS_NOT, Q.real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
     ],
     (Add, Q.infinite): [
         (TRUE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
         (TRUE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (TRUE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
             (ANY_ARG_IS, Q.positive_infinite),
         ]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.integer): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.integer)]),
@@ -559,7 +531,6 @@ RULES: Rules = {
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.algebraic)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.hermitian)]),
@@ -571,7 +542,6 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -585,7 +555,6 @@ RULES: Rules = {
         (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.hermitian)]),
@@ -596,7 +565,6 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -644,13 +612,9 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.positive_infinite), (OTHER_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.nonnegative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonnegative)]),
@@ -804,13 +768,9 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.negative_infinite), (OTHER_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
-        (FALSE_IF, [(ONE_ARG_IS, Q.transcendental), (OTHER_ARGS_ARE, Q.algebraic)]),
     ],
     (Add, Q.prime): [
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.algebraic)]),
@@ -850,7 +810,6 @@ RULES: Rules = {
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.algebraic)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.hermitian)]),
@@ -862,7 +821,6 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -876,19 +834,16 @@ RULES: Rules = {
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.hermitian)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.imaginary), (OTHER_ARGS_ARE, Q.hermitian)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
-        (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -900,7 +855,6 @@ RULES: Rules = {
         (FALSE_IF, [(ALL_ARGS_ARE, Q.algebraic)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.commutative), (OTHER_ARGS_ARE, Q.complex)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex)]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite)]),
         (FALSE_IF, [(ONE_ARG_IS, Q.infinite), (OTHER_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [
@@ -908,7 +862,6 @@ RULES: Rules = {
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
             (ANY_ARG_IS, Q.negative_infinite),
         ]),
-        (FALSE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
         (FALSE_IF, [
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
@@ -1972,12 +1925,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite), (OTHER_ARGS_ARE_NOT, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
@@ -2028,66 +1975,9 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.nonzero)]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.infinite),
-            (OTHER_ARGS_ARE, Q.finite),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.finite),
-            (OTHER_ARGS_ARE, Q.infinite),
-            (ALL_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.complex): [
@@ -2098,14 +1988,7 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.nonzero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
         (FALSE_IF, [
@@ -2122,38 +2005,6 @@ RULES: Rules = {
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ANY_ARG_IS, Q.zero)]),
     ],
@@ -2459,20 +2310,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -2486,11 +2323,6 @@ RULES: Rules = {
             (ONE_ARG_IS, Q.irrational),
             (OTHER_ARGS_ARE, Q.rational),
             (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
         ]),
     ],
     (Mul, Q.extended_positive): [
@@ -2562,21 +2394,7 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
         (FALSE_IF, [
             (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -2591,7 +2409,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.rational),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
         (TRUE_IF, [
             (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
             (OTHER_ARGS_ARE, Q.nonnegative),
@@ -2608,10 +2425,6 @@ RULES: Rules = {
             (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
             (OTHER_ARGS_ARE, Q.nonnegative),
         ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.rational)]),
         (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ANY_ARG_IS, Q.zero)]),
@@ -2624,13 +2437,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.nonzero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
         (FALSE_IF, [
@@ -2647,38 +2453,6 @@ RULES: Rules = {
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.hermitian): [
@@ -2699,41 +2473,9 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.nonzero),
         ]),
         (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (TRUE_IF, [
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
         ]),
         (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ANY_ARG_IS, Q.zero)]),
@@ -2750,21 +2492,7 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero)]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_real), (ONE_ARG_IS_NOT, Q.nonzero)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite), (OTHER_ARGS_ARE_NOT, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
@@ -2789,10 +2517,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [
             (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
             (OTHER_ARGS_ARE, Q.nonnegative),
         ]),
@@ -2807,10 +2531,6 @@ RULES: Rules = {
         (FALSE_IF, [
             (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
             (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
         ]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.rational)]),
         (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
@@ -2834,56 +2554,11 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
-            (OTHER_ARGS_ARE, Q.nonzero),
-        ]),
         (FALSE_IF, [
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.integer): [
@@ -2901,12 +2576,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -2955,12 +2624,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ANY_ARG_IS, Q.zero)]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
@@ -3067,12 +2730,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.complex),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ANY_ARG_IS, Q.zero)]),
         (FALSE_IF, [
             (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
@@ -3080,48 +2737,9 @@ RULES: Rules = {
         ]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
-            (OTHER_ARGS_ARE, Q.nonzero),
-        ]),
-        (FALSE_IF, [
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.nonnegative): [
@@ -3265,12 +2883,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ANY_ARG_IS, Q.zero)]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
@@ -3298,11 +2910,6 @@ RULES: Rules = {
             (ONE_ARG_IS, Q.irrational),
             (OTHER_ARGS_ARE, Q.rational),
             (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real), (OTHER_ARGS_ARE_NOT, Q.zero)]),
     ],
@@ -3433,60 +3040,15 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (FALSE_IF, [
             (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
             (OTHER_ARGS_ARE, Q.extended_positive),
         ]),
         (FALSE_IF, [(ANY_ARG_IS, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.finite)]),
         (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
-            (OTHER_ARGS_ARE, Q.nonzero),
-        ]),
-        (FALSE_IF, [
             (ONE_ARG_IS, S.Half),
             (OTHER_ARGS_ARE, Q.integer),
             (ANY_ARG_IS, Q.even),
-        ]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.irrational),
-            (OTHER_ARGS_ARE, Q.rational),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [
-            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.nonpositive),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.nonnegative),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [
-            (ONE_ARG_IS, Q.transcendental),
-            (OTHER_ARGS_ARE, Q.algebraic),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
     ],
     (Mul, Q.prime): [
@@ -3582,12 +3144,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -3637,12 +3193,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -3675,7 +3225,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.rational),
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
-        (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
         (TRUE_IF, [
             (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.nonpositive),
             (OTHER_ARGS_ARE, Q.nonnegative),
@@ -3693,10 +3242,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE, Q.nonnegative),
         ]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonzero)]),
-        (TRUE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.rational)]),
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ANY_ARG_IS, Q.zero)]),
     ],
@@ -3713,12 +3258,6 @@ RULES: Rules = {
             (OTHER_ARGS_ARE_NOT, Q.zero),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.finite), (OTHER_ARGS_ARE_NOT, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
@@ -3750,20 +3289,6 @@ RULES: Rules = {
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.complex), (OTHER_ARGS_ARE_NOT, Q.zero)]),
         (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.prime),
-            (OTHER_ARGS_ARE, Q.integer),
-            (OTHER_ARGS_ARE, Q.positive),
-            (ANY_ARG_IS, Q.prime),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.extended_negative),
-            (OTHER_ARGS_ARE, Q.extended_positive),
-        ]),
-        (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
             (ALL_ARGS_ARE, Q.finite),
@@ -3783,14 +3308,6 @@ RULES: Rules = {
             (ONE_ARG_IS, Q.irrational),
             (OTHER_ARGS_ARE, Q.rational),
             (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (FALSE_IF, [
-            (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
-        ]),
-        (FALSE_IF, [
-            (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
-            (OTHER_ARGS_ARE, Q.positive),
         ]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.rational), (OTHER_ARGS_ARE_NOT, Q.zero)]),
         (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real), (OTHER_ARGS_ARE_NOT, Q.zero)]),

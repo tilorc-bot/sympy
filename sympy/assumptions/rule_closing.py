@@ -132,6 +132,14 @@ def _implies(b, a, facts):
     if b == a:
         return True
     ((argument, w), q), ((other, v), p) = b[0], a[0]
+    if (w and v and other == ALL_ARGS and argument in _HOW_MANY_ARGS
+            and argument != OTHER_ARGS):
+        # all arguments have p if the counted ones and the others have it
+        def has_p(r):
+            return r in facts and (r == p or p in facts[r][0])
+
+        return has_p(q) and any(arg == OTHER_ARGS and expected and has_p(r)
+                                for (arg, expected), r in b[1:])
     if argument != other or argument in _HOW_MANY_ARGS:
         return False
     if q not in facts or p not in facts:
