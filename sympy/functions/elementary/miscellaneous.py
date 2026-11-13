@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from sympy.core import S, sympify, NumberKind
 from sympy.utilities.iterables import sift
-from sympy.core.add import Add
+from sympy.core.add import Add, _may_be_infinite
 from sympy.core.containers import Tuple
 from sympy.core.operations import LatticeOp, ShortCircuit
 from sympy.core.function import (Application, Lambda,
@@ -18,7 +18,7 @@ from sympy.core.singleton import Singleton
 from sympy.core.sorting import ordered
 from sympy.core.symbol import Symbol
 from sympy.core.rules import Transform
-from sympy.core.logic import _torf
+from sympy.core.logic import _torf, fuzzy_or
 from sympy.core.traversal import walk
 from sympy.core.numbers import Integer
 from sympy.logic.boolalg import And, Or
@@ -811,6 +811,17 @@ class Max(MinMaxBase, Application):
     def _eval_rewrite_as_Piecewise(self, *args, **kwargs):
         return _minmax_as_Piecewise('>=', *args)
 
+    def _eval_is_positive(self):
+        # an argument of which nothing says that it may be infinite stands
+        # for a finite number
+        if not any(_may_be_infinite(a) for a in self.args):
+            return fuzzy_or(a.is_positive for a in self.args) or None
+
+    def _eval_is_nonnegative(self):
+        if not any(_may_be_infinite(a) for a in self.args):
+            return fuzzy_or(a.is_nonnegative for a in self.args) or None
+
+
 class Min(MinMaxBase, Application):
     """
     Return, if possible, the minimum value of the list.
@@ -863,6 +874,13 @@ class Min(MinMaxBase, Application):
 
     def _eval_rewrite_as_Piecewise(self, *args, **kwargs):
         return _minmax_as_Piecewise('<=', *args)
+
+    def _eval_is_negative(self):
+        # an argument of which nothing says that it may be infinite stands
+        # for a finite number
+        if not any(_may_be_infinite(a) for a in self.args):
+            return fuzzy_or(a.is_negative for a in self.args) or None
+
 
 class Rem(DefinedFunction):
     """Returns the remainder when ``p`` is divided by ``q`` where ``p`` is finite

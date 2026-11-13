@@ -346,14 +346,17 @@ def test_minmax_signs_with_infinite_arguments():
     i = Symbol('i', infinite=True)
     f = Symbol('f', finite=True)
     # Max(oo, 1) is oo and Max(-1, -oo) is -1
-    assert Max(x, p).is_positive is None
+    er = Symbol('er', extended_real=True)
+    assert Max(er, p).is_positive is None
+    assert Max(x, p).is_positive is True
     assert Max(x, p).is_extended_positive is True
     assert Max(nn, ep).is_positive is None
     assert Max(nn, ep).is_finite is None
     assert Max(nn, ep).is_nonzero is None
     assert Max(-1, i).is_negative is None
     assert Max(-1, i).is_positive is False
-    assert Min(x, -1).is_negative is None
+    assert Min(er, -1).is_negative is None
+    assert Min(x, -1).is_negative is True
     assert Min(x, -1).is_extended_negative is True
     assert Min(1, i).is_positive is None
     assert Min(0, i).is_nonnegative is None
