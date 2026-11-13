@@ -242,7 +242,7 @@ def test_same_answers_as_the_source_rules():
         (Q.positive, acot(x), Q.positive(x)),
         (Q.positive, asin(x), Q.negative(x)),
         (Q.algebraic, cot(x), Q.algebraic(x)),
-        (Q.imaginary, re(x), True),
+        (Q.real, re(x), Q.finite(x)),
         (Q.real, im(x), Q.complex(x)),
         (Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)),
         (Q.finite, sign(x), True),

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from itertools import combinations_with_replacement, product
-
 from sympy.assumptions.ask import Q, ask
 from sympy.assumptions.ask_rules_generated import RULES
 from sympy.assumptions.assume import Predicate
@@ -13,8 +12,8 @@ from sympy.core.numbers import E, I, Rational, nan, oo, pi, zoo
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
-from sympy.functions.combinatorial.factorials import (FallingFactorial,
-    RisingFactorial, binomial, factorial, factorial2, subfactorial)
+from sympy.functions.combinatorial.factorials import (FallingFactorial, RisingFactorial,
+    binomial, factorial, factorial2, subfactorial)
 from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi, mobius,
     partition, primenu, primeomega, primepi, reduced_totient, totient)
 from sympy.functions.elementary.complexes import Abs, re, sign
@@ -25,23 +24,16 @@ from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
     atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
-from sympy.functions.special.bessel import (airyai, besseli, besselj, besselk,
-    bessely)
-from sympy.functions.special.error_functions import (erf, erf2, erfc, fresnelc,
-    fresnels, owens_t)
-from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
-from sympy.functions.elementary.trigonometric import (acot, asec, atan, cot, csc, sec,
-    sinc, tan)
-from sympy.functions.special.bessel import (airyai, airyaiprime, airybi,
-    airybiprime, besseli, besselj, besselk, bessely, marcumq)
+from sympy.functions.special.bessel import (airyai, airyaiprime, airybi, airybiprime,
+    besseli, besselj, besselk, bessely, marcumq)
 from sympy.functions.special.beta_functions import beta
 from sympy.functions.special.elliptic_integrals import elliptic_f, elliptic_k
 from sympy.functions.special.error_functions import (Shi, Si, erf, erf2, erf2inv, erfc,
     erfi, fresnelc, fresnels, li, owens_t)
 from sympy.functions.special.gamma_functions import (gamma, loggamma, lowergamma,
     polygamma)
-from sympy.functions.special.zeta_functions import polylog
 from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.functions.special.zeta_functions import polylog
 from sympy.logic.boolalg import And
 
 REAL = (S.Zero, S.One, S.NegativeOne, S(2), Rational(1, 2), sqrt(2), pi, oo, -oo, zoo,

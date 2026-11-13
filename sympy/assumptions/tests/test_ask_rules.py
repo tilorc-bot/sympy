@@ -6,14 +6,11 @@ from sympy.assumptions.ask_rules import RULES
 from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
-from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
 from sympy.assumptions.rule_engine import (ALL_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, ANY_ARG,
-    EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS,
-    OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS,
-    TRUE_IF, ask_by_rules)
-from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
-    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF,
-    SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
+    EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG,
+    OTHER_ARGS, OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS,
+    SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
+from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
 from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.basic import Basic
@@ -25,32 +22,20 @@ from sympy.core.numbers import E, I, pi
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol, symbols
-from sympy.functions.combinatorial.factorials import (FallingFactorial, binomial,
-    factorial, factorial2, subfactorial)
-from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_symbol,
-    totient)
-from sympy.functions.elementary.complexes import (Abs, adjoint, arg, conjugate, im, re,
-    sign, transpose)
-from sympy.core.symbol import Symbol
-from sympy.functions.combinatorial.factorials import (FallingFactorial,
-    RisingFactorial, binomial, factorial, factorial2, subfactorial)
+from sympy.functions.combinatorial.factorials import (FallingFactorial, RisingFactorial,
+    binomial, factorial, factorial2, subfactorial)
 from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi,
     legendre_symbol, partition, totient)
-from sympy.functions.elementary.complexes import (Abs, adjoint, conjugate, im, re, sign,
-    transpose)
+from sympy.functions.elementary.complexes import (Abs, adjoint, arg, conjugate, im, re,
+    sign, transpose)
 from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech, asinh, atanh,
-    cosh, coth, csch, sech, sinh, tanh)
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech, asinh,
+    atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
 from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
     atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
-from sympy.functions.special.error_functions import erf, erf2, erfc, erfcinv, erfi
-from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
-from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
-    cos, cot, csc, sec, sin, sinc, tan)
-from sympy.functions.special.bessel import (airyai, airyaiprime, airybi, besselj,
-    marcumq)
+from sympy.functions.special.bessel import airyai, airyaiprime, airybi, besselj, marcumq
 from sympy.functions.special.beta_functions import beta, betainc
 from sympy.functions.special.elliptic_integrals import elliptic_f, elliptic_k
 from sympy.functions.special.error_functions import (Si, erf, erf2, erf2inv, erfc,
