@@ -56,9 +56,28 @@ def _ca_terms(expr):
     return c, a
 
 
+def _may_be_infinite(expr):
+    """
+    Whether something says that *expr* may be infinite: it is known to be, it
+    has an infinity, or one of its symbols was declared extended real,
+    infinite or not finite. Any other expression which is not known to be
+    finite is taken as a finite number.
+    """
+    if expr.is_finite:
+        return False
+    if expr.is_infinite or expr.has(S.Infinity, S.NegativeInfinity, S.ComplexInfinity):
+        return True
+    for symbol in expr.free_symbols:
+        for fact, value in getattr(symbol, '_assumptions_orig', {}).items():
+            if (fact.startswith('extended_') or fact == 'infinite' and value
+                    or fact == 'finite' and value is False):
+                return True
+    return False
+
+
 def _may_be_oo_minus_oo(args):
     """Whether two of *args* may be infinite and of different signs."""
-    infinite = [a for a in args if a.is_finite is not True]
+    infinite = [a for a in args if _may_be_infinite(a)]
     if len(infinite) < 2:
         return False
     return not (all(a.is_extended_nonnegative for a in infinite)

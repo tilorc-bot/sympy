@@ -577,7 +577,7 @@ def test_tan():
 
     assert tan(r).is_real is None
     # tan(pi/2) is zoo
-    assert tan(r).is_extended_real is None
+    assert tan(r).is_extended_real is True
 
     assert tan(0, evaluate=False).is_algebraic
     assert tan(a).is_algebraic is None
@@ -609,8 +609,8 @@ def test_tan_cot_assumptions_at_poles():
     assert csc(pi*q).is_algebraic is None
     assert sin(pi*q).is_algebraic is True
     assert cos(pi*q).is_algebraic is True
-    assert tan(r).is_extended_real is None
-    assert cot(r).is_extended_real is None
+    assert tan(r).is_extended_real is True
+    assert cot(r).is_extended_real is True
     assert tan(p).is_extended_real is True
     assert tan(p).is_real is True
     assert cot(p).is_extended_real is True
@@ -755,7 +755,7 @@ def test_cot():
 
     assert cot(r).is_real is None
     # cot(0) is zoo
-    assert cot(r).is_extended_real is None
+    assert cot(r).is_extended_real is True
 
     assert cot(a).is_algebraic is False
     assert cot(na).is_algebraic is False
@@ -1760,7 +1760,7 @@ def test_sec():
     assert sec(2*x).expand(trig=True) == 1/(2*cos(x)**2 - 1)
 
     # sec(pi/2) is zoo
-    assert sec(x).is_extended_real is None
+    assert sec(x).is_extended_real == True
     assert sec(z).is_real is None
 
     assert sec(a).is_algebraic is None
@@ -1918,7 +1918,7 @@ def test_csc():
     assert csc(2*x).expand(trig=True) == 1/(2*sin(x)*cos(x))
 
     # csc(0) is zoo
-    assert csc(x).is_extended_real is None
+    assert csc(x).is_extended_real == True
     assert csc(z).is_real is None
 
     assert csc(a).is_algebraic is None

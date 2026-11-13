@@ -7,7 +7,7 @@ from sympy.core.expr import Expr
 from sympy.core.exprtools import factor_terms
 from sympy.core.function import (DefinedFunction, Derivative, ArgumentIndexError,
     AppliedUndef, expand_mul, PoleError)
-from sympy.core.logic import fuzzy_not
+from sympy.core.logic import fuzzy_not, fuzzy_or
 from sympy.core.numbers import pi, I, oo
 from sympy.core.power import Pow
 from sympy.core.relational import Eq
@@ -145,6 +145,11 @@ class re(DefinedFunction):
         if self.args[0].is_infinite is not True:
             return True
 
+    def _eval_is_zero(self):
+        arg = self.args[0]
+        if arg.is_infinite is not True:
+            return fuzzy_or([arg.is_imaginary, arg.is_zero])
+
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:
             return re(Derivative(self.args[0], x, evaluate=True))
@@ -257,6 +262,11 @@ class im(DefinedFunction):
         # re(zoo) and im(zoo) are nan
         if self.args[0].is_infinite is not True:
             return True
+
+    def _eval_is_zero(self):
+        arg = self.args[0]
+        if arg.is_infinite is not True:
+            return arg.is_extended_real
 
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:

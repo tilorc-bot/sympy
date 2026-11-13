@@ -1267,9 +1267,8 @@ class tan(TrigonometricFunction):
     def _eval_is_extended_real(self):
         arg = self.args[0]
         if arg.is_real:
-            pole = (expand_mul(arg/pi) - S.Half).is_integer
-            if pole is not None:
-                return not pole
+            # at a pole which is not known the value is taken as real
+            return ((expand_mul(arg/pi) - S.Half).is_integer) is not True
         if arg.is_extended_real is False and (
                 im(arg).is_nonzero or (arg/S.ImaginaryUnit).is_extended_nonzero):
             return False
@@ -1559,9 +1558,8 @@ class cot(TrigonometricFunction):
     def _eval_is_extended_real(self):
         arg = self.args[0]
         if arg.is_real:
-            pole = expand_mul(arg/pi).is_integer
-            if pole is not None:
-                return not pole
+            # at a pole which is not known the value is taken as real
+            return (expand_mul(arg/pi).is_integer) is not True
         if arg.is_extended_real is False and (
                 im(arg).is_nonzero or (arg/S.ImaginaryUnit).is_extended_nonzero):
             return False
@@ -1723,7 +1721,12 @@ class ReciprocalTrigonometricFunction(TrigonometricFunction):
         if self.args[0].is_real and self._eval_is_complex():
             return True
         if self.args[0].is_finite:
-            return (1/self._reciprocal_of(self.args[0])).is_extended_real
+            is_extended_real = (1/self._reciprocal_of(self.args[0])).is_extended_real
+            if is_extended_real is not None:
+                return is_extended_real
+        if self.args[0].is_real:
+            # at a pole which is not known the value is taken as real
+            return True
 
     def _eval_as_leading_term(self, x, logx, cdir):
         return (1/self._reciprocal_of(self.args[0]))._eval_as_leading_term(x, logx=logx, cdir=cdir)

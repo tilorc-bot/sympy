@@ -1014,7 +1014,7 @@ def test_zero_assumptions():
     assert re(ni).is_zero is None
     assert im(ni).is_zero is None
 
-    assert re(nzni).is_zero is None
+    assert re(nzni).is_zero is False
     assert im(nzni).is_zero is None
 
     nznic = Symbol('nznic', complex=True, zero=False, imaginary=False)
