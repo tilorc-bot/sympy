@@ -217,10 +217,13 @@ class Product(ExprWithIntLimits):
         if self.has_empty_sequence:
             return False
 
+        # With reversed limits a Product is the reciprocal of a Product.
         z = self.term.is_zero
         if z is True:
-            return True
-        if self.has_finite_limits:
+            if self.has_reversed_limits is False:
+                return True
+        elif self.has_finite_limits and (
+                self.has_reversed_limits is False or self.term.is_finite):
             # A Product is zero only if its term is zero assuming finite limits.
             return z
 
@@ -228,7 +231,10 @@ class Product(ExprWithIntLimits):
         if self.has_empty_sequence:
             return True
 
-        return self.function.is_extended_real
+        f = self.function
+        if f.is_extended_real and (f.is_zero is False or (
+                f.is_finite and self.has_reversed_limits is False)):
+            return True
 
     def _eval_is_positive(self):
         if self.has_empty_sequence:
@@ -239,21 +245,21 @@ class Product(ExprWithIntLimits):
     def _eval_is_nonnegative(self):
         if self.has_empty_sequence:
             return True
-        if self.function.is_nonnegative and self.has_finite_limits:
+        if self.function.is_nonnegative and self.has_finite_limits and (
+                self.has_reversed_limits is False or self.function.is_zero is False):
             return True
 
     def _eval_is_extended_nonnegative(self):
         if self.has_empty_sequence:
             return True
-        if self.function.is_extended_nonnegative:
-            return True
-
-    def _eval_is_extended_nonpositive(self):
-        if self.has_empty_sequence:
+        f = self.function
+        if f.is_extended_nonnegative and (f.is_zero is False or (
+                f.is_finite and self.has_reversed_limits is False)):
             return True
 
     def _eval_is_finite(self):
-        if self.has_finite_limits and self.function.is_finite:
+        if self.has_finite_limits and self.function.is_finite and (
+                self.has_reversed_limits is False or self.function.is_zero is False):
             return True
 
     def doit(self, **hints):

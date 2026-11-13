@@ -179,7 +179,7 @@ class gamma(DefinedFunction):
             return False
         if intlike(x) and x <= 0:
             return False
-        if x.is_positive or x.is_noninteger:
+        if x.is_positive or (x.is_noninteger and x.is_finite):
             return True
 
     def _eval_is_positive(self):
@@ -187,7 +187,9 @@ class gamma(DefinedFunction):
         if x.is_positive:
             return True
         elif x.is_noninteger:
-            return floor(x).is_even
+            even = floor(x).is_even
+            if even or x.is_negative:
+                return even
 
     def _eval_rewrite_as_tractable(self, z, limitvar=None, **kwargs):
         return exp(loggamma(z))
@@ -388,12 +390,6 @@ class lowergamma(DefinedFunction):
         if s.is_integer and s.is_nonpositive:
             return self
         return self.rewrite(uppergamma).rewrite(expint)
-
-    def _eval_is_zero(self):
-        x = self.args[1]
-        if x.is_zero:
-            return True
-
 
 class uppergamma(DefinedFunction):
     r"""
@@ -697,31 +693,6 @@ class polygamma(DefinedFunction):
                 return S.NegativeOne**(n+1) * factorial(n) * zeta(n+1, z)
             elif z is S.Half:
                 return S.NegativeOne**(n+1) * factorial(n) * (2**(n+1)-1) * zeta(n+1)
-
-    def _eval_is_real(self):
-        if self.args[0].is_positive and self.args[1].is_positive:
-            return True
-
-    def _eval_is_complex(self):
-        z = self.args[1]
-        is_negative_integer = fuzzy_and([z.is_negative, z.is_integer])
-        return fuzzy_and([z.is_complex, fuzzy_not(is_negative_integer)])
-
-    def _eval_is_positive(self):
-        n, z = self.args
-        if n.is_positive:
-            if n.is_odd and z.is_real:
-                return True
-            if n.is_even and z.is_positive:
-                return False
-
-    def _eval_is_negative(self):
-        n, z = self.args
-        if n.is_positive:
-            if n.is_even and z.is_positive:
-                return True
-            if n.is_odd and z.is_real:
-                return False
 
     def _eval_expand_func(self, **hints):
         n, z = self.args
@@ -1041,13 +1012,6 @@ class loggamma(DefinedFunction):
     def _eval_rewrite_as_intractable(self, z, **kwargs):
         return log(gamma(z))
 
-    def _eval_is_real(self):
-        z = self.args[0]
-        if z.is_positive:
-            return True
-        elif z.is_nonpositive:
-            return False
-
     def _eval_conjugate(self):
         z = self.args[0]
         if z not in (S.Zero, S.NegativeInfinity):
@@ -1339,9 +1303,11 @@ class multigamma(DefinedFunction):
     def _eval_is_real(self):
         x, p = self.args
         y = 2*x
-        if y.is_integer and (y <= (p - 1)) is True:
+        if (y.is_integer and (y <= (p - 1)) is True
+                and (y.is_even or y.is_nonnegative or (p - 1).is_positive)):
             return False
-        if intlike(y) and (y <= (p - 1)):
+        if (intlike(y) and (y <= (p - 1))
+                and (int(y) % 2 == 0 or y >= 0 or (p - 1).is_positive)):
             return False
-        if y > (p - 1) or y.is_noninteger:
+        if x.is_finite and (y > (p - 1) or y.is_noninteger):
             return True

@@ -18,6 +18,7 @@ from sympy.functions.elementary.integers import ceiling
 from sympy.functions.elementary.exponential import exp, log
 from sympy.functions.elementary.miscellaneous import cbrt, sqrt, root
 from sympy.functions.elementary.complexes import (Abs, re, im, polar_lift, unpolarify)
+from sympy.functions.special.error_functions import not_real_by_evalf
 from sympy.functions.special.gamma_functions import gamma, digamma, uppergamma
 from sympy.functions.special.hyper import hyper
 from sympy.polys.orthopolys import spherical_bessel_fn
@@ -243,11 +244,6 @@ class besselj(BesselBase):
 
         return super(besselj, self)._eval_as_leading_term(x, logx=logx, cdir=cdir)
 
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_extended_real:
-            return True
-
     def _eval_nseries(self, x, n, logx, cdir=0):
         # Refer https://functions.wolfram.com/Bessel-TypeFunctions/BesselJ/06/01/04/01/01/0003/
         # for more information on nseries expansion of besselj function.
@@ -380,11 +376,6 @@ class bessely(BesselBase):
             return self
 
         return super(bessely, self)._eval_as_leading_term(x, logx=logx, cdir=cdir)
-
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_positive:
-            return True
 
     def _eval_nseries(self, x, n, logx, cdir=0):
         # Refer https://functions.wolfram.com/Bessel-TypeFunctions/BesselY/06/01/04/01/02/0008/
@@ -534,11 +525,6 @@ class besseli(BesselBase):
     def _eval_rewrite_as_jn(self, nu, z, **kwargs):
         return self._eval_rewrite_as_besselj(*self.args).rewrite(jn)
 
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_extended_real:
-            return True
-
     def _eval_as_leading_term(self, x, logx, cdir):
         nu, z = self.args
         try:
@@ -680,11 +666,6 @@ class besselk(BesselBase):
         ay = self._eval_rewrite_as_bessely(*self.args)
         if ay:
             return ay.rewrite(yn)
-
-    def _eval_is_extended_real(self):
-        nu, z = self.args
-        if nu.is_integer and z.is_positive:
-            return True
 
     def _eval_rewrite_as_tractable(self, nu, z, limitvar=None, **kwargs):
         if z.is_extended_real:
@@ -1358,7 +1339,7 @@ class AiryBase(DefinedFunction):
         return self.func(self.args[0].conjugate())
 
     def _eval_is_extended_real(self):
-        return self.args[0].is_extended_real
+        return not_real_by_evalf(self)
 
     def as_real_imag(self, deep=True, **hints):
         z = self.args[0]
@@ -2141,10 +2122,6 @@ class marcumq(DefinedFunction):
             if m.is_Integer and m >= 2:
                 s = sum(besseli(i, a**2) for i in range(1, m))
                 return S.Half + exp(-a**2) * besseli(0, a**2) / 2 + exp(-a**2) * s
-
-    def _eval_is_zero(self):
-        if all(arg.is_zero for arg in self.args):
-            return True
 
 class _besseli(DefinedFunction):
     """

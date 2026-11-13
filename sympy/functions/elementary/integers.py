@@ -6,7 +6,7 @@ from sympy.core.expr import Expr
 from sympy.core import Add, S
 from sympy.core.evalf import get_integer_part, PrecisionExhausted
 from sympy.core.function import DefinedFunction
-from sympy.core.logic import fuzzy_or, fuzzy_and
+from sympy.core.logic import fuzzy_and
 from sympy.core.numbers import Integer, int_valued
 from sympy.core.relational import Gt, Lt, Ge, Le, Relational, is_eq, is_le, is_lt
 from sympy.core.sympify import _sympify
@@ -84,14 +84,14 @@ class RoundFunction(DefinedFunction):
     def _eval_number(cls, arg):
         raise NotImplementedError()
 
-    def _eval_is_finite(self):
-        return self.args[0].is_finite
+    def _eval_is_extended_real(self):
+        value = self.func(*self.args)
+        if value.func != self.func:
+            return value.is_extended_real
 
-    def _eval_is_real(self):
-        return self.args[0].is_real
-
-    def _eval_is_integer(self):
-        return self.args[0].is_real
+    def _eval_is_noninteger(self):
+        if self.args[0].is_finite:
+            return False
 
 
 class floor(RoundFunction):
@@ -218,12 +218,6 @@ class floor(RoundFunction):
                 raise NotImplementedError("Not sure of sign of %s" % ndir)
         else:
             return r
-
-    def _eval_is_negative(self):
-        return self.args[0].is_negative
-
-    def _eval_is_nonnegative(self):
-        return self.args[0].is_nonnegative
 
     def _eval_rewrite_as_ceiling(self, arg, **kwargs):
         return -ceiling(-arg)
@@ -425,12 +419,6 @@ class ceiling(RoundFunction):
     def _eval_rewrite_as_frac(self, arg, **kwargs):
         return arg + frac(-arg)
 
-    def _eval_is_positive(self):
-        return self.args[0].is_positive
-
-    def _eval_is_nonpositive(self):
-        return self.args[0].is_nonpositive
-
     def __lt__(self, other):
         other = S(other)
         if self.args[0].is_real:
@@ -580,23 +568,15 @@ class frac(DefinedFunction):
     def _eval_rewrite_as_ceiling(self, arg, **kwargs):
         return arg + ceiling(-arg)
 
-    def _eval_is_finite(self):
-        return True
+    def _eval_is_noninteger(self):
+        # frac(I*b) is I*frac(b)
+        if self.args[0].is_imaginary:
+            return False
 
-    def _eval_is_real(self):
-        return self.args[0].is_extended_real
-
-    def _eval_is_imaginary(self):
-        return self.args[0].is_imaginary
-
-    def _eval_is_integer(self):
-        return self.args[0].is_integer
-
-    def _eval_is_zero(self):
-        return fuzzy_or([self.args[0].is_zero, self.args[0].is_integer])
-
-    def _eval_is_negative(self):
-        return False
+    def _eval_is_extended_real(self):
+        value = self.func(*self.args)
+        if value.func != self.func:
+            return value.is_extended_real
 
     def __ge__(self, other):
         if self.is_extended_real:

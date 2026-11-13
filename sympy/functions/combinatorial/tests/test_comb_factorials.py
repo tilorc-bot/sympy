@@ -76,9 +76,11 @@ def test_rf_eval_apply():
     assert rf(x, m).is_integer is None
     assert rf(n, k).is_integer is None
     assert rf(n, m).is_integer is True
-    assert rf(n, k + pi).is_integer is False
-    assert rf(n, m + pi).is_integer is False
-    assert rf(pi, m).is_integer is False
+    # rf(-1, pi) is 0
+    assert rf(n, k + pi).is_integer is None
+    assert rf(n, m + pi).is_integer is None
+    # rf(pi, 0) is 1
+    assert rf(pi, m).is_integer is None
 
     def check(x, k, o, n):
         a, b = Dummy(), Dummy()
@@ -159,9 +161,10 @@ def test_ff_eval_apply():
     assert ff(x, m).is_integer is None
     assert ff(n, k).is_integer is None
     assert ff(n, m).is_integer is True
-    assert ff(n, k + pi).is_integer is False
-    assert ff(n, m + pi).is_integer is False
-    assert ff(pi, m).is_integer is False
+    assert ff(n, k + pi).is_integer is None
+    assert ff(n, m + pi).is_integer is None
+    # ff(pi, 0) is 1
+    assert ff(pi, m).is_integer is None
 
     assert isinstance(ff(x, x), ff)
     assert ff(n, n) == factorial(n)
@@ -256,7 +259,8 @@ def test_factorial():
     assert factorial(r).is_real is None
     assert factorial(s).is_real is True
     assert factorial(t).is_real is True
-    assert factorial(u).is_real is True
+    # factorial(oo) is oo
+    assert factorial(u).is_real is None
 
     assert factorial(x).is_composite is None
     assert factorial(n).is_composite is None
@@ -455,7 +459,8 @@ def test_binomial():
 
     assert binomial(n, k).is_integer
     assert binomial(nt, k).is_integer is None
-    assert binomial(x, nt).is_integer is False
+    # binomial(1/2, 1/2) is 1
+    assert binomial(x, nt).is_integer is None
 
     assert binomial(gamma(25), 6) == 79232165267303928292058750056084441948572511312165380965440075720159859792344339983120618959044048198214221915637090855535036339620413440000
     assert binomial(1324, 47) == 906266255662694632984994480774946083064699457235920708992926525848438478406790323869952

@@ -5,14 +5,19 @@ from typing import TYPE_CHECKING
 
 from sympy.assumptions.ask import Q
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
-    ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, EVEN_NUMBER_OF_ARGS_ARE,
-    FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE,
-    ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE, OTHER_ARGS_ARE_NOT, SECOND_ARG_IS,
+    ALL_ARGS_BUT_AT_MOST_ONE_ARE, ALWAYS_FALSE, ALWAYS_TRUE, ANY_ARG_IS, ANY_ARG_IS_NOT,
+    EVEN_NUMBER_OF_ARGS_ARE, EVEN_NUMBER_OF_ARGS_ARE_NOT, FALSE_IF, FIRST_ARG_IS,
+    FIRST_ARG_IS_NOT, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS_ARE,
+    ODD_NUMBER_OF_ARGS_ARE_NOT, ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE,
+    OTHER_ARGS_ARE_NOT, OTHER_ARGS_BUT_AT_MOST_ONE_ARE, SECOND_ARG_IS,
     SECOND_ARG_IS_NOT, SELF_IS, SELF_IS_NOT, SOME_EVEN_NUMBER_OF_ARGS_ARE,
     SOME_ODD_NUMBER_OF_ARGS_ARE, TRUE_IF)
+from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.expr import Expr
 from sympy.core.function import DefinedFunction
+from sympy.core.function import Derivative
+from sympy.core.function import Subs
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import I
@@ -41,6 +46,7 @@ from sympy.functions.combinatorial.numbers import reduced_totient
 from sympy.functions.combinatorial.numbers import totient
 from sympy.functions.elementary.complexes import Abs
 from sympy.functions.elementary.complexes import adjoint
+from sympy.functions.elementary.complexes import arg
 from sympy.functions.elementary.complexes import conjugate
 from sympy.functions.elementary.complexes import im
 from sympy.functions.elementary.complexes import re
@@ -50,7 +56,12 @@ from sympy.functions.elementary.exponential import LambertW
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.exponential import exp_polar
 from sympy.functions.elementary.exponential import log
+from sympy.functions.elementary.hyperbolic import acosh
+from sympy.functions.elementary.hyperbolic import acoth
+from sympy.functions.elementary.hyperbolic import acsch
+from sympy.functions.elementary.hyperbolic import asech
 from sympy.functions.elementary.hyperbolic import asinh
+from sympy.functions.elementary.hyperbolic import atanh
 from sympy.functions.elementary.hyperbolic import cosh
 from sympy.functions.elementary.hyperbolic import coth
 from sympy.functions.elementary.hyperbolic import csch
@@ -64,9 +75,11 @@ from sympy.functions.elementary.miscellaneous import Max
 from sympy.functions.elementary.miscellaneous import Min
 from sympy.functions.elementary.trigonometric import acos
 from sympy.functions.elementary.trigonometric import acot
+from sympy.functions.elementary.trigonometric import acsc
 from sympy.functions.elementary.trigonometric import asec
 from sympy.functions.elementary.trigonometric import asin
 from sympy.functions.elementary.trigonometric import atan
+from sympy.functions.elementary.trigonometric import atan2
 from sympy.functions.elementary.trigonometric import cos
 from sympy.functions.elementary.trigonometric import cot
 from sympy.functions.elementary.trigonometric import csc
@@ -75,22 +88,38 @@ from sympy.functions.elementary.trigonometric import sin
 from sympy.functions.elementary.trigonometric import sinc
 from sympy.functions.elementary.trigonometric import tan
 from sympy.functions.special.bessel import airyai
+from sympy.functions.special.bessel import airyaiprime
+from sympy.functions.special.bessel import airybi
+from sympy.functions.special.bessel import airybiprime
 from sympy.functions.special.bessel import besseli
 from sympy.functions.special.bessel import besselj
 from sympy.functions.special.bessel import besselk
 from sympy.functions.special.bessel import bessely
+from sympy.functions.special.bessel import marcumq
+from sympy.functions.special.beta_functions import beta
+from sympy.functions.special.beta_functions import betainc
+from sympy.functions.special.beta_functions import betainc_regularized
+from sympy.functions.special.elliptic_integrals import elliptic_f
+from sympy.functions.special.elliptic_integrals import elliptic_k
+from sympy.functions.special.error_functions import Shi
+from sympy.functions.special.error_functions import Si
 from sympy.functions.special.error_functions import erf
 from sympy.functions.special.error_functions import erf2
+from sympy.functions.special.error_functions import erf2inv
 from sympy.functions.special.error_functions import erfc
 from sympy.functions.special.error_functions import erfcinv
 from sympy.functions.special.error_functions import erfi
+from sympy.functions.special.error_functions import erfinv
 from sympy.functions.special.error_functions import fresnelc
 from sympy.functions.special.error_functions import fresnels
+from sympy.functions.special.error_functions import li
 from sympy.functions.special.error_functions import owens_t
 from sympy.functions.special.gamma_functions import gamma
 from sympy.functions.special.gamma_functions import loggamma
+from sympy.functions.special.gamma_functions import lowergamma
 from sympy.functions.special.gamma_functions import polygamma
 from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.functions.special.zeta_functions import polylog
 from sympy.integrals.integrals import Integral
 
 if TYPE_CHECKING:
@@ -98,21 +127,28 @@ if TYPE_CHECKING:
 
 THIRD_ARG_IS = (2, True)
 THIRD_ARG_IS_NOT = (2, False)
+FOURTH_ARG_IS = (3, True)
 
 
 RULES: Rules = {
     (Abs, Q.algebraic): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.algebraic), (FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.algebraic), (FIRST_ARG_IS, Q.imaginary)]),
     ],
     (Abs, Q.even): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.even)]),
-        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.even), (FIRST_ARG_IS, Q.real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.even), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (Abs, Q.extended_nonnegative): [
         ALWAYS_TRUE,
     ],
+    (Abs, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
     (Abs, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.integer), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (Abs, Q.irrational): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.irrational)]),
@@ -122,7 +158,7 @@ RULES: Rules = {
     ],
     (Abs, Q.odd): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.odd)]),
-        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.odd), (FIRST_ARG_IS, Q.real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.odd), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (Abs, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.zero)]),
@@ -132,12 +168,34 @@ RULES: Rules = {
     ],
     (Abs, Q.rational): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.rational)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.rational), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (Abs, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
     ],
     (Abs, Q.zero): [
         (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (AccumulationBounds, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (acsc, Q.composite): [
+        ALWAYS_FALSE,
+    ],
+    (acsc, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
+    ],
+    (acsc, Q.negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.negative)]),
+    ],
+    (acsc, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
+    ],
+    (acsc, Q.prime): [
+        ALWAYS_FALSE,
+    ],
+    (acsc, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.infinite)]),
     ],
     (Add, Q.algebraic): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.algebraic)]),
@@ -188,8 +246,14 @@ RULES: Rules = {
             (ALL_ARGS_ARE, Q.extended_real),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
         ]),
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real), (ONE_ARG_IS_NOT, Q.real)]),
-        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.extended_real)]),
+        (TRUE_IF, [
+            (ALL_ARGS_ARE, Q.extended_real),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.real),
+        ]),
+        (FALSE_IF, [
+            (ONE_ARG_IS_NOT, Q.extended_real),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.finite),
+        ]),
     ],
     (Add, Q.finite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
@@ -209,6 +273,14 @@ RULES: Rules = {
     ],
     (Add, Q.irrational): [
         (TRUE_IF, [(ONE_ARG_IS, Q.irrational), (OTHER_ARGS_ARE, Q.rational)]),
+        (FALSE_IF, [
+            (SOME_EVEN_NUMBER_OF_ARGS_ARE, Q.rational),
+            (OTHER_ARGS_ARE, Q.imaginary),
+        ]),
+        (FALSE_IF, [
+            (SOME_ODD_NUMBER_OF_ARGS_ARE, Q.rational),
+            (OTHER_ARGS_ARE, Q.imaginary),
+        ]),
     ],
     (Add, Q.negative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonpositive), (ANY_ARG_IS, Q.negative)]),
@@ -239,6 +311,9 @@ RULES: Rules = {
             (ONE_ARG_IS, S.One),
             (OTHER_ARGS_ARE, Q.negative),
         ]),
+    ],
+    (Add, Q.nonzero): [
+        (FALSE_IF, [(ALL_ARGS_ARE, Q.imaginary)]),
     ],
     (Add, Q.odd): [
         (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.odd), (OTHER_ARGS_ARE, Q.even)]),
@@ -278,8 +353,149 @@ RULES: Rules = {
         (TRUE_IF, [(ONE_ARG_IS, S.One), (OTHER_ARGS_ARE, Q.zero)]),
         (FALSE_IF, [(ALL_ARGS_ARE, Q.positive), (ANY_ARG_IS, S.One)]),
     ],
+    (airyaiprime, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (airyaiprime, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+    ],
+    (airybi, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (airybi, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (airybiprime, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (airybiprime, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (arg, Q.commutative): [
+        ALWAYS_TRUE,
+    ],
+    (arg, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.zero)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
+    ],
+    (atan2, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary), (SECOND_ARG_IS, Q.imaginary)]),
+    ],
+    (atan2, Q.extended_real): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+            (SECOND_ARG_IS, Q.finite),
+            (SECOND_ARG_IS_NOT, Q.real),
+            (SECOND_ARG_IS_NOT, Q.imaginary),
+        ]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.finite),
+            (FIRST_ARG_IS_NOT, Q.real),
+            (FIRST_ARG_IS_NOT, Q.imaginary),
+            (SECOND_ARG_IS, Q.real),
+            (SECOND_ARG_IS_NOT, Q.zero),
+        ]),
+    ],
+    (atan2, Q.irrational): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary), (SECOND_ARG_IS, Q.zero)]),
+    ],
+    (atan2, Q.negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (atan2, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (atan2, Q.real): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+            (SECOND_ARG_IS, Q.extended_real),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (SECOND_ARG_IS, Q.extended_real),
+            (SECOND_ARG_IS_NOT, Q.zero),
+        ]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.extended_positive)]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.extended_real),
+            (SECOND_ARG_IS, Q.extended_real),
+            (SECOND_ARG_IS, Q.infinite),
+        ]),
+    ],
+    (atan2, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.imaginary)]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.imaginary),
+            (SECOND_ARG_IS, Q.extended_real),
+            (SECOND_ARG_IS, Q.infinite),
+        ]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary), (SECOND_ARG_IS, Q.imaginary)]),
+    ],
+    (beta, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (beta, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.positive)]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.real),
+            (SECOND_ARG_IS_NOT, Q.integer),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.real),
+            (SECOND_ARG_IS_NOT, Q.integer),
+        ]),
+    ],
+    (betainc, Q.real): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+            (THIRD_ARG_IS, Q.real),
+            (FOURTH_ARG_IS, Q.real),
+        ]),
+    ],
+    (betainc_regularized, Q.real): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+            (THIRD_ARG_IS, Q.real),
+            (FOURTH_ARG_IS, Q.real),
+        ]),
+    ],
     (DefinedFunction, Q.commutative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.commutative)]),
+    ],
+    (Derivative, Q.commutative): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.commutative)]),
+    ],
+    (elliptic_f, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (TRUE_IF, [(SECOND_ARG_IS, Q.infinite), (SECOND_ARG_IS, Q.extended_real)]),
+    ],
+    (elliptic_k, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (erf2inv, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.zero)]),
+    ],
+    (erfinv, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (Expr, S.NegativeOne): [
         (FALSE_IF, [(SELF_IS_NOT, Q.negative)]),
@@ -297,11 +513,61 @@ RULES: Rules = {
     (Expr, I): [
         (FALSE_IF, [(SELF_IS_NOT, Q.imaginary)]),
     ],
+    (FallingFactorial, Q.composite): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (FallingFactorial, Q.even): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (FallingFactorial, Q.finite): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+        ]),
+    ],
+    (FallingFactorial, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
     (FallingFactorial, Q.integer): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.nonnegative),
+        ]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.rational),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
+    ],
+    (FallingFactorial, Q.prime): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (FallingFactorial, Q.zero): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+        ]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.imaginary)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
         ]),
     ],
     (Integral, Q.zero): [
@@ -316,287 +582,240 @@ RULES: Rules = {
     (LambertW, Q.zero): [
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
+    (li, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (lowergamma, Q.zero): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.zero)]),
+    ],
+    (marcumq, Q.zero): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.zero),
+            (SECOND_ARG_IS, Q.zero),
+            (THIRD_ARG_IS, Q.zero),
+        ]),
+    ],
     (Max, Q.algebraic): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.algebraic), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.algebraic), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.algebraic)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.algebraic)]),
     ],
     (Max, Q.complex): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.complex), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.complex), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.complex)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.complex)]),
     ],
     (Max, Q.composite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.composite)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.composite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.composite)]),
     ],
     (Max, Q.even): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.even)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.even), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.even)]),
     ],
     (Max, Q.extended_negative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_negative)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_negative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_negative)]),
     ],
     (Max, Q.extended_nonnegative): [
-        (TRUE_IF, [
-            (ANY_ARG_IS, Q.extended_nonnegative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_nonnegative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.extended_nonnegative)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_nonnegative)]),
     ],
     (Max, Q.extended_nonpositive): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonpositive)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_nonpositive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_nonpositive)]),
     ],
     (Max, Q.extended_positive): [
-        (TRUE_IF, [(ANY_ARG_IS, Q.extended_positive), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_positive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_positive)]),
     ],
     (Max, Q.extended_real): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_real)]),
     ],
     (Max, Q.finite): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.finite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.finite)]),
+    ],
+    (Max, Q.imaginary): [
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.imaginary)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.imaginary)]),
     ],
     (Max, Q.infinite): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.infinite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.infinite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.infinite)]),
     ],
     (Max, Q.integer): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.integer)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.integer), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.integer)]),
     ],
     (Max, Q.irrational): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.irrational)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.irrational), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.irrational)]),
     ],
     (Max, Q.negative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.negative)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative)]),
     ],
     (Max, Q.negative_infinite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.negative_infinite)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.negative_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative_infinite)]),
     ],
     (Max, Q.nonnegative): [
         (TRUE_IF, [
             (ANY_ARG_IS, Q.nonnegative),
             (ALL_ARGS_ARE_NOT, Q.positive_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
         ]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.nonnegative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonnegative)]),
     ],
     (Max, Q.nonpositive): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonpositive)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.nonpositive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonpositive)]),
     ],
     (Max, Q.nonzero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonzero)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonzero), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonzero)]),
     ],
     (Max, Q.odd): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.odd)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.odd), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.odd)]),
     ],
     (Max, Q.positive): [
-        (TRUE_IF, [
-            (ANY_ARG_IS, Q.positive),
-            (ALL_ARGS_ARE_NOT, Q.positive_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.positive), (ALL_ARGS_ARE_NOT, Q.positive_infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive)]),
     ],
     (Max, Q.positive_infinite): [
-        (TRUE_IF, [(ANY_ARG_IS, Q.positive_infinite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.positive_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.positive_infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive_infinite)]),
     ],
     (Max, Q.prime): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.prime)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.prime), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.prime)]),
     ],
     (Max, Q.rational): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.rational)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.rational), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.rational)]),
     ],
     (Max, Q.real): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.real), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.real)]),
     ],
     (Max, Q.transcendental): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.transcendental), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.transcendental),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.transcendental)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.transcendental)]),
     ],
     (Max, Q.zero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.zero)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.zero), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.zero)]),
     ],
     (Min, Q.algebraic): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.algebraic), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.algebraic), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.algebraic)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.algebraic)]),
     ],
     (Min, Q.complex): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.complex), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.complex), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.complex)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.complex)]),
     ],
     (Min, Q.composite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.composite)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.composite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.composite)]),
     ],
     (Min, Q.even): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.even)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.even), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.even)]),
     ],
     (Min, Q.extended_negative): [
-        (TRUE_IF, [(ANY_ARG_IS, Q.extended_negative), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_negative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_negative)]),
     ],
     (Min, Q.extended_nonnegative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonnegative)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_nonnegative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_nonnegative)]),
     ],
     (Min, Q.extended_nonpositive): [
-        (TRUE_IF, [
-            (ANY_ARG_IS, Q.extended_nonpositive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_nonpositive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.extended_nonpositive)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_nonpositive)]),
     ],
     (Min, Q.extended_positive): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_positive)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.extended_positive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_positive)]),
     ],
     (Min, Q.extended_real): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.extended_real)]),
     ],
     (Min, Q.finite): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.finite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.finite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.finite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.finite)]),
+    ],
+    (Min, Q.imaginary): [
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.imaginary)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.imaginary)]),
     ],
     (Min, Q.infinite): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.infinite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.infinite), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.infinite)]),
     ],
     (Min, Q.integer): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.integer)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.integer), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.integer)]),
     ],
     (Min, Q.irrational): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.irrational)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.irrational), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.irrational)]),
     ],
     (Min, Q.negative): [
-        (TRUE_IF, [
-            (ANY_ARG_IS, Q.negative),
-            (ALL_ARGS_ARE_NOT, Q.negative_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative), (ALL_ARGS_ARE, Q.extended_real)]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.negative), (ALL_ARGS_ARE_NOT, Q.negative_infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative)]),
     ],
     (Min, Q.negative_infinite): [
-        (TRUE_IF, [(ANY_ARG_IS, Q.negative_infinite), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.negative_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.negative_infinite)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.negative_infinite)]),
     ],
     (Min, Q.nonnegative): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonnegative)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.nonnegative),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonnegative)]),
     ],
     (Min, Q.nonpositive): [
         (TRUE_IF, [
             (ANY_ARG_IS, Q.nonpositive),
             (ALL_ARGS_ARE_NOT, Q.negative_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
         ]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.nonpositive),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonpositive)]),
     ],
     (Min, Q.nonzero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.nonzero)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonzero), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.nonzero)]),
     ],
     (Min, Q.odd): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.odd)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.odd), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.odd)]),
     ],
     (Min, Q.positive): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.positive)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive)]),
     ],
     (Min, Q.positive_infinite): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.positive_infinite)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.positive_infinite),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.positive_infinite)]),
     ],
     (Min, Q.prime): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.prime)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.prime), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.prime)]),
     ],
     (Min, Q.rational): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.rational)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.rational), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.rational)]),
     ],
     (Min, Q.real): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.real), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.real)]),
     ],
     (Min, Q.transcendental): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.transcendental), (ALL_ARGS_ARE, Q.extended_real)]),
-        (FALSE_IF, [
-            (ALL_ARGS_ARE_NOT, Q.transcendental),
-            (ALL_ARGS_ARE, Q.extended_real),
-        ]),
+        (TRUE_IF, [(ALL_ARGS_ARE, Q.transcendental)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.transcendental)]),
     ],
     (Min, Q.zero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.zero)]),
-        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.zero), (ALL_ARGS_ARE, Q.extended_real)]),
+        (FALSE_IF, [(ALL_ARGS_ARE_NOT, Q.zero)]),
     ],
     (Mod, Q.integer): [
         (TRUE_IF, [
@@ -672,7 +891,16 @@ RULES: Rules = {
     ],
     (Mul, Q.extended_nonzero): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero)]),
-        (FALSE_IF, [(ANY_ARG_IS, Q.zero)]),
+        (FALSE_IF, [
+            (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
+            (OTHER_ARGS_ARE, Q.complex),
+            (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.real),
+        ]),
+        (FALSE_IF, [
+            (ODD_NUMBER_OF_ARGS_ARE, Q.imaginary),
+            (OTHER_ARGS_ARE, Q.extended_real),
+            (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
+        ]),
     ],
     (Mul, Q.extended_positive): [
         (TRUE_IF, [
@@ -681,7 +909,14 @@ RULES: Rules = {
         ]),
     ],
     (Mul, Q.extended_real): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real), (ONE_ARG_IS_NOT, Q.nonzero)]),
+        (TRUE_IF, [
+            (ALL_ARGS_ARE, Q.extended_real),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
+        ]),
+        (FALSE_IF, [
+            (ONE_ARG_IS_NOT, Q.extended_real),
+            (OTHER_ARGS_ARE, Q.extended_nonzero),
+        ]),
         (FALSE_IF, [
             (ONE_ARG_IS_NOT, Q.real),
             (OTHER_ARGS_ARE, Q.nonzero),
@@ -714,18 +949,7 @@ RULES: Rules = {
         (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.nonzero)]),
     ],
     (Mul, Q.infinite): [
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.infinite)]),
-        (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_nonzero), (ANY_ARG_IS, Q.infinite)]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.infinite),
-            (OTHER_ARGS_ARE, Q.finite),
-            (OTHER_ARGS_ARE_NOT, Q.zero),
-        ]),
-        (TRUE_IF, [
-            (ONE_ARG_IS, Q.finite),
-            (OTHER_ARGS_ARE, Q.infinite),
-            (ALL_ARGS_ARE_NOT, Q.zero),
-        ]),
+        (TRUE_IF, [(ANY_ARG_IS, Q.infinite), (ALL_ARGS_ARE_NOT, Q.zero)]),
     ],
     (Mul, Q.integer): [
         (TRUE_IF, [(ALL_ARGS_ARE, Q.integer)]),
@@ -746,8 +970,12 @@ RULES: Rules = {
     (Mul, Q.negative): [
         (TRUE_IF, [(ODD_NUMBER_OF_ARGS_ARE, Q.negative), (OTHER_ARGS_ARE, Q.positive)]),
         (FALSE_IF, [
-            (ONE_ARG_IS_NOT, Q.negative),
             (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
+        ]),
+        (FALSE_IF, [
+            (EVEN_NUMBER_OF_ARGS_ARE_NOT, Q.positive),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
         ]),
     ],
     (Mul, Q.nonnegative): [
@@ -781,10 +1009,13 @@ RULES: Rules = {
             (EVEN_NUMBER_OF_ARGS_ARE, Q.negative),
             (OTHER_ARGS_ARE, Q.positive),
         ]),
-        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.positive)]),
         (FALSE_IF, [
-            (ONE_ARG_IS_NOT, Q.negative),
             (ODD_NUMBER_OF_ARGS_ARE, Q.negative),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
+        ]),
+        (FALSE_IF, [
+            (ODD_NUMBER_OF_ARGS_ARE_NOT, Q.positive),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.nonzero),
         ]),
     ],
     (Mul, Q.prime): [
@@ -801,7 +1032,11 @@ RULES: Rules = {
     ],
     (Mul, Q.real): [
         (TRUE_IF, [(EVEN_NUMBER_OF_ARGS_ARE, Q.imaginary), (OTHER_ARGS_ARE, Q.real)]),
-        (FALSE_IF, [(ONE_ARG_IS_NOT, Q.real), (OTHER_ARGS_ARE_NOT, Q.zero)]),
+        (FALSE_IF, [
+            (ANY_ARG_IS_NOT, Q.real),
+            (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.extended_real),
+            (ALL_ARGS_ARE_NOT, Q.zero),
+        ]),
     ],
     (Mul, Q.transcendental): [
         (TRUE_IF, [
@@ -816,6 +1051,9 @@ RULES: Rules = {
     ],
     (NaN, Q.commutative): [
         ALWAYS_TRUE,
+    ],
+    (polylog, Q.zero): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.zero)]),
     ],
     (Pow, Q.algebraic): [
         (TRUE_IF, [
@@ -850,16 +1088,11 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.commutative), (SECOND_ARG_IS, Q.commutative)]),
     ],
     (Pow, Q.complex): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (SECOND_ARG_IS, Q.positive)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex), (SECOND_ARG_IS, Q.nonnegative)]),
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.complex),
             (FIRST_ARG_IS_NOT, Q.zero),
             (SECOND_ARG_IS, Q.complex),
-        ]),
-        (TRUE_IF, [
-            (FIRST_ARG_IS, Q.complex),
-            (SECOND_ARG_IS, Q.integer),
-            (SECOND_ARG_IS_NOT, Q.negative),
         ]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.negative)]),
     ],
@@ -886,15 +1119,22 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.positive),
         ]),
+        (FALSE_IF, [(FIRST_ARG_IS, I), (SECOND_ARG_IS, Q.integer)]),
     ],
     (Pow, Q.extended_negative): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero)]),
         (FALSE_IF, [(SECOND_ARG_IS, S.Half)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.even)]),
     ],
     (Pow, Q.extended_nonnegative): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.extended_nonnegative),
             (SECOND_ARG_IS, Q.positive),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.extended_real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+            (SECOND_ARG_IS, Q.even),
         ]),
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive), (SECOND_ARG_IS, Q.real)]),
     ],
@@ -922,6 +1162,7 @@ RULES: Rules = {
             (FIRST_ARG_IS_NOT, Q.zero),
             (SECOND_ARG_IS, Q.finite),
         ]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite), (SECOND_ARG_IS, Q.negative)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.finite), (SECOND_ARG_IS, Q.positive)]),
     ],
     (Pow, Q.hermitian): [
@@ -982,7 +1223,6 @@ RULES: Rules = {
     (Pow, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative), (SECOND_ARG_IS, Q.odd)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.nonnegative), (SECOND_ARG_IS, Q.odd)]),
-        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.even)]),
     ],
     (Pow, Q.negative_infinite): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (SECOND_ARG_IS, Q.finite)]),
@@ -1119,42 +1359,136 @@ RULES: Rules = {
         (FALSE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.extended_nonpositive)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero), (SECOND_ARG_IS, Q.nonnegative)]),
     ],
+    (RisingFactorial, Q.composite): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (RisingFactorial, Q.even): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (RisingFactorial, Q.finite): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+        ]),
+    ],
+    (RisingFactorial, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
     (RisingFactorial, Q.integer): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.integer),
             (SECOND_ARG_IS, Q.nonnegative),
         ]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.rational),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.positive),
+        ]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.imaginary)]),
+    ],
+    (RisingFactorial, Q.prime): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (RisingFactorial, Q.zero): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (FIRST_ARG_IS_NOT, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+        ]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.positive), (SECOND_ARG_IS, Q.complex)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.integer),
+            (SECOND_ARG_IS, Q.negative),
+        ]),
+    ],
+    (Shi, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (Si, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (Subs, Q.commutative): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.commutative)]),
     ],
     (Symbol, Q.commutative): [
         ALWAYS_TRUE,
     ],
+    (acos, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (acos, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+    ],
+    (acos, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+    ],
     (acos, Q.negative): [
         ALWAYS_FALSE,
+    ],
+    (acos, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
     ],
     (acos, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
+    (acos, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+    ],
     (acos, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, S.One)]),
+    ],
+    (acos, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, S.One)]),
+    ],
+    (acosh, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (acosh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
     ],
     (acot, Q.algebraic): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
     ],
+    (acot, Q.composite): [
+        ALWAYS_FALSE,
+    ],
     (acot, Q.extended_nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
+    ],
+    (acot, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.real)]),
     ],
     (acot, Q.extended_real): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
     ],
     (acot, Q.negative): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.negative)]),
     ],
     (acot, Q.nonpositive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
     ],
     (acot, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
+    ],
+    (acot, Q.prime): [
+        ALWAYS_FALSE,
     ],
     (acot, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
@@ -1162,35 +1496,131 @@ RULES: Rules = {
     (acot, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.imaginary)]),
     ],
+    (acot, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (acoth, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (acoth, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (acoth, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (acsch, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
+    ],
+    (acsch, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.extended_real)]),
+    ],
+    (acsch, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (acsch, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (acsch, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (acsch, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
     (adjoint, Q.commutative): [
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
+    (airyai, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
+    ],
     (airyai, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (airyai, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.complex), (FIRST_ARG_IS_NOT, Q.real)]),
     ],
     (andre, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
     ],
     (andre, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
+    ],
+    (asec, Q.extended_negative): [
+        ALWAYS_FALSE,
+    ],
+    (asec, Q.extended_nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, S.One)]),
     ],
     (asec, Q.extended_real): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
     ],
-    (asec, Q.real): [
+    (asec, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (asec, Q.positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.negative)]),
+    ],
+    (asec, Q.rational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.real)]),
+    ],
+    (asec, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, S.One)]),
+    ],
+    (asech, Q.extended_negative): [
+        ALWAYS_FALSE,
+    ],
+    (asech, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (asech, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (asech, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (asin, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (asin, Q.composite): [
+        ALWAYS_FALSE,
+    ],
+    (asin, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.infinite)]),
     ],
     (asin, Q.negative): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
     ],
+    (asin, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+    ],
     (asin, Q.positive): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+    ],
+    (asin, Q.prime): [
+        ALWAYS_FALSE,
     ],
     (asin, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (asin, Q.zero): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (asinh, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
+    ],
+    (asinh, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (asinh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
     ],
     (asinh, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
@@ -1203,9 +1633,13 @@ RULES: Rules = {
     ],
     (asinh, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (atan, Q.algebraic): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (atan, Q.composite): [
+        ALWAYS_FALSE,
     ],
     (atan, Q.extended_real): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
@@ -1213,6 +1647,7 @@ RULES: Rules = {
     (atan, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_negative), (FIRST_ARG_IS, Q.finite)]),
     ],
     (atan, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
@@ -1223,9 +1658,19 @@ RULES: Rules = {
     (atan, Q.nonzero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
     ],
+    (atan, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+    ],
     (atan, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_positive), (FIRST_ARG_IS, Q.finite)]),
+    ],
+    (atan, Q.prime): [
+        ALWAYS_FALSE,
+    ],
+    (atan, Q.rational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.real)]),
     ],
     (atan, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
@@ -1241,8 +1686,33 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.zero)]),
     ],
+    (atanh, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.One)]),
+    ],
+    (atanh, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (FALSE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (atanh, Q.imaginary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.imaginary)]),
+    ],
+    (atanh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, S.One)]),
+        (TRUE_IF, [(FIRST_ARG_IS, S.NegativeOne)]),
+    ],
+    (atanh, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (besseli, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.extended_real)]),
+    ],
     (besseli, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.real)]),
+    ],
+    (besselj, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.extended_real)]),
     ],
     (besselj, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.real)]),
@@ -1253,8 +1723,16 @@ RULES: Rules = {
     (bessely, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.positive)]),
     ],
+    (binomial, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.real)]),
+    ],
     (binomial, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.integer)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.zero),
+            (SECOND_ARG_IS, Q.real),
+            (SECOND_ARG_IS_NOT, Q.integer),
+        ]),
     ],
     (binomial, Q.nonnegative): [
         (TRUE_IF, [
@@ -1275,14 +1753,41 @@ RULES: Rules = {
             (SECOND_ARG_IS, Q.positive),
         ]),
     ],
+    (binomial, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.zero), (SECOND_ARG_IS, Q.imaginary)]),
+    ],
     (catalan, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
     ],
     (catalan, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
     ],
+    (ceiling, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (ceiling, Q.extended_nonnegative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
+    ],
+    (ceiling, Q.extended_nonpositive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+    ],
+    (ceiling, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (ceiling, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+    ],
+    (ceiling, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (ceiling, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+    ],
     (ceiling, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (ceiling, Q.irrational): [
+        ALWAYS_FALSE,
     ],
     (ceiling, Q.nonpositive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.nonpositive)]),
@@ -1290,11 +1795,30 @@ RULES: Rules = {
     (ceiling, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
     ],
+    (ceiling, Q.transcendental): [
+        ALWAYS_FALSE,
+    ],
+    (conjugate, Q.algebraic): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+    ],
     (conjugate, Q.commutative): [
         (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
+    (conjugate, Q.complex): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (conjugate, Q.finite): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (conjugate, Q.zero): [
+        (IF_AND_ONLY_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
     (cos, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (cos, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (cos, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
@@ -1317,6 +1841,9 @@ RULES: Rules = {
     (cosh, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
+    (cosh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
     (cosh, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
@@ -1328,45 +1855,119 @@ RULES: Rules = {
     ],
     (cot, Q.extended_real): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
     ],
     (cot, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
     ],
+    (cot, Q.real): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.algebraic),
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+        ]),
+    ],
+    (cot, Q.transcendental): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (coth, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (coth, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (coth, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (coth, Q.integer): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
     (coth, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
     ],
     (coth, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+    ],
+    (coth, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (coth, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
+    ],
+    (coth, Q.zero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (csc, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (csc, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (csc, Q.infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+    ],
+    (csc, Q.real): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.algebraic),
+            (FIRST_ARG_IS, Q.real),
+            (FIRST_ARG_IS_NOT, Q.zero),
+        ]),
     ],
     (csc, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (csc, Q.zero): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (csch, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (csch, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (csch, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.negative)]),
     ],
     (csch, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.positive)]),
+    ],
+    (csch, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
+    ],
+    (csch, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (erf, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (erf, Q.imaginary): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
     ],
     (erf, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
     ],
     (erf, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
     ],
     (erf, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (erf, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (erf2, Q.extended_real): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.imaginary)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary), (SECOND_ARG_IS, Q.extended_real)]),
     ],
     (erf2, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.extended_real)]),
@@ -1384,20 +1985,36 @@ RULES: Rules = {
     (erfcinv, Q.positive_infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
+    (erfi, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
     (erfi, Q.imaginary): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
     ],
+    (erfi, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
     (erfi, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.infinite)]),
     ],
     (exp, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
     ],
     (exp, Q.extended_nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
+    (exp, Q.extended_positive): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.extended_real),
+            (FIRST_ARG_IS_NOT, Q.negative_infinite),
+        ]),
+    ],
     (exp, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
     ],
     (exp, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
@@ -1418,11 +2035,34 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
+    (exp_polar, Q.extended_positive): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.extended_real),
+            (FIRST_ARG_IS_NOT, Q.negative_infinite),
+        ]),
+    ],
+    (exp_polar, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (exp_polar, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
+    ],
+    (exp_polar, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
+    ],
     (exp_polar, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (exp_polar, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (exp_polar, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (factorial, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.negative)]),
     ],
     (factorial, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
@@ -1448,8 +2088,32 @@ RULES: Rules = {
     (factorial2, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
     ],
+    (floor, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (floor, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+    ],
+    (floor, Q.extended_nonnegative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
+    ],
+    (floor, Q.extended_nonpositive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+    ],
+    (floor, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (floor, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (floor, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite)]),
+    ],
     (floor, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (floor, Q.irrational): [
+        ALWAYS_FALSE,
     ],
     (floor, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
@@ -1457,17 +2121,73 @@ RULES: Rules = {
     (floor, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
     ],
+    (floor, Q.transcendental): [
+        ALWAYS_FALSE,
+    ],
+    (frac, Q.complex): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+    ],
+    (frac, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (frac, Q.extended_negative): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (frac, Q.extended_nonzero): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (frac, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (frac, Q.integer): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (FIRST_ARG_IS_NOT, Q.integer)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.transcendental)]),
+    ],
     (frac, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
+    (frac, Q.odd): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (frac, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (frac, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
     (frac, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (FIRST_ARG_IS_NOT, Q.integer)]),
+    ],
+    (fresnelc, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (fresnelc, Q.imaginary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
     ],
     (fresnelc, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
+    (fresnelc, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
+    ],
+    (fresnels, Q.finite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (fresnels, Q.imaginary): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
     (fresnels, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (fresnels, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (gamma, Q.infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonpositive)]),
@@ -1481,14 +2201,27 @@ RULES: Rules = {
     (genocchi, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
+    (im, Q.algebraic): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.algebraic), (FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (im, Q.commutative): [
+        ALWAYS_TRUE,
+    ],
     (im, Q.even): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
-    (im, Q.imaginary): [
-        ALWAYS_FALSE,
+    (im, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (im, Q.real): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (im, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (jacobi_symbol, Q.integer): [
         (TRUE_IF, [
@@ -1536,6 +2269,13 @@ RULES: Rules = {
     (log, Q.extended_real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.positive)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS_NOT, Q.extended_positive),
+            (FIRST_ARG_IS_NOT, Q.negative_infinite),
+        ]),
+    ],
+    (log, Q.extended_nonpositive): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
     ],
     (log, Q.infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
@@ -1549,6 +2289,7 @@ RULES: Rules = {
     ],
     (log, Q.positive_infinite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive_infinite)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.negative_infinite)]),
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (log, Q.real): [
@@ -1575,13 +2316,24 @@ RULES: Rules = {
         (FALSE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
     ],
     (owens_t, Q.negative): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.negative)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.extended_nonnegative)]),
     ],
     (owens_t, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.positive)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.real), (SECOND_ARG_IS, Q.extended_nonpositive)]),
     ],
     (owens_t, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (SECOND_ARG_IS, Q.extended_real)]),
+    ],
+    (owens_t, Q.zero): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.zero)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.infinite), (FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.real),
+            (SECOND_ARG_IS, Q.extended_real),
+            (SECOND_ARG_IS_NOT, Q.zero),
+        ]),
     ],
     (partition, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer)]),
@@ -1590,13 +2342,59 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer)]),
     ],
     (partition, Q.positive): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.nonnegative)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.nonnegative)]),
+    ],
+    (polygamma, Q.complex): [
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (SECOND_ARG_IS, Q.complex),
+            (SECOND_ARG_IS_NOT, Q.integer),
+        ]),
+        (TRUE_IF, [
+            (FIRST_ARG_IS, Q.complex),
+            (SECOND_ARG_IS, Q.complex),
+            (SECOND_ARG_IS_NOT, Q.nonpositive),
+        ]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.zero),
+            (SECOND_ARG_IS, Q.infinite),
+            (SECOND_ARG_IS, Q.extended_real),
+        ]),
+    ],
+    (polygamma, Q.extended_nonpositive): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.odd),
+            (FIRST_ARG_IS, Q.positive),
+            (SECOND_ARG_IS, Q.real),
+        ]),
+    ],
+    (polygamma, Q.imaginary): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.nonnegative),
+            (SECOND_ARG_IS, Q.real),
+        ]),
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.nonnegative),
+            (SECOND_ARG_IS, Q.infinite),
+        ]),
+    ],
+    (polygamma, Q.infinite): [
+        (TRUE_IF, [(SECOND_ARG_IS, Q.integer), (SECOND_ARG_IS, Q.nonpositive)]),
     ],
     (polygamma, Q.negative): [
         (TRUE_IF, [
             (FIRST_ARG_IS, Q.even),
             (FIRST_ARG_IS, Q.positive),
             (SECOND_ARG_IS, Q.positive),
+        ]),
+    ],
+    (polygamma, Q.nonzero): [
+        (FALSE_IF, [
+            (FIRST_ARG_IS, Q.integer),
+            (FIRST_ARG_IS, Q.nonnegative),
+            (SECOND_ARG_IS, Q.infinite),
         ]),
     ],
     (polygamma, Q.positive): [
@@ -1635,22 +2433,47 @@ RULES: Rules = {
     ],
     (re, Q.algebraic): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.algebraic), (FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (re, Q.commutative): [
+        ALWAYS_TRUE,
     ],
     (re, Q.even): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.even)]),
-        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.even), (FIRST_ARG_IS, Q.real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.even), (FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (re, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
+    ],
+    (re, Q.extended_positive): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
     ],
     (re, Q.extended_real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (TRUE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
-    (re, Q.imaginary): [
-        ALWAYS_FALSE,
+    (re, Q.integer): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.integer), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (re, Q.odd): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.odd)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.odd), (FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (re, Q.rational): [
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.rational), (FIRST_ARG_IS, Q.extended_real)]),
     ],
     (re, Q.real): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
+    ],
+    (re, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.imaginary),
+                    (FIRST_ARG_IS_NOT, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (reduced_totient, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
@@ -1658,17 +2481,35 @@ RULES: Rules = {
     (reduced_totient, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),
     ],
+    (sec, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (sec, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (sec, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS, Q.real)]),
+    ],
     (sec, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
     ],
     (sec, Q.zero): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (sech, Q.imaginary): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
     ],
     (sech, Q.nonnegative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (sech, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+    ],
+    (sech, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
     (sign, Q.complex): [
         ALWAYS_TRUE,
@@ -1678,9 +2519,12 @@ RULES: Rules = {
     ],
     (sign, Q.imaginary): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.imaginary)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.commutative)]),
     ],
     (sign, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+        (FALSE_IF, [(FIRST_ARG_IS_NOT, Q.extended_real)]),
     ],
     (sign, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
@@ -1702,6 +2546,10 @@ RULES: Rules = {
     ],
     (sin, Q.complex): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.complex)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (sin, Q.extended_real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (sin, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
@@ -1725,11 +2573,19 @@ RULES: Rules = {
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
     (sinc, Q.real): [
-        (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
         (TRUE_IF, [(FIRST_ARG_IS, Q.imaginary)]),
+    ],
+    (sinc, Q.zero): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (sinh, Q.extended_negative): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
     ],
     (sinh, Q.extended_positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
     ],
     (sinh, Q.extended_real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
@@ -1737,17 +2593,23 @@ RULES: Rules = {
     (sinh, Q.finite): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.finite)]),
     ],
+    (sinh, Q.infinite): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
     (sinh, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.negative)]),
     ],
     (sinh, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS_NOT, Q.positive)]),
     ],
     (sinh, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.real)]),
     ],
     (sinh, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
     ],
     (subfactorial, Q.even): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.odd), (FIRST_ARG_IS, Q.nonnegative)]),
@@ -1763,6 +2625,10 @@ RULES: Rules = {
     ],
     (tan, Q.extended_real): [
         (FALSE_IF, [(FIRST_ARG_IS, Q.finite), (FIRST_ARG_IS_NOT, Q.real)]),
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
+    (tan, Q.real): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS, Q.real)]),
     ],
     (tan, Q.transcendental): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.algebraic), (FIRST_ARG_IS_NOT, Q.zero)]),
@@ -1770,17 +2636,29 @@ RULES: Rules = {
     (tan, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
     ],
+    (tanh, Q.composite): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
+    ],
+    (tanh, Q.integer): [
+        (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real), (FIRST_ARG_IS, Q.infinite)]),
+    ],
     (tanh, Q.negative): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_negative)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonnegative)]),
     ],
     (tanh, Q.positive): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_positive)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonpositive)]),
+    ],
+    (tanh, Q.prime): [
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (tanh, Q.real): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.extended_real)]),
     ],
     (tanh, Q.zero): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.zero)]),
+        (FALSE_IF, [(FIRST_ARG_IS, Q.extended_nonzero)]),
     ],
     (totient, Q.integer): [
         (TRUE_IF, [(FIRST_ARG_IS, Q.integer), (FIRST_ARG_IS, Q.positive)]),

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from itertools import combinations_with_replacement, product
-
 from sympy.assumptions.ask import Q, ask
 from sympy.assumptions.ask_rules_generated import RULES
 from sympy.assumptions.assume import Predicate
@@ -13,8 +12,8 @@ from sympy.core.numbers import E, I, Rational, nan, oo, pi, zoo
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
-from sympy.functions.combinatorial.factorials import (FallingFactorial,
-    RisingFactorial, binomial, factorial, factorial2, subfactorial)
+from sympy.functions.combinatorial.factorials import (FallingFactorial, RisingFactorial,
+    binomial, factorial, factorial2, subfactorial)
 from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi, mobius,
     partition, primenu, primeomega, primepi, reduced_totient, totient)
 from sympy.functions.elementary.complexes import Abs, re, sign
@@ -23,14 +22,18 @@ from sympy.functions.elementary.hyperbolic import (asinh, cosh, coth, csch, sech
     tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
-from sympy.functions.elementary.trigonometric import (acot, asec, atan, cot, csc, sec,
-    sinc, tan)
-from sympy.functions.special.bessel import (airyai, besseli, besselj, besselk,
-    bessely)
-from sympy.functions.special.error_functions import (erf, erf2, erfc, fresnelc,
-    fresnels, owens_t)
-from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
+from sympy.functions.special.bessel import (airyai, airyaiprime, airybi, airybiprime,
+    besseli, besselj, besselk, bessely, marcumq)
+from sympy.functions.special.beta_functions import beta
+from sympy.functions.special.elliptic_integrals import elliptic_f, elliptic_k
+from sympy.functions.special.error_functions import (Shi, Si, erf, erf2, erf2inv, erfc,
+    erfi, fresnelc, fresnels, li, owens_t)
+from sympy.functions.special.gamma_functions import (gamma, loggamma, lowergamma,
+    polygamma)
 from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.functions.special.zeta_functions import polylog
 from sympy.logic.boolalg import And
 
 REAL = (S.Zero, S.One, S.NegativeOne, S(2), Rational(1, 2), sqrt(2), pi, oo, -oo, zoo,
@@ -155,13 +158,19 @@ def test_minimum_and_maximum():
 
 def test_functions_of_one_argument():
     for cls in (Abs, re, sign, exp_polar, sinh, cosh, tanh, coth, sech, csch, asinh,
-                floor, ceiling, frac, cot, tan, sec, csc, sinc, LambertW, factorial,
+                floor, ceiling, frac, sin, cos, cot, tan, sec, csc, sinc, LambertW, factorial,
                 gamma, loggamma, erf, fresnels, fresnelc, airyai):
         check(cls, COMPLEX, (1,))
     # ask raises AttributeError for erfc(-I)
     check(erfc, EXTENDED_REAL + (zoo, nan, I, 2*I), (1,))
-    for cls in (atan, acot, asec):
+    for cls in (atan, acot):
         check(cls, EXTENDED_REAL + (zoo, nan), (1,))
+    # ask raises for asec(-1/2)
+    for cls in (asec, acsc):
+        check(cls, EXTENDED_REAL[:4] + EXTENDED_REAL[6:] + (zoo, nan), (1,))
+    # ask raises for asin(oo), asin(sqrt(2)) and acos(I)
+    for cls in (asin, acos):
+        check(cls, EXTENDED_REAL[:6] + (zoo, nan), (1,))
     check(log, EXTENDED_REAL[:5] + EXTENDED_REAL[6:] + (zoo, nan, I, -I), (1,))
 
 
@@ -181,3 +190,14 @@ def test_functions_of_two_arguments():
     check(Mod, PAIRS[:0:-1], (2,))
     check(erf2, (S.Zero, S.One, S.NegativeOne, oo, -oo), (2,))
     check(KroneckerDelta, (S.Zero, S.One, S(2), Rational(1, 2), I), (2,))
+    check(atan2, PAIRS + (-oo,), (2,))
+    check(atan2, (-oo,) + PAIRS[::-1], (2,))
+
+
+def test_special_functions():
+    for cls in (erfi, li, Si, Shi, elliptic_k, airybi, airyaiprime, airybiprime):
+        check(cls, COMPLEX, (1,))
+    for cls in (beta, erf2inv, polylog, elliptic_f, lowergamma):
+        check(cls, PAIRS, (2,))
+        check(cls, PAIRS[::-1], (2,))
+    check(marcumq, (S.Zero, S.One, S(2), oo), (3,))

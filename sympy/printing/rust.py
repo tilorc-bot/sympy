@@ -270,6 +270,9 @@ class TypeCast(Expr):
     def sort_key(self, order=None):
         return self.args[0].sort_key(order=order)
 
+    def _eval_is_commutative(self):
+        return self.expr.is_commutative
+
 class RustCodePrinter(CodePrinter):
     """A printer to convert SymPy expressions to strings of Rust code"""
     printmethod = "_rust_code"

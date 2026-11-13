@@ -210,6 +210,9 @@ def test_erfc_evalf():
 
 def test_erfi():
     assert erfi(nan) is nan
+    assert erfi(1 + I).is_real is False
+    # erfi(1.88094300015332 - 1.45061616324368*I) is 0
+    assert erfi(Symbol('z', extended_real=False)).is_real is None
 
     assert erfi(oo) is S.Infinity
     assert erfi(-oo) is S.NegativeInfinity
@@ -302,10 +305,14 @@ def test_erf2():
     assert erf2(x, y).rewrite('expint') == erf(y).rewrite(expint)-erf(x).rewrite(expint)
 
     assert erf2(I, 0).is_real is False
+    assert erf2(1, 1 + I).is_real is False
     assert erf2(0, 0, evaluate=False).is_real
     assert erf2(0, 0, evaluate=False).is_zero
     assert erf2(x, x, evaluate=False).is_zero
     assert erf2(x, y).is_zero is None
+    # erf(x) and erf(x + 1) are equal at x = -1/2 + 3.30911578173735*I
+    assert erf2(x, x + 1).is_zero is None
+    assert erf2(w, w + 1).is_zero is False
 
     assert expand_func(erf(x) + erf2(x, y)) == erf(y)
 
@@ -738,6 +745,8 @@ def test_ci():
 
 
 def test_fresnel():
+    assert fresnels(1 + I).is_real is False
+    assert fresnelc(Rational(1, 2) + I).is_integer is False
     assert fresnels(0) is S.Zero
     assert fresnels(oo) is S.Half
     assert fresnels(-oo) == Rational(-1, 2)

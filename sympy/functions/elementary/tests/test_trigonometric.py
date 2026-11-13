@@ -576,6 +576,7 @@ def test_tan():
     assert tan(k*pi*I) == tanh(k*pi)*I
 
     assert tan(r).is_real is None
+    # tan(pi/2) is zoo
     assert tan(r).is_extended_real is True
 
     assert tan(0, evaluate=False).is_algebraic
@@ -595,6 +596,25 @@ def test_tan():
     # https://github.com/sympy/sympy/issues/21177
     f = tan(pi*(x + S(3)/2))/(3*x)
     assert f.as_leading_term(x) == -1/(3*pi*x**2)
+
+
+def test_tan_cot_assumptions_at_poles():
+    n = Symbol('n', integer=True)
+    q = Symbol('q', rational=True)
+    p = Symbol('p', rational=True, nonzero=True)
+    # tan(pi/2), cot(0), sec(pi/2) and csc(0) are zoo
+    assert tan(pi*n/2).is_algebraic is None
+    assert tan(pi*q).is_algebraic is None
+    assert sec(pi*n/2).is_algebraic is None
+    assert csc(pi*q).is_algebraic is None
+    assert sin(pi*q).is_algebraic is True
+    assert cos(pi*q).is_algebraic is True
+    assert tan(r).is_extended_real is True
+    assert cot(r).is_extended_real is True
+    assert tan(p).is_extended_real is True
+    assert tan(p).is_real is True
+    assert cot(p).is_extended_real is True
+    assert cot(p).is_real is True
 
 
 def test_tan_series():
@@ -734,9 +754,10 @@ def test_cot():
     assert cot(k*pi*I) == -coth(k*pi)*I
 
     assert cot(r).is_real is None
+    # cot(0) is zoo
     assert cot(r).is_extended_real is True
 
-    assert cot(a).is_algebraic is None
+    assert cot(a).is_algebraic is False
     assert cot(na).is_algebraic is False
 
     assert cot(pi*Rational(10, 7)) == cot(pi*Rational(3, 7))
@@ -909,6 +930,14 @@ def test_sinc():
     assert sinc(xr).is_finite is True
 
 
+def test_sinc_zero_at_infinity():
+    z = Symbol('z', infinite=True)
+    q = Symbol('q', infinite=True, extended_real=True)
+    # sinc(zoo) is nan, sinc(oo*I) is oo
+    assert sinc(z).is_zero is None
+    assert sinc(q).is_zero is True
+
+
 def test_asin():
     assert asin(nan) is nan
 
@@ -956,6 +985,19 @@ def test_asin():
     assert asin(sin(Rational(7, 2))) == Rational(-7, 2) + pi
     assert asin(sin(Rational(-7, 4))) == Rational(7, 4) - pi
     assert unchanged(asin, cos(x))
+
+
+def test_inverse_trigonometric_rational():
+    q = Symbol('q', rational=True)
+    p = Symbol('p', rational=True, nonzero=True)
+    m = Symbol('m', rational=True, negative=True)
+    # asin(0), acos(1) and atan(0) are zero
+    assert asin(q).is_rational is None
+    assert acos(q).is_rational is None
+    assert atan(q).is_rational is None
+    assert asin(p).is_rational is False
+    assert acos(m).is_rational is False
+    assert atan(p).is_rational is False
 
 
 def test_asin_series():
@@ -1717,6 +1759,7 @@ def test_sec():
     assert sec(x).expand(trig=True) == 1/cos(x)
     assert sec(2*x).expand(trig=True) == 1/(2*cos(x)**2 - 1)
 
+    # sec(pi/2) is zoo
     assert sec(x).is_extended_real == True
     assert sec(z).is_real is None
 
@@ -1729,7 +1772,9 @@ def test_sec():
     assert sec(x).is_finite is None
     assert sec(pi/2, evaluate=False).is_finite == False
 
-    assert sec(z).is_zero is False
+    # sec(oo*I) is zero, sec(zoo) is nan
+    assert sec(z).is_zero is None
+    assert sec(r).is_zero is False
     assert sec(z).is_positive is None
     assert sec(z).is_negative is None
     assert sec(pi/4, evaluate=False).is_positive is True
@@ -1755,6 +1800,59 @@ def test_sec():
     assert sec(z).taylor_term(4, z) == 5*z**4/24
     assert sec(z).taylor_term(6, z) == 61*z**6/720
     assert sec(z).taylor_term(5, z) == 0
+
+
+def test_reciprocal_trigonometric_assumptions():
+    b = Symbol('b', real=True)
+    assert sec(I*b, evaluate=False).is_extended_real is True
+    assert csc(I*b, evaluate=False).is_extended_real is False
+    assert csc(0, evaluate=False).is_extended_real is False
+    assert sec(pi/2, evaluate=False).is_extended_real is False
+    assert sec(pi/3, evaluate=False).is_extended_real is True
+    # sec(oo*I) and csc(oo*I) are zero
+    assert sec(I*oo, evaluate=False).is_zero is True
+    assert sec(I*oo, evaluate=False).is_nonnegative is True
+    assert sec(I*oo, evaluate=False).is_extended_nonpositive is True
+    assert sec(I*oo, evaluate=False).is_positive is False
+    assert csc(I*oo, evaluate=False).is_nonpositive is True
+    assert csc(I*oo, evaluate=False).is_extended_nonnegative is True
+    assert csc(I*oo, evaluate=False).is_negative is False
+
+
+def test_assumptions_from_the_form_of_the_argument():
+    a = Symbol('a', extended_real=True)
+    q = Symbol('q', infinite=True, extended_real=True)
+    irr = Symbol('irr', irrational=True)
+    n = Symbol('n', integer=True)
+    # tan(oo + I) and cot(oo + I) are not real, tan(oo*I) is I
+    assert tan(a + I).is_extended_real is False
+    assert cot(a + I).is_extended_real is False
+    assert tan(I*q, evaluate=False).is_extended_real is False
+    # tan(pi/2), cot(0) and cot(pi) are zoo
+    assert tan(pi/2, evaluate=False).is_extended_real is False
+    assert cot(0, evaluate=False).is_extended_real is False
+    assert cot(pi, evaluate=False).is_positive is False
+    # |sec(a + I)| and |csc(a + I)| are at least 1/cosh(1)
+    assert sec(a + I).is_zero is False
+    assert csc(a + I).is_zero is False
+    assert sec(pi*irr).is_real is True
+    assert csc(pi*irr).is_real is True
+    for f in (sin, cos, tan, cot, sec, csc):
+        assert f(pi*n/2).is_transcendental is False
+    # cot(1) is real, sinc(oo + I) is zero
+    o = Symbol('o', odd=True)
+    assert cot(o + pi, evaluate=False).is_extended_real is True
+    assert tan(pi*n + 1, evaluate=False).is_extended_real is True
+    assert sinc(q + I).is_zero is True
+    assert sinc(I*q).is_zero is None
+    b = Symbol('b', positive=True)
+    r = Symbol('r', real=True)
+    # atan2(1 + I, 2 + 2*I) is pi/4, atan2(I, 1) is nan, atan2(b, b*I + I) is not real
+    assert atan2(1 + I, 2 + 2*I, evaluate=False).is_extended_real is True
+    assert atan2(I, 1, evaluate=False).is_extended_real is None
+    assert atan2(-I, 1, evaluate=False).is_extended_real is False
+    assert atan2(b, b*I + I).is_extended_real is False
+    assert atan2(r + I, b).is_extended_real is None
 
 
 def test_sec_rewrite():
@@ -1819,6 +1917,7 @@ def test_csc():
     assert csc(x).expand(trig=True) == 1/sin(x)
     assert csc(2*x).expand(trig=True) == 1/(2*sin(x)*cos(x))
 
+    # csc(0) is zoo
     assert csc(x).is_extended_real == True
     assert csc(z).is_real is None
 
@@ -1831,7 +1930,9 @@ def test_csc():
     assert csc(x).is_finite is None
     assert csc(pi/2, evaluate=False).is_finite == True
 
-    assert csc(z).is_zero is False
+    # csc(oo*I) is zero, csc(zoo) is nan
+    assert csc(z).is_zero is None
+    assert csc(r).is_zero is False
     assert csc(z).is_positive is None
     assert csc(z).is_negative is None
     assert csc(pi/4, evaluate=False).is_positive is True
@@ -1901,6 +2002,13 @@ def test_asec_is_real():
     assert asec(r).is_real is None
     t = Symbol('t', real=False, finite=True)
     assert asec(t).is_real is False
+    # asec(oo), asec(zoo) and asec(oo*I) are pi/2
+    assert asec(oo, evaluate=False).is_extended_real is True
+    assert asec(zoo, evaluate=False).is_extended_real is True
+    assert asec(Symbol('u', real=False)).is_extended_real is None
+    assert asec(Symbol('e', extended_real=True, infinite=True)).is_extended_real is True
+    assert asec(2 + Symbol('y', nonnegative=True)).is_extended_real is True
+    assert asec(Symbol('h', positive=True) - 1).is_extended_real is None
 
 
 def test_asec_leading_term():

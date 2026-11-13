@@ -193,6 +193,19 @@ def test_floor():
     assert floor(np).is_negative is None
     assert floor(np).is_nonnegative is None
 
+    # floor(I/2) is 0 and floor(-1 + I/2) is -1
+    nr = Symbol('nr', real=False)
+    assert floor(nr).is_real is None
+    assert floor(nr).is_integer is None
+    assert floor(nr).is_negative is None
+    assert floor(nr).is_nonnegative is None
+    assert floor(Symbol('f', real=False, finite=True)).is_finite is True
+    assert floor(Symbol('i', infinite=True)).is_finite is False
+    assert floor(i).is_extended_nonzero is False
+    assert floor(i).is_noninteger is False
+    assert floor(I*pi/2, evaluate=False).is_real is False
+    assert floor(I/2, evaluate=False).is_real is True
+
     assert (floor(7, evaluate=False) >= 7) == True
     assert (floor(7, evaluate=False) > 7) == False
     assert (floor(7, evaluate=False) <= 7) == True
@@ -394,6 +407,12 @@ def test_ceiling():
     assert ceiling(np).is_positive == False
     assert ceiling(np).is_nonpositive == True
 
+    # ceiling(1 - I/2) is 1 and ceiling(-I/2) is 0
+    nr = Symbol('nr', real=False)
+    assert ceiling(nr).is_positive is None
+    assert ceiling(nr).is_nonpositive is None
+    assert ceiling(1 + I, evaluate=False).is_integer is False
+
     assert (ceiling(7, evaluate=False) >= 7) == True
     assert (ceiling(7, evaluate=False) > 7) == False
     assert (ceiling(7, evaluate=False) <= 7) == True
@@ -576,6 +595,22 @@ def test_frac():
 
     assert frac(oo).is_finite
     assert frac(oo).is_real
+
+    # frac(I) is 0, frac(1 + I/2) is I/2 and frac(zoo) is nan
+    nr = Symbol('nr', real=False)
+    nrf = Symbol('nrf', real=False, finite=True)
+    assert frac(i).is_imaginary is None
+    assert frac(nr).is_integer is None
+    assert frac(nr).is_zero is None
+    assert frac(nr).is_negative is None
+    assert frac(nrf).is_real is None
+    assert frac(nrf).is_finite is True
+    assert frac(nrf).is_negative is False
+    assert frac(b).is_zero is False
+    assert frac(b).is_integer is False
+    assert frac(i).is_extended_nonzero is False
+    assert frac(i).is_noninteger is False
+    assert frac(I*pi, evaluate=False).is_real is False
 
 
 def test_series():

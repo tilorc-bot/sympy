@@ -6,40 +6,49 @@ from sympy.assumptions.ask_rules import RULES
 from sympy.assumptions.ask_rules_generated import RULES as GENERATED_RULES
 from sympy.assumptions.assume import Predicate
 from sympy.assumptions.rule_checks import check_no_cycles
+from sympy.assumptions.rule_engine import (ALL_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, ANY_ARG,
+    EVEN_NUMBER_OF_ARGS, FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG,
+    OTHER_ARGS, OTHER_ARGS_BUT_AT_MOST_ONE, SELF, SOME_EVEN_NUMBER_OF_ARGS,
+    SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
 from sympy.assumptions.tests.test_rule_engine import old_assumptions_forbidden
-from sympy.assumptions.rule_engine import (ALL_ARGS, ANY_ARG, EVEN_NUMBER_OF_ARGS,
-    FALSE_IF, IF_AND_ONLY_IF, ODD_NUMBER_OF_ARGS, ONE_ARG, OTHER_ARGS, SELF,
-    SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS, TRUE_IF, ask_by_rules)
+from sympy.calculus.accumulationbounds import AccumulationBounds
 from sympy.core.add import Add
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
-from sympy.core.function import DefinedFunction, Function
+from sympy.core.function import DefinedFunction, Derivative, Function, Subs
 from sympy.core.mod import Mod
 from sympy.core.mul import Mul
 from sympy.core.numbers import E, I, pi
 from sympy.core.power import Pow
 from sympy.core.singleton import S
-from sympy.core.symbol import Symbol
-from sympy.functions.combinatorial.factorials import (FallingFactorial, binomial,
-    factorial, factorial2, subfactorial)
-from sympy.functions.combinatorial.numbers import (catalan, genocchi, legendre_symbol,
-    totient)
-from sympy.functions.elementary.complexes import (Abs, adjoint, conjugate, im, re, sign,
-    transpose)
+from sympy.core.symbol import Symbol, symbols
+from sympy.functions.combinatorial.factorials import (FallingFactorial, RisingFactorial,
+    binomial, factorial, factorial2, subfactorial)
+from sympy.functions.combinatorial.numbers import (andre, catalan, genocchi,
+    legendre_symbol, partition, totient)
+from sympy.functions.elementary.complexes import (Abs, adjoint, arg, conjugate, im, re,
+    sign, transpose)
 from sympy.functions.elementary.exponential import LambertW, exp, exp_polar, log
-from sympy.functions.elementary.hyperbolic import cosh, sech, sinh, tanh
+from sympy.functions.elementary.hyperbolic import (acosh, acoth, acsch, asech, asinh,
+    atanh, cosh, coth, csch, sech, sinh, tanh)
 from sympy.functions.elementary.integers import ceiling, floor, frac
 from sympy.functions.elementary.miscellaneous import Max, Min, sqrt
-from sympy.functions.elementary.trigonometric import (acos, acot, asin, atan,
-    cos, cot, csc, sec, sin, sinc, tan)
-from sympy.functions.special.error_functions import erf, erf2, erfc, erfcinv, erfi
-from sympy.functions.special.gamma_functions import gamma, loggamma, polygamma
+from sympy.functions.elementary.trigonometric import (acos, acot, acsc, asec, asin,
+    atan, atan2, cos, cot, csc, sec, sin, sinc, tan)
+from sympy.functions.special.bessel import airyai, airyaiprime, airybi, besselj, marcumq
+from sympy.functions.special.beta_functions import beta, betainc
+from sympy.functions.special.elliptic_integrals import elliptic_f, elliptic_k
+from sympy.functions.special.error_functions import (Si, erf, erf2, erf2inv, erfc,
+    erfcinv, erfi, erfinv, fresnelc, fresnels, li, owens_t)
+from sympy.functions.special.gamma_functions import (gamma, loggamma, lowergamma,
+    polygamma)
+from sympy.functions.special.zeta_functions import polylog
 from sympy.integrals.integrals import Integral
 
 VARYING = (Add, DefinedFunction, Max, Min, Mul)
 SOME_ARGS = (SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS)
 ABOUT_ALL_ARGS = (ALL_ARGS, ANY_ARG, ONE_ARG, EVEN_NUMBER_OF_ARGS, ODD_NUMBER_OF_ARGS,
-                  OTHER_ARGS) + SOME_ARGS
+                  OTHER_ARGS, ALL_ARGS_BUT_AT_MOST_ONE, OTHER_ARGS_BUT_AT_MOST_ONE) + SOME_ARGS
 NUMBERS = (S.One, S.NegativeOne, S.Half, S.ImaginaryUnit)
 
 
@@ -57,7 +66,10 @@ def number_of_arguments(cls):
     if issubclass(cls, Function) and cls.nargs.is_finite_set:
         return max(cls.nargs)
     return {
+        AccumulationBounds: 2,
+        Derivative: 1,
         Integral: 1,
+        Subs: 1,
         Pow: 2,
         exp_polar: 1,
     }[cls]
@@ -105,7 +117,7 @@ def test_numbers():
     assert ask(Q.positive, acot(x), Q.positive(x)) is True
     assert ask(Q.positive, asin(x), Q.negative(x)) is False
     assert ask(Q.algebraic, cot(x), Q.algebraic(x)) is False
-    assert ask(Q.imaginary, re(x)) is False
+    assert ask(Q.real, re(x), Q.finite(x)) is True
     assert ask(Q.real, im(x), Q.complex(x)) is True
     assert ask(Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)) is True
     assert ask(Q.finite, sign(x)) is True
@@ -216,6 +228,62 @@ def test_sums_and_products():
                          & Q.infinite(z)) is True
 
 
+def test_sums_and_products_with_one_argument_of_another_kind():
+    XR, NZ = Q.extended_real, Q.nonzero
+    assert ask_generated(XR, x + y + z, XR(x) & Q.real(y) & Q.real(z)) is True
+    assert ask_generated(XR, x + y, Q.positive_infinite(x) & Q.real(y)) is True
+    # oo - oo is nan
+    assert ask_generated(XR, x + y + z, XR(x) & XR(y) & Q.real(z)) is None
+    assert ask_generated(XR, x + y, ~XR(x) & Q.finite(x) & XR(y)) is False
+    assert ask_generated(XR, x + y + z, ~XR(x) & Q.real(y) & Q.real(z)) is False
+    # zoo + oo is nan
+    assert ask_generated(XR, x + y, ~XR(x) & XR(y)) is None
+    assert ask_generated(Q.nonzero, x + y, Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.irrational, x + y, Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.irrational, x + y + z, Q.integer(x) & Q.imaginary(y)
+                         & Q.rational(z)) is False
+    assert ask_generated(Q.irrational, x + y, Q.rational(x) & Q.imaginary(y)) is False
+    # x = sqrt(2) - I, y = I
+    assert ask_generated(Q.irrational, x + y, ~Q.real(x) & Q.imaginary(y)) is None
+    # Mod(I, 2) is I
+    assert ask_generated(Q.nonnegative, Mod(x, y), Q.complex(x) & Q.positive(y)) is None
+    assert ask_generated(Q.zero, x + y, Q.imaginary(x) & Q.imaginary(y)) is None
+    assert ask_generated(XR, x*y*z, XR(x) & NZ(y) & NZ(z)) is True
+    # 0*oo is nan
+    assert ask_generated(XR, x*y*z, XR(x) & XR(y) & NZ(z)) is None
+    assert ask_generated(XR, x*y, Q.imaginary(x) & Q.extended_nonzero(y)) is False
+    assert ask_generated(XR, x*y, Q.imaginary(x) & XR(y)) is None
+    assert ask_generated(Q.infinite, x*y, Q.infinite(x) & ~Q.zero(y)) is True
+    assert ask_generated(Q.infinite, x*y, Q.infinite(x)) is None
+    assert ask_generated(Q.extended_nonzero, x*y, Q.zero(x) & Q.finite(y)) is False
+    assert ask_generated(Q.extended_nonzero, x*y, Q.zero(x) & Q.infinite(y)) is None
+    P, N = Q.positive, Q.negative
+    assert ask_generated(N, x*y, N(x) & ~P(y)) is False
+    assert ask_generated(N, x*y*z, N(x) & N(y) & ~N(z)) is False
+    assert ask_generated(P, x*y*z, N(x) & ~N(y) & P(z)) is False
+    assert ask_generated(P, x*y*z, N(x) & ~P(y) & N(z)) is False
+    # 0*oo is nan
+    assert ask_generated(P, x*y*z, N(x) & ~P(y) & ~P(z) & XR(z)) is None
+    # x = y = I
+    assert ask_generated(N, x*y, ~P(x) & ~P(y)) is None
+    XNZ, IM = Q.extended_nonzero, Q.imaginary
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.real(y) & Q.real(z)) is False
+    assert ask_generated(Q.extended_positive, x*y, IM(x) & Q.extended_nonnegative(y)) is False
+    assert ask_generated(Q.extended_negative, w*x*y*z, IM(x) & IM(y) & IM(z) & XR(w)
+                         ) is False
+    # 0*oo is nan
+    assert ask_generated(XNZ, x*y*z, IM(x) & XR(y) & XR(z)) is None
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.complex(y) & ~IM(y) & Q.real(z)) is False
+    # y = z = 1 + I
+    assert ask_generated(XNZ, x*y*z, IM(x) & Q.complex(y) & ~IM(y) & Q.complex(z)
+                         & ~IM(z)) is None
+    assert ask_generated(P, x*y, ~Q.real(x) & Q.extended_positive(y)) is False
+    assert ask_generated(Q.real, x*y*z, ~Q.real(x) & XNZ(y) & XNZ(z)) is False
+    # x = y = I
+    assert ask_generated(Q.real, x*y, ~Q.real(x) & ~Q.real(y) & ~Q.zero(y)) is None
+    assert ask_generated(P, x*y*z, N(x) & ~N(y) & ~N(z)) is None
+
+
 def test_signs_of_products_and_powers():
     assert ask_generated(Q.negative, 2*x, Q.nonnegative(x)) is False
     assert ask_generated(Q.nonpositive, -x*y, Q.nonnegative(x) & Q.positive(y)) is True
@@ -224,7 +292,7 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.positive, x*y, Q.negative(x) & Q.nonnegative(y)) is False
     assert ask_generated(Q.positive, 2*x, ~Q.positive(x)) is False
     assert ask_generated(Q.positive, -x, ~Q.negative(x)) is False
-    assert ask_generated(Q.negative, -x, ~Q.positive(x)) is None
+    assert ask_generated(Q.negative, -x, ~Q.positive(x)) is False
     assert ask_generated(Q.integer, x/2, Q.even(x)) is True
     assert ask_generated(Q.integer, x**3/2, Q.even(x)) is True
     assert ask_generated(Q.extended_real, x*y,
@@ -244,6 +312,21 @@ def test_signs_of_products_and_powers():
     assert ask_generated(Q.integer, x**y, Q.integer(x) & Q.negative(y)) is None
     assert ask_generated(Q.algebraic, x**y, Q.algebraic(x) & Q.irrational(x)
                          & Q.algebraic(y) & Q.irrational(y)) is False
+    assert ask_generated(Q.extended_negative, x**y,
+                         Q.extended_real(x) & Q.even(y)) is False
+    assert ask_generated(Q.negative, x**2, Q.extended_real(x)) is False
+    assert ask_generated(Q.extended_nonnegative, x**y,
+                         Q.extended_real(x) & ~Q.zero(x) & Q.even(y)) is True
+    assert ask_generated(Q.extended_positive, x**y,
+                         Q.extended_real(x) & ~Q.zero(x) & Q.even(y)) is None
+    assert ask_generated(Q.extended_negative, x**y, Q.real(x) & Q.integer(y)) is None
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.nonnegative(y)) is True
+    assert ask_generated(Q.complex, x**y, Q.complex(x) & Q.complex(y)) is None
+    assert ask_generated(Q.finite, x**y, Q.infinite(x) & Q.negative(y)) is True
+    assert ask_generated(Q.finite, x**y, Q.infinite(x) & Q.real(y)) is None
+    assert ask_generated(Q.even, I**x, Q.integer(x)) is False
+    assert ask_generated(Q.odd, I**x, Q.integer(x)) is None
+    assert ask_generated(Q.even, x**y, Q.imaginary(x) & Q.even(y)) is None
 
 
 def test_products_of_factors_which_may_be_zero():
@@ -321,8 +404,14 @@ def test_min_and_max():
                          Q.positive(x) & Q.extended_real(y)) is None
     assert ask_generated(Q.extended_positive, Max(x, y),
                          Q.positive(x) & Q.extended_real(y)) is True
-    # Max(1, I) has no value
-    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is None
+    # Max and Min have a value only if every argument is extended real
+    assert ask_generated(Q.extended_positive, Max(x, y), Q.positive(x)) is True
+    assert ask_generated(Q.finite, Max(x, y), Q.finite(x) & Q.finite(y)) is True
+    assert ask_generated(Q.imaginary, Min(x, y), ~Q.imaginary(x) & ~Q.imaginary(y)
+                         ) is False
+    # Max(-1, oo) is oo
+    assert ask_generated(Q.positive, Max(x, y), Q.negative(x) & Q.infinite(y)) is False
+    assert ask_generated(Q.negative, Max(x, y), Q.negative(x) & Q.infinite(y)) is None
     assert ask_generated(Q.negative, Min(x, y), Q.negative(x) & Q.real(y)) is True
     assert ask_generated(Q.negative, Min(x, y),
                          Q.positive(x) & Q.nonnegative(y)) is False
@@ -340,6 +429,42 @@ def test_elementary_functions():
     assert ask_generated(Q.zero, sign(x), Q.nonzero(x)) is False
     assert ask_generated(Q.nonnegative, log(x), Q.integer(x) & Q.positive(x)) is True
     assert ask_generated(Q.algebraic, re(x), Q.algebraic(x)) is True
+    assert ask_generated(Q.extended_real, re(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.real, re(x), Q.finite(x)) is True
+    assert ask_generated(Q.extended_real, re(x), ~Q.commutative(x)) is True
+    assert ask_generated(Q.commutative, re(x), ~Q.commutative(x)) is True
+    assert ask_generated(Q.zero, re(x), ~Q.commutative(x)) is False
+    assert ask_generated(Q.zero, im(x), ~Q.commutative(x)) is False
+    assert ask_generated(Q.imaginary, sign(x), ~Q.commutative(x)) is False
+    assert ask_generated(Q.algebraic, re(x), Q.extended_real(x) & ~Q.algebraic(x)) is False
+    assert ask_generated(Q.integer, re(x), Q.infinite(x) & Q.extended_real(x)) is False
+    assert ask_generated(Q.extended_negative, re(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.extended_positive, re(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.algebraic, Abs(x), Q.imaginary(x) & ~Q.algebraic(x)) is False
+    assert ask_generated(Q.algebraic, im(x), Q.imaginary(x) & ~Q.algebraic(x)) is False
+    assert ask_generated(Q.imaginary, re(x), Q.infinite(x) & Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, re(x), Q.imaginary(x)) is True
+    assert ask_generated(Q.zero, re(x), Q.complex(x) & ~Q.imaginary(x) & ~Q.zero(x)
+                         ) is False
+    assert ask_generated(Q.zero, re(x), Q.infinite(x) & Q.extended_real(x)) is False
+    assert ask_generated(Q.algebraic, im(x), Q.algebraic(x)) is True
+    assert ask_generated(Q.zero, im(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, im(x), Q.complex(x) & ~Q.extended_real(x)) is False
+    assert ask_generated(Q.finite, im(x), Q.finite(x)) is True
+    assert ask_generated(Q.imaginary, im(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.imaginary, sign(x), Q.complex(x) & ~Q.imaginary(x)) is False
+    assert ask_generated(Q.integer, sign(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.integer, Abs(x), Q.extended_real(x) & ~Q.integer(x)) is False
+    assert ask_generated(Q.rational, Abs(x), Q.extended_real(x) & ~Q.rational(x)) is False
+    assert ask_generated(Q.even, Abs(x), Q.infinite(x)) is False
+    assert ask_generated(Q.extended_positive, Abs(x), ~Q.zero(x)) is True
+    assert ask_generated(Q.real, arg(x), Q.complex(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.finite, arg(x), Q.extended_real(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.algebraic, conjugate(x), Q.algebraic(x)) is True
+    assert ask_generated(Q.algebraic, conjugate(x), Q.transcendental(x)) is False
+    assert ask_generated(Q.finite, conjugate(x), Q.complex(x)) is True
+    assert ask_generated(Q.zero, conjugate(x), Q.zero(x)) is True
+    assert ask_generated(Q.complex, conjugate(x), ~Q.complex(x)) is False
     assert ask_generated(Q.real, cot(x), Q.finite(x) & ~Q.real(x)) is False
     assert ask_generated(Q.finite, cot(x), Q.imaginary(x)) is True
     # cot(0) and sec(pi/2) are zoo
@@ -363,6 +488,223 @@ def test_elementary_functions():
     assert ask_generated(Q.integer, exp_polar(x), Q.zero(x)) is True
     # LambertW(1, 1) is not real
     assert ask_generated(Q.real, LambertW(x), Q.positive(x)) is None
+    assert ask_generated(Q.complex, exp(x), Q.extended_negative(x)) is True
+    assert ask_generated(Q.finite, exp(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.extended_positive, exp(x),
+                         Q.extended_real(x) & ~Q.negative_infinite(x)) is True
+    assert ask_generated(Q.zero, exp(x), Q.positive_infinite(x)) is False
+    # exp(-oo) is zero
+    assert ask_generated(Q.extended_positive, exp(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.finite, exp_polar(x), Q.finite(x)) is True
+    assert ask_generated(Q.extended_real, exp_polar(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, exp_polar(x), Q.finite(x)) is False
+    assert ask_generated(Q.extended_real, log(x), ~Q.extended_real(x)) is False
+    # log(-oo) is oo
+    assert ask_generated(Q.extended_real, log(x), Q.extended_negative(x)) is None
+    assert ask_generated(Q.finite, floor(x), Q.finite(x)) is True
+    assert ask_generated(Q.infinite, ceiling(x), Q.infinite(x)) is True
+    # floor(I/2) is 0
+    assert ask_generated(Q.real, floor(x), ~Q.real(x)) is None
+    assert ask_generated(Q.finite, frac(x), Q.finite(x)) is True
+    assert ask_generated(Q.negative, frac(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, frac(x), Q.real(x) & ~Q.integer(x)) is False
+    # frac(I) is 0
+    assert ask_generated(Q.integer, frac(x), Q.imaginary(x)) is None
+    assert ask_generated(Q.integer, frac(x), Q.transcendental(x)) is False
+    assert ask_generated(Q.odd, frac(x), Q.finite(x)) is False
+    # floor(I*b) is I*floor(b)
+    assert ask_generated(Q.extended_nonzero, floor(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.extended_negative, floor(x), Q.extended_negative(x)) is True
+    assert ask_generated(Q.extended_positive, ceiling(x), Q.extended_positive(x)) is True
+    assert ask_generated(Q.irrational, floor(x)) is False
+    # log(-oo) is oo, log(0) is zoo
+    assert ask_generated(Q.positive_infinite, log(x), Q.negative_infinite(x)) is True
+    assert ask_generated(Q.extended_nonpositive, log(x), Q.extended_nonpositive(x)
+                         ) is False
+
+
+def test_hyperbolic_functions():
+    infinite_real = Q.extended_real(x) & Q.infinite(x)
+    # sinh(oo) = cosh(oo) = oo
+    assert ask_generated(Q.infinite, sinh(x), infinite_real) is True
+    assert ask_generated(Q.positive, sinh(x), Q.extended_positive(x)) is None
+    assert ask_generated(Q.positive, sinh(x), Q.extended_real(x) & ~Q.positive(x)) is False
+    assert ask_generated(Q.extended_negative, sinh(x), Q.extended_nonnegative(x)) is False
+    assert ask_generated(Q.zero, sinh(x), Q.extended_nonzero(x)) is False
+    assert ask_generated(Q.infinite, cosh(x), infinite_real) is True
+    # tanh(oo) = coth(oo) = 1, coth(0) = zoo
+    assert ask_generated(Q.positive, tanh(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.negative, tanh(x), Q.extended_positive(x)) is False
+    assert ask_generated(Q.integer, tanh(x), infinite_real) is True
+    assert ask_generated(Q.prime, tanh(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, tanh(x), Q.extended_nonzero(x)) is False
+    assert ask_generated(Q.positive, coth(x), Q.extended_positive(x)) is True
+    assert ask_generated(Q.positive, coth(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.real, coth(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.real, coth(x), Q.real(x)) is None
+    assert ask_generated(Q.infinite, coth(x), Q.zero(x)) is True
+    assert ask_generated(Q.zero, coth(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.composite, coth(x), infinite_real) is False
+    # csch(oo) = sech(oo) = 0, csch(0) = zoo
+    assert ask_generated(Q.zero, csch(x), infinite_real) is True
+    assert ask_generated(Q.zero, csch(x), Q.finite(x)) is False
+    assert ask_generated(Q.infinite, csch(x), Q.zero(x)) is True
+    assert ask_generated(Q.real, csch(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.positive, csch(x), Q.extended_real(x) & ~Q.positive(x)) is False
+    assert ask_generated(Q.imaginary, csch(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, sech(x), infinite_real) is True
+    assert ask_generated(Q.zero, sech(x), Q.finite(x)) is False
+    assert ask_generated(Q.imaginary, sech(x), Q.imaginary(x)) is False
+    # asinh(zoo) = acosh(zoo) = zoo, asech(0) = oo, acsch(0) = zoo
+    assert ask_generated(Q.zero, asinh(x), ~Q.zero(x)) is False
+    assert ask_generated(Q.extended_real, asinh(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.infinite, asinh(x), Q.infinite(x)) is True
+    assert ask_generated(Q.finite, acosh(x), Q.finite(x)) is True
+    assert ask_generated(Q.infinite, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.extended_positive, asech(x), Q.zero(x)) is True
+    assert ask_generated(Q.extended_negative, asech(x)) is False
+    assert ask_generated(Q.finite, asech(x), ~Q.zero(x)) is True
+    assert ask_generated(Q.extended_real, acsch(x), Q.extended_nonzero(x)) is True
+    assert ask_generated(Q.extended_real, acsch(x), Q.zero(x)) is False
+    assert ask_generated(Q.extended_real, acsch(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.extended_nonzero, acsch(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, acsch(x), Q.infinite(x)) is True
+    assert ask_generated(Q.infinite, acsch(x), Q.zero(x)) is True
+    # atanh(oo) = -I*pi/2
+    assert ask_generated(Q.imaginary, atanh(x), Q.imaginary(x)) is True
+    assert ask_generated(Q.imaginary, atanh(x), Q.finite(x) & ~Q.imaginary(x)) is False
+    assert ask_generated(Q.imaginary, atanh(x), Q.extended_real(x)) is None
+    # atanh(1) = oo, acoth(-1) = -oo
+    one, minus_one = atanh(S.One, evaluate=False), acoth(S.NegativeOne, evaluate=False)
+    assert ask_generated(Q.extended_positive, one) is True
+    assert ask_generated(Q.infinite, one) is True
+    assert ask_generated(Q.extended_negative, minus_one) is True
+    assert ask_generated(Q.zero, minus_one) is False
+def test_trigonometric_functions():
+    # sin(oo) and cos(oo) are AccumBounds(-1, 1)
+    assert ask_generated(Q.complex, sin(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.finite, cos(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.extended_real, sin(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.transcendental, cot(x), Q.algebraic(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.transcendental, cot(x), Q.algebraic(x)) is None
+    # sinc(oo) and sinc(-oo) are zero, sinc(oo*I) is oo
+    assert ask_generated(Q.real, sinc(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, sinc(x), Q.extended_real(x) & Q.infinite(x)) is True
+    assert ask_generated(Q.zero, sinc(x), Q.infinite(x)) is None
+    # tan(pi/2), cot(0), sec(pi/2) and csc(0) are zoo
+    for f in (tan, cot, sec, csc):
+        assert ask_generated(Q.real, f(x), Q.real(x)) is None
+        # tan(oo), cot(oo), sec(oo) and csc(oo) are AccumBounds(-oo, oo)
+        assert ask_generated(Q.extended_real, f(x), Q.extended_real(x)
+                             & Q.infinite(x)) is True
+    assert ask_generated(Q.real, tan(x), Q.algebraic(x) & Q.real(x)) is True
+    assert ask_generated(Q.real, sec(x), Q.rational(x)) is True
+    assert ask_generated(Q.real, cot(x), Q.rational(x)) is None
+    assert ask_generated(Q.real, cot(x), Q.rational(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.real, csc(x), Q.algebraic(x) & Q.real(x)
+                         & ~Q.zero(x)) is True
+    assert ask_generated(Q.imaginary, sec(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.imaginary, csc(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, sec(x), Q.extended_real(x)) is False
+    assert ask_generated(Q.zero, csc(x), Q.extended_real(x)) is False
+
+
+def test_inverse_trigonometric_functions():
+    assert ask_generated(Q.complex, asin(x), Q.complex(x)) is True
+    assert ask_generated(Q.complex, acos(x), Q.complex(x)) is True
+    # asin(oo) is -oo*I, acos(zoo) is zoo
+    assert ask_generated(Q.real, asin(x), Q.infinite(x)) is False
+    assert ask_generated(Q.extended_real, asin(x), ~Q.extended_real(x)) is False
+    assert ask_generated(Q.extended_real, acos(x), Q.infinite(x)) is False
+    assert ask_generated(Q.extended_real, acos(x), Q.real(x)) is None
+    assert ask_generated(Q.zero, asin(x), ~Q.zero(x)) is False
+    assert ask_generated(Q.zero, acos(x), Q.negative(x)) is False
+    assert ask_generated(Q.zero, acos(x), Q.positive(x)) is None
+    # atan(oo*I) is pi/2
+    assert ask_generated(Q.positive, atan(x), ~Q.extended_positive(x)) is None
+    assert ask_generated(Q.positive, atan(x), ~Q.extended_positive(x)
+                         & Q.finite(x)) is False
+    assert ask_generated(Q.negative, atan(x), ~Q.extended_negative(x)
+                         & Q.finite(x)) is False
+    # the real parts of asin, atan, acot and acsc are at most pi/2, acos(cos(2)) is 2
+    for f in (asin, atan, acot, acsc):
+        assert ask_generated(Q.prime, f(x)) is False
+        assert ask_generated(Q.composite, f(x)) is False
+    assert ask_generated(Q.prime, acos(x)) is None
+    # asin(0) and atan(0) are zero, acos(1) is zero, acos(-1) is pi
+    for f in (asin, acos, atan):
+        assert ask_generated(Q.odd, f(x), Q.integer(x)) is False
+        assert ask_generated(Q.prime, f(x), Q.algebraic(x)) is False
+        assert ask_generated(Q.composite, f(x), Q.rational(x)) is False
+        assert ask_generated(Q.even, f(x), Q.integer(x)) is None
+    # acot(oo), acot(-oo), acot(zoo) and acot(oo*I) are zero
+    assert ask_generated(Q.zero, acot(x), Q.infinite(x)) is True
+    assert ask_generated(Q.zero, acot(x), Q.finite(x)) is False
+    assert ask_generated(Q.positive, acot(x), ~Q.nonnegative(x)) is False
+    assert ask_generated(Q.negative, acot(x), ~Q.negative(x)) is False
+    assert ask_generated(Q.real, acot(x), Q.infinite(x)) is True
+    # acot(oo + I) is zero, acot(1 + I) is not real
+    assert ask_generated(Q.extended_nonzero, acot(x), ~Q.real(x)) is False
+    # atan(oo + I) is pi/2, atan(1 + I) is not real
+    assert ask_generated(Q.rational, atan(x), ~Q.real(x)) is False
+    # asec(oo), asec(-oo), asec(zoo) and asec(oo*I) are pi/2
+    assert ask_generated(Q.positive, asec(x), Q.infinite(x)) is True
+    assert ask_generated(Q.nonnegative, asec(x), Q.integer(x) & ~Q.zero(x)) is True
+    assert ask_generated(Q.positive, asec(x), Q.integer(x) & Q.negative(x)) is True
+    assert ask_generated(Q.positive, asec(x), Q.integer(x) & Q.positive(x)) is None
+    assert ask_generated(Q.zero, asec(x), Q.negative(x)) is False
+    assert ask_generated(Q.negative, asec(x)) is False
+    assert ask_generated(Q.extended_negative, asec(x)) is False
+    assert ask_generated(Q.nonpositive, asec(x), ~Q.real(x)) is False
+    assert ask_generated(Q.nonpositive, asec(x), Q.real(x)) is None
+    assert ask_generated(Q.rational, asec(x), ~Q.real(x)) is False
+    assert ask_generated(Q.rational, asec(x), Q.real(x)) is None
+    assert ask_generated(Q.zero, acsc(x), Q.infinite(x)) is True
+    assert ask_generated(Q.zero, acsc(x), Q.finite(x)) is False
+    assert ask_generated(Q.positive, acsc(x), Q.integer(x) & Q.positive(x)) is True
+    assert ask_generated(Q.negative, acsc(x), Q.integer(x) & Q.negative(x)) is True
+    assert ask_generated(Q.real, acsc(x), Q.positive(x)) is None
+    assert ask_generated(Q.real, acsc(x), Q.finite(x) & ~Q.real(x)) is False
+
+
+def test_atan2():
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.real(y)
+                         & ~Q.zero(x)) is True
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.extended_real(y)
+                         & ~Q.zero(y)) is True
+    # atan2(0, 0), atan2(oo, 0) and atan2(oo, -1) are nan
+    assert ask_generated(Q.real, atan2(x, y), Q.real(x) & Q.real(y)) is None
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & Q.extended_real(y)
+                         & ~Q.zero(x) & ~Q.zero(y)) is None
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & ~Q.zero(x)
+                         & Q.real(y)) is None
+    # atan2(oo, 1) is pi/2, atan2(y, oo) is 0, atan2(oo, -oo) is pi
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x)
+                         & Q.extended_positive(y)) is True
+    assert ask_generated(Q.real, atan2(x, y), Q.extended_real(x) & Q.extended_real(y)
+                         & Q.infinite(y)) is True
+    # atan2(I, 0) is pi/2, atan2(0, I) and atan2(I, -oo) are zero,
+    # atan2(I*sin(1), I*cos(1)) is 1
+    assert ask_generated(Q.irrational, atan2(x, y), Q.imaginary(x) & Q.zero(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.zero(x) & Q.imaginary(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.imaginary(x) & Q.extended_real(y)
+                         & Q.infinite(y)) is True
+    assert ask_generated(Q.zero, atan2(x, y), Q.imaginary(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.composite, atan2(x, y), Q.imaginary(x)
+                         & Q.imaginary(y)) is False
+    assert ask_generated(Q.integer, atan2(x, y), Q.imaginary(x) & Q.imaginary(y)) is None
+    # atan2(1, 1 + I) is not real, atan2(1, -I) is nan
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.real(x) & ~Q.zero(x)
+                         & Q.finite(y) & ~Q.real(y) & ~Q.imaginary(y)) is False
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.finite(x) & ~Q.real(x)
+                         & ~Q.imaginary(x) & Q.real(y) & ~Q.zero(y)) is False
+    assert ask_generated(Q.extended_real, atan2(x, y), Q.real(x) & ~Q.zero(x)
+                         & Q.imaginary(y)) is None
+    assert ask_generated(Q.positive, atan2(x, y), Q.positive(x) & Q.real(y)) is True
+    assert ask_generated(Q.negative, atan2(x, y), Q.negative(x) & Q.real(y)) is True
+    # atan2(1, oo) is zero
+    assert ask_generated(Q.positive, atan2(x, y), Q.positive(x)
+                         & Q.extended_real(y)) is None
 
 
 def test_combinatorial_and_special_functions():
@@ -430,6 +772,126 @@ def test_combinatorial_and_special_functions():
     assert ask_generated(Q.zero, erf2(x, y), Q.zero(x) & Q.zero(y)) is True
 
 
+def test_accumulation_bounds():
+    r, t = symbols('r t', extended_real=True)
+    assert ask_generated(Q.real, AccumulationBounds(r, t), Q.real(r) & Q.real(t)) is True
+    assert ask_generated(Q.finite, AccumulationBounds(r, t), Q.real(r) & Q.real(t)) is True
+    assert ask_generated(Q.real, AccumulationBounds(r, t), Q.real(r)) is None
+def test_special_functions():
+    assert ask_generated(Q.finite, erf(x), Q.finite(x)) is True
+    assert ask_generated(Q.finite, erf(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, erf(x), Q.extended_real(x) & ~Q.zero(x)) is False
+    assert ask_generated(Q.positive, erf(x), Q.extended_nonpositive(x)) is False
+    assert ask_generated(Q.negative, erf(x), Q.extended_nonnegative(x)) is False
+    # erfi(oo) is oo
+    assert ask_generated(Q.real, erfi(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.extended_real, erfi(x), Q.extended_real(x)) is True
+    assert ask_generated(Q.zero, erfi(x), Q.extended_real(x) & ~Q.zero(x)) is False
+    # erfi has zeros which are not real
+    assert ask_generated(Q.zero, erfi(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.real, erf2(x, y), Q.real(x) & Q.imaginary(y)) is False
+    assert ask_generated(Q.real, erf2(x, y), Q.imaginary(x) & Q.negative(y)) is False
+    # erf2(0, y) is zero at the zeros of erf
+    assert ask_generated(Q.real, erf2(x, y), Q.real(x) & ~Q.real(y)) is None
+    assert ask_generated(Q.zero, erfinv(x), ~Q.zero(x)) is False
+    assert ask_generated(Q.zero, erf2inv(x, y), Q.zero(x) & Q.zero(y)) is True
+    assert ask_generated(Q.zero, li(x), Q.zero(x)) is True
+    assert ask_generated(Q.zero, Si(x), Q.zero(x)) is True
+    assert ask_generated(Q.finite, fresnels(x), Q.complex(x)) is True
+    assert ask_generated(Q.real, fresnelc(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.zero, fresnels(x), Q.extended_real(x) & ~Q.zero(x)) is False
+    # fresnels has zeros which are not real
+    assert ask_generated(Q.zero, fresnels(x), ~Q.zero(x)) is None
+    assert ask_generated(Q.positive, owens_t(x, y), Q.real(x) & Q.positive_infinite(y)
+                         ) is True
+    assert ask_generated(Q.negative, owens_t(x, y), Q.real(x) & Q.nonnegative(y)
+                         ) is False
+    assert ask_generated(Q.zero, owens_t(x, y), Q.zero(y)) is True
+    assert ask_generated(Q.zero, owens_t(x, y), Q.real(x) & Q.negative(y)) is False
+    assert ask_generated(Q.real, besselj(x, y), Q.integer(x) & Q.positive_infinite(y)
+                         ) is None
+    assert ask_generated(Q.extended_real, besselj(x, y), Q.integer(x)
+                         & Q.positive_infinite(y)) is True
+    assert ask_generated(Q.extended_real, airybi(x), Q.extended_real(x)) is True
+    # airybi(oo) is oo
+    assert ask_generated(Q.real, airybi(x), Q.extended_real(x)) is None
+    assert ask_generated(Q.real, airyaiprime(x), Q.positive_infinite(x)) is True
+    # airyaiprime is real at points off the real line
+    assert ask_generated(Q.real, airyaiprime(x), ~Q.extended_real(x)) is None
+    assert ask_generated(Q.zero, marcumq(x, y, z), Q.zero(x) & Q.zero(y) & Q.zero(z)
+                         ) is True
+    assert ask_generated(Q.real, beta(x, y), Q.positive(x) & Q.positive(y)) is True
+    assert ask_generated(Q.real, beta(x, y), Q.real(x) & ~Q.integer(x) & Q.real(y)
+                         & ~Q.integer(y)) is True
+    # beta(0, 1) is zoo
+    assert ask_generated(Q.real, beta(x, y), Q.real(x) & Q.real(y)) is None
+    assert ask_generated(Q.real, betainc(x, y, z, w), Q.integer(x) & Q.positive(x)
+                         & Q.integer(y) & Q.positive(y) & Q.real(z) & Q.real(w)) is True
+    # betainc(1/2, 1, -1, 0) is -2*I
+    assert ask_generated(Q.real, betainc(x, y, z, w), Q.positive(x) & Q.positive(y)
+                         & Q.real(z) & Q.real(w)) is None
+    assert ask_generated(Q.zero, polylog(x, y), Q.zero(y)) is True
+    assert ask_generated(Q.imaginary, beta(x, y), Q.real(x) & Q.real(y)) is False
+    assert ask_generated(Q.imaginary, polygamma(x, y), Q.zero(x) & Q.real(y)) is False
+    assert ask_generated(Q.zero, erfi(x), Q.infinite(x)) is False
+    assert ask_generated(Q.zero, airyai(x), Q.imaginary(x)) is False
+    assert ask_generated(Q.positive, airyai(x), Q.nonnegative(x)) is True
+    # airyai(3.2515913963450594*I) is real
+    assert ask_generated(Q.real, airyai(x), Q.imaginary(x)) is None
+    assert ask_generated(Q.nonzero, polygamma(x, y), Q.integer(x) & Q.nonnegative(x)
+                         & Q.infinite(y)) is False
+    assert ask_generated(Q.zero, elliptic_k(x), Q.infinite(x)) is True
+    assert ask_generated(Q.zero, elliptic_f(x, y), Q.negative_infinite(y)) is True
+    assert ask_generated(Q.zero, lowergamma(x, y), Q.zero(y)) is True
+    assert ask_generated(Q.complex, polygamma(x, y), Q.complex(x) & Q.complex(y)
+                         & ~Q.real(y)) is True
+    assert ask_generated(Q.complex, polygamma(x, y), Q.integer(x) & Q.positive(y)) is True
+    assert ask_generated(Q.complex, polygamma(x, y), Q.zero(x) & Q.negative_infinite(y)
+                         ) is False
+    # polygamma(1, oo) is 0
+    assert ask_generated(Q.complex, polygamma(x, y), Q.positive_infinite(y)) is None
+    assert ask_generated(Q.complex, polygamma(x, y), Q.zero(y)) is False
+    assert ask_generated(Q.negative, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.real(y)) is False
+    assert ask_generated(Q.zero, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.real(y)) is False
+    assert ask_generated(Q.imaginary, polygamma(x, y), Q.odd(x) & Q.positive(x)
+                         & Q.real(y)) is False
+
+
+def test_combinatorial_functions():
+    assert ask_generated(Q.infinite, factorial(x), Q.integer(x) & Q.negative(x)) is True
+    assert ask_generated(Q.integer, RisingFactorial(x, y), Q.rational(x)
+                         & ~Q.integer(x) & Q.integer(y) & Q.positive(y)) is False
+    # RisingFactorial(1/2, 0) is 1
+    assert ask_generated(Q.integer, RisingFactorial(x, y), Q.rational(x)
+                         & ~Q.integer(x) & Q.integer(y) & Q.nonnegative(y)) is None
+    assert ask_generated(Q.integer, FallingFactorial(x, y), Q.rational(x)
+                         & ~Q.integer(x) & Q.integer(y) & Q.positive(y)) is False
+    assert ask_generated(Q.zero, RisingFactorial(x, y), Q.complex(x) & ~Q.integer(x)
+                         & Q.integer(y)) is False
+    assert ask_generated(Q.finite, FallingFactorial(x, y), Q.complex(x) & ~Q.integer(x)
+                         & Q.integer(y)) is True
+    # RisingFactorial(-1, pi) is 0
+    assert ask_generated(Q.zero, RisingFactorial(x, y), Q.integer(x)) is None
+    assert ask_generated(Q.integer, binomial(x, y), Q.zero(x) & Q.real(y) & ~Q.integer(y)
+                         ) is False
+    assert ask_generated(Q.zero, binomial(x, y), Q.zero(x) & Q.imaginary(y)) is False
+    # binomial(0, y) is 2 for an imaginary y
+    assert ask_generated(Q.integer, binomial(x, y), Q.zero(x) & Q.imaginary(y)) is None
+    assert ask_generated(Q.imaginary, binomial(x, y), Q.real(x) & Q.real(y)) is False
+    assert ask_generated(Q.imaginary, RisingFactorial(x, y), Q.real(x) & Q.real(y)) is False
+    assert ask_generated(Q.even, RisingFactorial(x, y), Q.integer(x) & Q.integer(y)
+                         & Q.negative(y)) is False
+    assert ask_generated(Q.prime, FallingFactorial(x, y), Q.integer(x) & Q.integer(y)
+                         & Q.negative(y)) is False
+    # RisingFactorial(0, -1) is -1
+    assert ask_generated(Q.odd, RisingFactorial(x, y), Q.integer(x) & Q.integer(y)
+                         & Q.negative(y)) is None
+    assert ask_generated(Q.positive, andre(x), Q.nonnegative(x)) is True
+    assert ask_generated(Q.positive, partition(x), Q.nonnegative(x)) is True
+
+
 def test_powers_of_e():
     def power(exponent):
         return Pow(E, exponent, evaluate=False)
@@ -470,6 +932,11 @@ def test_commutative():
     assert ask_generated(Q.commutative, exp(c)) is None
     # Function('f', commutative=False)(x) is not commutative
     assert ask_generated(Q.commutative, f(x)) is None
+    assert ask_generated(Q.commutative, Derivative(f(x), x)) is None
+    assert ask_generated(Q.commutative, Derivative(x*y, x)) is True
+    assert ask_generated(Q.commutative, Derivative(c, x)) is False
+    assert ask_generated(Q.commutative, Subs(x*y, x, 1)) is True
+    assert ask_generated(Q.commutative, Subs(c, x, 1)) is False
 
 
 def test_wrong_answers_of_ask():
@@ -513,6 +980,19 @@ def test_wrong_answers_of_ask():
     assert ask_generated(Q.complex, re(x)) is None
     assert ask_generated(Q.real, im(x)) is None
     assert ask_generated(Q.complex, im(x)) is None
+    # re(zoo), im(zoo) and re(oo*(1 + I)) are nan, re(oo*I) is zero
+    assert ask_generated(Q.extended_real, re(x)) is None
+    assert ask_generated(Q.extended_real, im(x)) is None
+    assert ask_generated(Q.imaginary, re(x)) is None
+    assert ask_generated(Q.imaginary, im(x)) is None
+    assert ask_generated(Q.zero, re(x), ~Q.imaginary(x) & ~Q.zero(x)) is None
+    assert ask_generated(Q.zero, im(x), ~Q.extended_real(x)) is None
+    # sign(oo*I) is I
+    assert ask_generated(Q.imaginary, sign(x), ~Q.imaginary(x)) is None
+    # arg(0) and arg(zoo) are nan
+    assert ask_generated(Q.real, arg(x)) is None
+    assert ask_generated(Q.real, arg(x), Q.real(x)) is None
+    assert ask_generated(Q.real, arg(x), ~Q.zero(x)) is None
     assert ask_generated(Q.complex, exp(x)) is None
     assert ask_generated(Q.complex, sin(x)) is None
     assert ask_generated(Q.complex, cos(x)) is None

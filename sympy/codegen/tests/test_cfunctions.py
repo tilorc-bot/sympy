@@ -1,6 +1,6 @@
 from __future__ import annotations
 from mpmath.libmp import dps_to_prec, prec_to_dps
-from sympy.core.numbers import (Rational, pi)
+from sympy.core.numbers import (I, Rational, pi)
 from sympy.core.singleton import S
 from sympy.core.symbol import (Symbol, symbols)
 from sympy.functions.elementary.exponential import (exp, log)
@@ -28,6 +28,17 @@ def test_expm1():
     # Properties
     assert expm1(x).is_real
     assert expm1(x).is_finite
+    # expm1(I*pi) is -2
+    assert expm1(Symbol('i', imaginary=True)).is_real is None
+    assert expm1(I*pi, evaluate=False).is_real is True
+    assert expm1(I, evaluate=False).is_real is False
+    # expm1(-oo) is -1
+    n = Symbol('n', extended_negative=True, infinite=True)
+    assert expm1(n).is_finite is True
+    assert expm1(n).is_real is True
+    p = Symbol('p', extended_positive=True, infinite=True)
+    assert expm1(p).is_finite is False
+    assert expm1(p).is_real is False
 
     # Diff
     assert expm1(42*x).diff(x) - 42*exp(42*x) == 0
@@ -56,6 +67,11 @@ def test_log1p():
 
     assert not log1p(-1).is_finite
     assert log1p(pi).is_finite
+    # log1p(-1) is zoo
+    assert log1p(x).is_finite is None
+    assert log1p(Symbol('n', nonnegative=True) - 1).is_real is None
+    assert log1p(Symbol('p', positive=True) - 1).is_real is True
+    assert log1p(Symbol('n', nonnegative=True)).is_finite is True
 
     assert not log1p(x).is_positive
     assert log1p(Symbol('y', positive=True)).is_positive

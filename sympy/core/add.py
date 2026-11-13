@@ -46,7 +46,7 @@ def _ca_terms(expr):
         expr.args,
         lambda x: (
             x.is_number
-            and x.is_extended_real is True
+            and x.is_real is True
             and not any(t.is_Symbol for t in x.atoms())
         ),
         binary=True,
@@ -54,6 +54,34 @@ def _ca_terms(expr):
     c = expr._new_rawargs(*num)
     a = expr._new_rawargs(*other)
     return c, a
+
+
+def _may_be_infinite(expr):
+    """
+    Whether something says that *expr* may be infinite: it is known to be, it
+    has an infinity, or one of its symbols was declared extended real,
+    infinite or not finite. Any other expression which is not known to be
+    finite is taken as a finite number.
+    """
+    if expr.is_finite:
+        return False
+    if expr.is_infinite or expr.has(S.Infinity, S.NegativeInfinity, S.ComplexInfinity):
+        return True
+    for symbol in expr.free_symbols:
+        for fact, value in getattr(symbol, '_assumptions_orig', {}).items():
+            if (fact.startswith('extended_') or fact == 'infinite' and value
+                    or fact == 'finite' and value is False):
+                return True
+    return False
+
+
+def _may_be_oo_minus_oo(args):
+    """Whether two of *args* may be infinite and of different signs."""
+    infinite = [a for a in args if _may_be_infinite(a)]
+    if len(infinite) < 2:
+        return False
+    return not (all(a.is_extended_nonnegative for a in infinite)
+                or all(a.is_extended_nonpositive for a in infinite))
 
 
 def _addsort(args):
@@ -655,39 +683,32 @@ class Add(Expr, AssocOp):
         return all(term._eval_is_algebraic_expr(syms) for term in self.args)
 
     # assumption methods
-    _eval_is_real = lambda self: _fuzzy_group(
-        (a.is_real for a in self.args), quick_exit=True)
-    _eval_is_extended_real = lambda self: _fuzzy_group(
-        (a.is_extended_real for a in self.args), quick_exit=True)
-    _eval_is_complex = lambda self: _fuzzy_group(
-        (a.is_complex for a in self.args), quick_exit=True)
     _eval_is_antihermitian = lambda self: _fuzzy_group(
         (a.is_antihermitian for a in self.args), quick_exit=True)
-    _eval_is_finite = lambda self: _fuzzy_group(
-        (a.is_finite for a in self.args), quick_exit=True)
     _eval_is_hermitian = lambda self: _fuzzy_group(
         (a.is_hermitian for a in self.args), quick_exit=True)
-    _eval_is_integer = lambda self: _fuzzy_group(
-        (a.is_integer for a in self.args), quick_exit=True)
-    _eval_is_rational = lambda self: _fuzzy_group(
-        (a.is_rational for a in self.args), quick_exit=True)
     _eval_is_algebraic = lambda self: _fuzzy_group(
         (a.is_algebraic for a in self.args), quick_exit=True)
     _eval_is_commutative = lambda self: _fuzzy_group(
         a.is_commutative for a in self.args)
 
-    def _eval_is_infinite(self):
-        sawinf = False
+    def _eval_is_extended_real(self):
+        not_real = None
         for a in self.args:
-            ainf = a.is_infinite
-            if ainf is None:
-                return None
-            elif ainf is True:
-                # infinite+infinite might not be infinite
-                if sawinf is True:
-                    return None
-                sawinf = True
-        return sawinf
+            is_real = a.is_extended_real
+            if is_real is None:
+                return
+            if is_real is False:
+                if not_real is not None:
+                    return
+                not_real = a
+        if not_real is None:
+            return
+        rest = [a for a in self.args if a is not not_real]
+        # oo + zoo and oo - oo are nan
+        if (not_real.is_finite or all(a.is_finite for a in rest)) and not (
+                _may_be_oo_minus_oo(rest)):
+            return False
 
     def _eval_is_imaginary(self):
         nz = []
@@ -765,19 +786,6 @@ class Add(Expr, AssocOp):
         if l[0].is_odd:
             return self._new_rawargs(*l[1:]).is_even
 
-    def _eval_is_irrational(self):
-        for t in self.args:
-            a = t.is_irrational
-            if a:
-                others = list(self.args)
-                others.remove(t)
-                if all(x.is_rational is True for x in others):
-                    return True
-                return None
-            if a is None:
-                return
-        return False
-
     def _all_nonneg_or_nonppos(self):
         nn = np = 0
         for a in self.args:
@@ -836,7 +844,7 @@ class Add(Expr, AssocOp):
             unknown_sign = True
 
         if saw_INF:
-            if len(saw_INF) > 1:
+            if len(saw_INF) > 1 or _may_be_oo_minus_oo(args):
                 return
             return saw_INF.pop()
         elif unknown_sign:
@@ -929,7 +937,7 @@ class Add(Expr, AssocOp):
             unknown_sign = True
 
         if saw_INF:
-            if len(saw_INF) > 1:
+            if len(saw_INF) > 1 or _may_be_oo_minus_oo(args):
                 return
             return saw_INF.pop()
         elif unknown_sign:

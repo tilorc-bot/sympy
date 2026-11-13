@@ -98,16 +98,6 @@ class ExpBase(DefinedFunction):
     def _eval_transpose(self):
         return self.func(self.exp.transpose())
 
-    def _eval_is_finite(self):
-        arg = self.exp
-        if arg.is_infinite:
-            if arg.is_extended_negative:
-                return True
-            if arg.is_extended_positive:
-                return False
-        if arg.is_finite:
-            return True
-
     def _eval_is_rational(self):
         s = self.func(*self.args)
         if s.func == self.func:
@@ -118,9 +108,6 @@ class ExpBase(DefinedFunction):
                 return False
         else:
             return s.is_rational
-
-    def _eval_is_zero(self):
-        return self.exp is S.NegativeInfinity
 
     def _eval_power(self, other):
         """exp(arg)**e -> exp(arg*e) if assumptions allow it.
@@ -200,10 +187,6 @@ class exp_polar(ExpBase):
 
     def _eval_power(self, other):
         return self.func(self.args[0]*other)
-
-    def _eval_is_extended_real(self):
-        if self.args[0].is_extended_real:
-            return True
 
     def as_base_exp(self):
         # XXX exp_polar(0) is special!
@@ -452,18 +435,19 @@ class exp(ExpBase, metaclass=ExpMeta):
             return new**self.exp._subs(old, new)
         return super()._eval_subs(old, new)
 
+    def _eval_is_zero(self):
+        # exp(-oo) is 0; an argument of which nothing says that it may be
+        # infinite stands for a finite number
+        arg = self.exp
+        if arg.is_infinite is None and not arg.is_extended_real:
+            return False
+
     def _eval_is_extended_real(self):
         if self.args[0].is_extended_real:
             return True
         elif self.args[0].is_imaginary:
             arg2 = -S(2) * I * self.args[0] / pi
             return arg2.is_even
-
-    def _eval_is_complex(self):
-        def complex_extended_negative(arg):
-            yield arg.is_complex
-            yield arg.is_extended_negative
-        return fuzzy_or(complex_extended_negative(self.args[0]))
 
     def _eval_is_algebraic(self):
         if (self.exp / pi / I).is_rational:
@@ -475,9 +459,7 @@ class exp(ExpBase, metaclass=ExpMeta):
                 return False
 
     def _eval_is_extended_positive(self):
-        if self.exp.is_extended_real:
-            return self.args[0] is not S.NegativeInfinity
-        elif self.exp.is_imaginary:
+        if self.exp.is_imaginary:
             arg2 = -I * self.args[0] / pi
             return arg2.is_even
 
@@ -921,25 +903,23 @@ class log(DefinedFunction):
         else:
             return s.is_algebraic
 
-    def _eval_is_extended_real(self):
-        return self.args[0].is_extended_positive
-
-    def _eval_is_complex(self):
-        z = self.args[0]
-        return fuzzy_and([z.is_complex, fuzzy_not(z.is_zero)])
-
-    def _eval_is_finite(self):
-        arg = self.args[0]
-        return fuzzy_and([arg.is_finite, fuzzy_not(arg.is_zero)])
-
     def _eval_is_extended_positive(self):
-        return (self.args[0] - 1).is_extended_positive
+        is_positive = (self.args[0] - 1).is_extended_positive
+        if is_positive or self._arg_is_not_negative_infinity():
+            return is_positive
 
     def _eval_is_zero(self):
         return (self.args[0] - 1).is_zero
 
     def _eval_is_extended_nonnegative(self):
-        return (self.args[0] - 1).is_extended_nonnegative
+        is_nonnegative = (self.args[0] - 1).is_extended_nonnegative
+        if is_nonnegative or self._arg_is_not_negative_infinity():
+            return is_nonnegative
+
+    def _arg_is_not_negative_infinity(self):
+        # log(-oo) is oo
+        arg = self.args[0]
+        return fuzzy_or([arg.is_finite, fuzzy_not(arg.is_extended_negative)])
 
     def _eval_nseries(self, x, n, logx, cdir=0):
         # NOTE Please see the comment at the beginning of this file, labelled
@@ -1205,19 +1185,40 @@ class LambertW(DefinedFunction):
         if k.is_zero:
             if (x + 1/S.Exp1).is_positive:
                 return True
-            elif (x + 1/S.Exp1).is_nonpositive:
+            elif (x + 1/S.Exp1).is_negative:
                 return False
         elif (k + 1).is_zero:
             if x.is_negative and (x + 1/S.Exp1).is_positive:
                 return True
-            elif x.is_nonpositive or (x + 1/S.Exp1).is_nonnegative:
+            elif x.is_positive or (x + 1/S.Exp1).is_negative:
                 return False
         elif fuzzy_not(k.is_zero) and fuzzy_not((k + 1).is_zero):
-            if x.is_extended_real:
+            if fuzzy_and([x.is_extended_real, fuzzy_not(x.is_zero)]):
                 return False
 
+    def _eval_is_extended_nonnegative(self):
+        # only the branch 0 has values in [0, oo]
+        if len(self.args) == 2 and fuzzy_not(self.args[1].is_zero):
+            return False
+
+    def _eval_is_real(self):
+        # LambertW(0, k) is -oo for k != 0
+        if len(self.args) == 1 or not fuzzy_not(self.args[1].is_zero):
+            return None
+        x, k = self.args
+        if (k + 1).is_zero:
+            if x.is_nonnegative or (x + 1/S.Exp1).is_negative:
+                return False
+        elif fuzzy_not((k + 1).is_zero) and x.is_extended_real:
+            return False
+
     def _eval_is_finite(self):
-        return self.args[0].is_finite
+        x = self.args[0]
+        if len(self.args) == 1:
+            return x.is_finite
+        # LambertW(0, k) is -oo for k != 0
+        return fuzzy_and([x.is_finite,
+                          fuzzy_or([fuzzy_not(x.is_zero), self.args[1].is_zero])])
 
     def _eval_is_algebraic(self):
         s = self.func(*self.args)

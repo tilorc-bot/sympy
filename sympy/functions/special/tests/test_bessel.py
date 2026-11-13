@@ -662,6 +662,10 @@ def test_airybi():
     p = Symbol('p', positive=True)
 
     assert isinstance(airybi(z), airybi)
+    assert airybi(I).is_real is False
+    assert airyai(1 + I).is_composite is False
+    # airybi(1.98824069740086*I) is real
+    assert airybi(z).is_real is None
 
     assert airybi(0) == 3**Rational(5, 6)/(3*gamma(Rational(2, 3)))
     assert airybi(oo) is oo

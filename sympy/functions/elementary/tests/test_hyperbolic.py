@@ -969,7 +969,9 @@ def test_acsch():
     assert acsch(S(oo)).is_extended_real is True
     assert acsch(-S(oo)).is_real is True
     assert (acsch(2) - oo) == -oo
-    assert acsch(symbols('y', extended_real=True)).is_extended_real is True
+    # acsch(0) is zoo
+    assert acsch(symbols('y', extended_real=True)).is_extended_real is None
+    assert acsch(symbols('y', extended_nonzero=True)).is_extended_real is True
 
     # acsch(x) == -I*asin(I/x)
     assert acsch(-I*sqrt(2)) == -I*asin(-1/sqrt(2))
@@ -1542,6 +1544,73 @@ def test_sign_assumptions():
     assert sech(p).is_positive is True
     assert coth(n).is_negative is True
     assert coth(p).is_positive is True
+
+
+def test_assumptions_at_infinity_and_poles():
+    x = Symbol('x')
+    r = Symbol('r', real=True)
+    er = Symbol('er', extended_real=True)
+    ep = Symbol('ep', extended_positive=True)
+    q = Symbol('q', extended_real=True, infinite=True)
+    k = Symbol('k', integer=True)
+    z = Symbol('z', zero=True)
+
+    # sinh(oo) = oo, cosh(oo) = oo
+    assert sinh(er).is_real is None
+    assert sinh(er).is_extended_real is True
+    assert sinh(ep).is_positive is None
+    assert sinh(ep).is_extended_positive is True
+    assert sinh(q).is_infinite is True
+    assert sinh(r + I*pi, evaluate=False).is_real is True
+    assert sinh(er + I*pi, evaluate=False).is_real is None
+    assert cosh(er).is_real is None
+    assert cosh(q).is_infinite is True
+    assert cosh(re(x)).is_positive is None
+    assert cosh(im(x)).is_nonnegative is None
+    assert cosh(r + 2*k*pi*I, evaluate=False).is_positive is True
+    # cosh(I*pi/2) = 0
+    assert cosh(I*pi*k + I*pi/2, evaluate=False).is_real is True
+    assert cosh(r + I, evaluate=False).is_real is None
+
+    # tanh(oo) = coth(oo) = 1, tanh(oo + I) = 1
+    assert tanh(q).is_positive is None
+    assert tanh(q).is_negative is None
+    assert tanh(q).is_zero is False
+    assert tanh(q).is_integer is True
+    assert tanh(er + I, evaluate=False).is_real is None
+    assert tanh(r + I, evaluate=False).is_real is False
+    assert coth(q).is_positive is None
+    assert coth(q).is_negative is None
+    assert coth(q).is_real is True
+
+    # tanh(I*pi/2) = coth(0) = csch(0) = zoo
+    assert tanh(r + I*pi/2, evaluate=False).is_real is None
+    assert tanh(I*pi*k + I*pi/2, evaluate=False).is_finite is False
+    assert coth(z, evaluate=False).is_infinite is True
+    assert coth(r).is_real is None
+    assert csch(z, evaluate=False).is_extended_real is False
+    assert csch(r).is_extended_real is None
+
+    # csch(oo) = sech(oo) = 0
+    assert csch(q).is_zero is True
+    assert csch(ep).is_positive is None
+    assert sech(q).is_zero is True
+    assert sech(er).is_positive is None
+    assert sech(r).is_positive is True
+
+    # acsch(0) = zoo, acsch(oo) = 0, atanh(oo) = -I*pi/2
+    assert acsch(z, evaluate=False).is_extended_real is False
+    assert acsch(q).is_zero is True
+    assert atanh(ep).is_imaginary is None
+
+
+def test_infinity_plus_multiple_of_I_pi():
+    assert sinh(oo + I*pi) is -oo
+    assert cosh(oo + I*pi) is -oo
+    assert cosh(oo + 2*I*pi) is oo
+    assert sinh(-oo + I*pi/2) == oo*I
+    assert cosh(oo + I*pi/2) == oo*I
+    assert sech(oo + 2*I*pi) == 0
 
 
 def test_issue_25847():

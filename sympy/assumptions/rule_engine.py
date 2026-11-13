@@ -56,6 +56,12 @@ OTHER_ARGS = -7
 # known to have it; nothing is said of the others, which are the OTHER_ARGS
 SOME_EVEN_NUMBER_OF_ARGS = -8
 SOME_ODD_NUMBER_OF_ARGS = -9
+# As an argument: all of the arguments except at most one, which may be any of
+# them; it does not hold if two are known not to have it, and it does not
+# change what OTHER_ARGS means
+ALL_ARGS_BUT_AT_MOST_ONE = -10
+# As an argument: the same for the OTHER_ARGS
+OTHER_ARGS_BUT_AT_MOST_ONE = -11
 
 ALL_ARGS_ARE = (ALL_ARGS, True)
 ALL_ARGS_ARE_NOT = (ALL_ARGS, False)
@@ -71,6 +77,9 @@ OTHER_ARGS_ARE = (OTHER_ARGS, True)
 OTHER_ARGS_ARE_NOT = (OTHER_ARGS, False)
 SOME_EVEN_NUMBER_OF_ARGS_ARE = (SOME_EVEN_NUMBER_OF_ARGS, True)
 SOME_ODD_NUMBER_OF_ARGS_ARE = (SOME_ODD_NUMBER_OF_ARGS, True)
+ALL_ARGS_BUT_AT_MOST_ONE_ARE = (ALL_ARGS_BUT_AT_MOST_ONE, True)
+ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT = (ALL_ARGS_BUT_AT_MOST_ONE, False)
+OTHER_ARGS_BUT_AT_MOST_ONE_ARE = (OTHER_ARGS_BUT_AT_MOST_ONE, True)
 
 
 class _UnaryFactsEngine:
@@ -214,7 +223,7 @@ class _RuleEngine:
             others: list[Basic] | None,
     ) -> tuple[bool | None, list[Basic] | None]:
         """Whether a condition about the arguments holds, and what OTHER_ARGS means."""
-        if argument == OTHER_ARGS:
+        if argument in (OTHER_ARGS, OTHER_ARGS_BUT_AT_MOST_ONE):
             if others is None:
                 raise ValueError('OTHER_ARGS needs a ONE_ARG, EVEN_NUMBER_OF_ARGS'
                                  ' or ODD_NUMBER_OF_ARGS condition before it')
@@ -241,7 +250,18 @@ class _RuleEngine:
                 if value is None:
                     holds = None
             return holds, others
-        if argument <= SOME_EVEN_NUMBER_OF_ARGS:
+        if argument in (ALL_ARGS_BUT_AT_MOST_ONE, OTHER_ARGS_BUT_AT_MOST_ONE):
+            undecided = known_not = 0
+            for arg in args:
+                value = self.visit(predicate, arg)
+                if value is None:
+                    undecided += 1
+                elif value is not expected:
+                    known_not += 1
+            if known_not > 1:
+                return False, others
+            return (undecided + known_not <= 1) or None, others
+        if argument in (SOME_EVEN_NUMBER_OF_ARGS, SOME_ODD_NUMBER_OF_ARGS):
             rest = [arg for arg in args if self.visit(predicate, arg) is not expected]
             odd = (len(args) - len(rest)) % 2 == 1
             # not false if it fails: more of the arguments may have it

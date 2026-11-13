@@ -95,6 +95,14 @@ def test_gamma():
     assert gamma(0, evaluate=False).is_real == False
     assert gamma(-2, evaluate=False).is_real == False
 
+    # gamma(oo) is oo
+    assert gamma(Symbol('q', infinite=True, extended_real=True)).is_real is None
+    # gamma(3/2) is positive
+    assert gamma(S.Half + Symbol('o', odd=True)).is_positive is None
+    assert gamma(S.Half + Symbol('e', even=True)).is_positive is True
+    k = Symbol('k', integer=True, nonnegative=True)
+    assert gamma(-S.Half - 2*k).is_positive is False
+
 
 def test_gamma_rewrite():
     assert gamma(n).rewrite(factorial) == factorial(n - 1)
@@ -734,6 +742,13 @@ def test_multigamma():
     assert multigamma(-1.0, 3, evaluate=False).is_real == False
     assert multigamma(0.7, 3, evaluate=False).is_real == True
     assert multigamma(3, 3, evaluate=False).is_real == True
+    p = Symbol('p', integer=True, positive=True)
+    # multigamma(-1/2, 1) is gamma(-1/2)
+    assert multigamma(Rational(-1, 2), p, evaluate=False).is_real is None
+    assert multigamma(-1, p, evaluate=False).is_real is False
+    # multigamma(oo, 2) is oo
+    q = Symbol('q', infinite=True, extended_real=True)
+    assert multigamma(q, 2, evaluate=False).is_real is None
 
 def test_gamma_as_leading_term():
     assert gamma(x).as_leading_term(x) == 1/x

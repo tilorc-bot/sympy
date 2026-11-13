@@ -411,7 +411,7 @@ def test_exp_assumptions():
     assert Pow(E, I*pi, evaluate=False).is_imaginary == False
     assert Pow(E, 2*I*pi, evaluate=False).is_imaginary == False
     assert Pow(E, I*pi/2, evaluate=False).is_imaginary == True
-    assert Pow(E, I*pi/3, evaluate=False).is_imaginary is None
+    assert Pow(E, I*pi/3, evaluate=False).is_imaginary is False
 
     assert exp(0, evaluate=False).is_algebraic
 
@@ -427,6 +427,18 @@ def test_exp_assumptions():
     assert exp(0, evaluate=False).is_algebraic is True
     assert exp(I*pi/3, evaluate=False).is_algebraic is True
     assert exp(I*pi*r, evaluate=False).is_algebraic is True
+
+
+def test_exp_of_extended_real():
+    # exp(-oo) is 0
+    er = Symbol('er', extended_real=True)
+    assert exp(er).is_extended_positive is None
+    assert exp(er).is_extended_nonnegative is True
+    assert exp(er).is_zero is None
+    assert exp(y).is_zero is False
+    en = Symbol('en', extended_negative=True)
+    assert exp(en).is_complex is True
+    assert exp(en).is_extended_positive is None
 
 
 @_both_exp_pow
@@ -464,6 +476,15 @@ def test_log_assumptions():
     assert log(p).is_finite is True
     assert log(n).is_finite is True
     assert log(nz).is_finite is True
+
+    # log(-oo) is oo
+    en = symbols('en', extended_negative=True)
+    assert log(en).is_extended_real is None
+    assert log(-oo, evaluate=False).is_extended_real is True
+    assert log(en).is_extended_positive is None
+    assert log(en).is_extended_nonnegative is None
+    assert log(n).is_extended_positive is False
+    assert log(n).is_extended_nonnegative is False
 
 
 def test_log_hashing():
@@ -653,6 +674,22 @@ def test_lambertw():
     assert LambertW(p).is_zero is False
     n = Symbol('n', negative=True)
     assert LambertW(n).is_zero is False
+
+    # LambertW(0, k) is -oo for k != 0
+    r = Symbol('r', real=True)
+    assert LambertW(r, k).is_finite is None
+    assert LambertW(p, k).is_finite is True
+    assert LambertW(r, 1).is_extended_real is None
+    assert LambertW(p, 1).is_extended_real is False
+    # LambertW(-1/5, -1) and LambertW(-1/E, -1) are real
+    assert LambertW(n, -1).is_extended_real is None
+    assert LambertW(-1/E - r**2, -1).is_extended_real is None
+    assert LambertW(-1/E - r**2).is_extended_real is None
+    assert LambertW(-1/E - p).is_extended_real is False
+    assert LambertW(r, 1).is_real is False
+    assert LambertW(Symbol('nn', nonnegative=True), -1).is_real is False
+    assert LambertW(n, -1).is_positive is False
+    assert LambertW(x, 2).is_extended_nonnegative is False
 
 
 def test_issue_5673():

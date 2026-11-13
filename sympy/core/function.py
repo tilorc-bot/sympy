@@ -1672,9 +1672,6 @@ class Derivative(Expr):
                 merged.append([v, c])
         return [Tuple(*i) for i in merged]
 
-    def _eval_is_commutative(self):
-        return self.expr.is_commutative
-
     def _eval_derivative(self, v):
         # If v (the variable of differentiation) is not in
         # self.variables, we might be able to take the derivative.
@@ -2394,9 +2391,6 @@ class Subs(Expr):
         obj = Expr.__new__(cls, expr, Tuple(*variables), point)
         obj._expr = expr.xreplace(dict(reps))
         return obj
-
-    def _eval_is_commutative(self):
-        return self.expr.is_commutative
 
     def doit(self, **hints):
         e, v, p = self.args

@@ -270,6 +270,10 @@ def test_issue_10475():
     assert zeta(a + I).is_finite is True
     assert zeta(b + 1).is_finite is True
     assert zeta(s + 1).is_finite is True
+    # zeta(2, 0) is nan
+    assert zeta(2 + I, Symbol('k', integer=True, nonpositive=True)).is_finite is None
+    assert zeta(2 + I, Symbol('p', positive=True)).is_finite is True
+    assert zeta(1, x).is_finite is False
 
 
 def test_issue_14177():

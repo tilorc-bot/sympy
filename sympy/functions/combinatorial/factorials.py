@@ -4,7 +4,6 @@ from functools import reduce
 from sympy.core import S, sympify, Dummy, Mod
 from sympy.core.cache import cacheit
 from sympy.core.function import DefinedFunction, ArgumentIndexError, PoleError
-from sympy.core.logic import fuzzy_and
 from sympy.core.numbers import Integer, pi, I
 from sympy.core.relational import Eq
 from sympy.external.gmpy import gmpy as _gmpy
@@ -246,14 +245,6 @@ class factorial(CombinatorialFunction):
             i = Dummy('i', integer=True)
             return Product(i, (i, 1, n))
 
-    def _eval_is_integer(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_positive(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
     def _eval_is_even(self):
         x = self.args[0]
         if x.is_integer and x.is_nonnegative:
@@ -263,11 +254,6 @@ class factorial(CombinatorialFunction):
         x = self.args[0]
         if x.is_integer and x.is_nonnegative:
             return (x - 3).is_nonnegative
-
-    def _eval_is_real(self):
-        x = self.args[0]
-        if x.is_nonnegative or x.is_noninteger:
-            return True
 
     def _eval_as_leading_term(self, x, logx, cdir):
         arg = self.args[0].as_leading_term(x)
@@ -347,14 +333,6 @@ class subfactorial(CombinatorialFunction):
             elif arg is S.Infinity:
                 return S.Infinity
 
-    def _eval_is_even(self):
-        if self.args[0].is_odd and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_integer(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
     def _eval_rewrite_as_factorial(self, arg, **kwargs):
         from sympy.concrete.summations import summation
         i = Dummy('i')
@@ -370,15 +348,6 @@ class subfactorial(CombinatorialFunction):
     def _eval_rewrite_as_uppergamma(self, arg, **kwargs):
         from sympy.functions.special.gamma_functions import uppergamma
         return uppergamma(arg + 1, -1)/S.Exp1
-
-    def _eval_is_nonnegative(self):
-        if self.args[0].is_integer and self.args[0].is_nonnegative:
-            return True
-
-    def _eval_is_odd(self):
-        if self.args[0].is_even and self.args[0].is_nonnegative:
-            return True
-
 
 class factorial2(CombinatorialFunction):
     r"""The double factorial `n!!`, not to be confused with `(n!)!`
@@ -441,18 +410,6 @@ class factorial2(CombinatorialFunction):
             raise ValueError("argument must be nonnegative integer "
                                 "or negative odd integer")
 
-
-    def _eval_is_even(self):
-        # Double factorial is even for every positive even input
-        n = self.args[0]
-        if n.is_integer:
-            if n.is_odd:
-                return False
-            if n.is_even:
-                if n.is_positive:
-                    return True
-                if n.is_zero:
-                    return False
 
     def _eval_is_integer(self):
         # Double factorial is an integer for every nonnegative input, and for
@@ -654,11 +611,6 @@ class RisingFactorial(CombinatorialFunction):
                 return (S.NegativeOne**k*gamma(1 - x) / gamma(-k - x + 1).rewrite('tractable', deep=True))
         return self.rewrite(gamma).rewrite('tractable', deep=True)
 
-    def _eval_is_integer(self):
-        return fuzzy_and((self.args[0].is_integer, self.args[1].is_integer,
-                          self.args[1].is_nonnegative))
-
-
 class FallingFactorial(CombinatorialFunction):
     r"""
     Falling factorial (related to rising factorial) is a double valued
@@ -807,11 +759,6 @@ class FallingFactorial(CombinatorialFunction):
             elif k_lim is S.NegativeInfinity:
                 return (gamma(x + 1) / gamma(x - k + 1).rewrite('tractable', deep=True))
         return self.rewrite(gamma).rewrite('tractable', deep=True)
-
-    def _eval_is_integer(self):
-        return fuzzy_and((self.args[0].is_integer, self.args[1].is_integer,
-                          self.args[1].is_nonnegative))
-
 
 rf = RisingFactorial
 ff = FallingFactorial
@@ -1108,21 +1055,6 @@ class binomial(CombinatorialFunction):
     def _eval_rewrite_as_FallingFactorial(self, n, k, **kwargs):
         if k.is_integer:
             return ff(n, k) / factorial(k)
-
-    def _eval_is_integer(self):
-        n, k = self.args
-        if n.is_integer and k.is_integer:
-            return True
-        elif k.is_integer is False:
-            return False
-
-    def _eval_is_nonnegative(self):
-        n, k = self.args
-        if n.is_integer and k.is_integer:
-            if n.is_nonnegative or k.is_negative or k.is_even:
-                return True
-            elif k.is_even is False:
-                return  False
 
     def _eval_as_leading_term(self, x, logx, cdir):
         from sympy.functions.special.gamma_functions import gamma

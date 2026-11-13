@@ -8,8 +8,9 @@ from sympy.assumptions.rule_checks import check_no_cycles
 from sympy.assumptions.rule_closing import (close_rules, exp_rules_for_powers,
     remove_implied_rules)
 from sympy.assumptions.rule_engine import (ALL_ARGS_ARE, ALL_ARGS_ARE_NOT,
-    ANY_ARG_IS, ANY_ARG_IS_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
-    IF_AND_ONLY_IF, ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE, SECOND_ARG_IS, SELF_IS,
+    ALL_ARGS_BUT_AT_MOST_ONE_ARE, ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT, ANY_ARG_IS, ANY_ARG_IS_NOT, FALSE_IF, FIRST_ARG_IS, FIRST_ARG_IS_NOT,
+    IF_AND_ONLY_IF, ONE_ARG_IS, ONE_ARG_IS_NOT, OTHER_ARGS_ARE,
+    OTHER_ARGS_BUT_AT_MOST_ONE_ARE, SECOND_ARG_IS, SELF_IS,
     TRUE_IF, ask_by_rules)
 from sympy.core.add import Add
 from sympy.core.expr import Expr
@@ -74,6 +75,17 @@ def test_close_rules_if_and_only_if():
     raises(ValueError, lambda: close_rules({(Add, Q.zero): [
         (IF_AND_ONLY_IF, [(ONE_ARG_IS, Q.zero)]),
     ]}))
+    raises(ValueError, lambda: close_rules({(Add, Q.zero): [
+        (IF_AND_ONLY_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)]),
+    ]}))
+
+
+def test_close_rules_all_args_but_at_most_one():
+    rule = (TRUE_IF, [(ALL_ARGS_ARE, Q.extended_real),
+                      (ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.real)])
+    closed = close_rules({(Add, Q.extended_real): [rule]})
+    assert closed[(Add, Q.extended_real)] == [rule]
+    assert closed[(Add, Q.imaginary)] == [(FALSE_IF, rule[1])]
 
 
 def test_close_rules_order_and_duplicates():
@@ -152,6 +164,39 @@ def test_remove_implied_rules_conditions_about_how_many_arguments():
         one_not_positive_others_real, all_real]
 
 
+def test_remove_implied_rules_all_args_but_at_most_one():
+    def remove(*rules):
+        return remove_implied_rules({(Add, Q.real): list(rules)})[(Add, Q.real)]
+
+    real = (TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.real)])
+    positive = (TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.positive)])
+    assert remove(positive, real) == [real]
+    not_real = (TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT, Q.real)])
+    not_positive = (TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE_NOT, Q.positive)])
+    assert remove(not_real, not_positive) == [not_positive]
+    raises(ValueError, lambda: remove((IF_AND_ONLY_IF, [
+        (ONE_ARG_IS, Q.zero), (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)])))
+    one_positive = (TRUE_IF, [(ONE_ARG_IS, Q.positive)])
+    others_zero = (TRUE_IF, [(ONE_ARG_IS, Q.positive),
+                             (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.zero)])
+    others_integer = (TRUE_IF, [(ONE_ARG_IS, Q.positive),
+                                (OTHER_ARGS_BUT_AT_MOST_ONE_ARE, Q.integer)])
+    assert remove(others_zero, one_positive) == [others_zero, one_positive]
+    assert remove(others_zero, real) == [others_zero, real]
+    # a group with a counting condition is only compared for equality
+    assert remove(others_zero, others_integer) == [others_zero, others_integer]
+    imaginary = (TRUE_IF, [(ALL_ARGS_BUT_AT_MOST_ONE_ARE, Q.imaginary)])
+    assert remove(imaginary, not_positive) == [not_positive]
+    assert remove(not_positive, imaginary) == [not_positive]
+    # the arguments which have the predicate may be any of them
+    all_real = (TRUE_IF, [(ALL_ARGS_ARE, Q.real)])
+    one_not_real = (TRUE_IF, [(ONE_ARG_IS_NOT, Q.real)])
+    assert remove(real, all_real) == [real, all_real]
+    assert remove(real, one_not_real) == [real, one_not_real]
+    some_not_real = (TRUE_IF, [(ANY_ARG_IS_NOT, Q.real)])
+    assert remove(not_real, some_not_real) == [not_real, some_not_real]
+
+
 def test_exp_rules_for_powers():
     rules = {
         (exp, Q.positive): [(TRUE_IF, [(FIRST_ARG_IS, Q.real)])],
@@ -197,7 +242,7 @@ def test_same_answers_as_the_source_rules():
         (Q.positive, acot(x), Q.positive(x)),
         (Q.positive, asin(x), Q.negative(x)),
         (Q.algebraic, cot(x), Q.algebraic(x)),
-        (Q.imaginary, re(x), True),
+        (Q.real, re(x), Q.finite(x)),
         (Q.real, im(x), Q.complex(x)),
         (Q.positive, factorial(x), Q.integer(x) & Q.nonnegative(x)),
         (Q.finite, sign(x), True),

@@ -506,6 +506,11 @@ def test_genocchi():
     # these are the only 2 prime Genocchi numbers
     assert genocchi(6, evaluate=False).is_prime == S(-3).is_prime
     assert genocchi(8, evaluate=False).is_prime
+    # genocchi(r) is 19 for a real r between 8 and 17/2
+    assert genocchi(Symbol('r', integer=False, real=True)).is_prime is None
+    assert genocchi(n).is_prime is None
+    # genocchi(0) is 0
+    assert genocchi(4 * Symbol('k', integer=True, nonnegative=True)).is_positive is None
     assert genocchi(4 * n + 2).is_negative
     assert genocchi(4 * n + 1).is_negative is False
     assert genocchi(4 * n - 2).is_negative

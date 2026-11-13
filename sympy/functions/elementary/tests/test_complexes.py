@@ -94,7 +94,7 @@ def test_re():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
     assert re(S.ComplexInfinity) is S.NaN
 
@@ -191,7 +191,7 @@ def test_im():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
     assert im(S.ComplexInfinity) is S.NaN
 
@@ -457,7 +457,7 @@ def test_Abs():
     x = Symbol('x')
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
     assert Abs(x).fdiff() == sign(x)
     raises(ArgumentIndexError, lambda: Abs(x).fdiff(2))
 
@@ -728,7 +728,7 @@ def test_conjugate():
     t = Symbol('t', transcendental=True)
     assert re(a).is_algebraic
     assert re(x).is_algebraic is None
-    assert re(t).is_algebraic is False
+    assert re(t).is_algebraic is None
 
 
 def test_conjugate_transpose():
@@ -1016,6 +1016,48 @@ def test_zero_assumptions():
 
     assert re(nzni).is_zero is False
     assert im(nzni).is_zero is None
+
+    nznic = Symbol('nznic', complex=True, zero=False, imaginary=False)
+    assert re(nznic).is_zero is False
+
+
+def test_assumptions_where_the_argument_may_be_infinite_or_zero():
+    x = Symbol('x')
+    r = Symbol('r', real=True)
+    c = Symbol('c', complex=True)
+    cnz = Symbol('cnz', complex=True, zero=False)
+    inf = Symbol('inf', infinite=True)
+    t = Symbol('t', transcendental=True)
+
+    # re(zoo) and im(zoo) are nan, re(oo*I) is zero
+    assert re(x).is_extended_real is True
+    assert im(x).is_extended_real is True
+    assert re(inf).is_extended_real is None
+    assert im(inf).is_extended_real is None
+    assert re(r, evaluate=False).is_extended_real is True
+    assert re(-oo, evaluate=False).is_extended_negative is True
+    assert re(-oo, evaluate=False).is_extended_nonzero is True
+    assert re(c).is_real is True
+    assert im(c).is_real is True
+    assert re(inf).is_zero is None
+    # sign(oo*I) is I
+    assert sign(inf).is_imaginary is None
+    # arg(0) and arg(zoo) are nan
+    assert arg(x).is_real is True
+    assert arg(inf).is_real is None
+    assert arg(cnz).is_real is True
+    # Abs(exp(I)) is 1, re(I*pi) and im(pi) are 0
+    assert Abs(t).is_algebraic is None
+    assert im(t).is_algebraic is None
+
+
+def test_facts_of_numbers_made_without_evaluation():
+    assert re(exp(I), evaluate=False).is_transcendental is True
+    assert im(exp(I), evaluate=False).is_transcendental is True
+    assert re(oo*I, evaluate=False).is_algebraic is True
+    assert arg(oo*I, evaluate=False).is_positive is True
+    assert arg(0, evaluate=False).is_real is None
+    assert arg(zoo, evaluate=False).is_real is None
 
 
 @_both_exp_pow

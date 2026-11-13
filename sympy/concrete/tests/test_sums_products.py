@@ -1345,6 +1345,33 @@ def test_sumproducts_assumptions():
     assert Product(0, (x, M, M-1)).is_finite is True
 
 
+def test_sumproducts_assumptions_which_values_refute():
+    k = Symbol('k', integer=True)
+    q = Symbol('q', integer=True)
+    r = Symbol('r', real=True)
+    x = Symbol('x', extended_real=True)
+    # Sum(I*(-1)**k, (k, 1, 2)) is 0
+    assert Sum(I*(-1)**k, (k, 1, 2)).is_extended_real is None
+    # Sum(x*(-1)**k, (k, 1, 2)) is nan for x = oo
+    assert Sum(x*(-1)**k, (k, 1, 2)).is_extended_real is None
+    # Sum(1 + I*(-1)**k, (k, 1, 2)) is 2
+    assert Sum(1 + I*(-1)**k, (k, 1, 2)).is_positive is None
+    assert Sum(-1 + I*(-1)**k, (k, 1, 2)).is_negative is None
+    assert Sum(-r**2, (k, 1, 2)).is_positive is False
+    # Product(I, (k, 1, 2)) is -1
+    assert Product(I, (k, 1, 2)).is_extended_real is None
+    # Product(r, (k, 3, 1)) is 1/r
+    assert Product(r, (k, 3, 1)).is_finite is None
+    assert Product(r, (k, 3, 1)).is_extended_real is None
+    assert Product(Symbol('n', nonnegative=True), (k, 3, 1)).is_nonnegative is None
+    # Product(0, (k, 3, 1)) is zoo and Product(0, (k, 1, 0)) is 1
+    assert Product(0, (k, 3, 1)).is_zero is None
+    assert Product(0, (k, 1, q)).is_zero is None
+    # Product(oo, (k, 3, 1)) is 0
+    assert Product(Symbol('z', infinite=True), (k, 3, 1)).is_zero is None
+    assert Product(k, (k, 1, 0)).is_extended_nonpositive is False
+
+
 def test_expand_with_assumptions():
     M = Symbol('M', integer=True, positive=True)
     x = Symbol('x', positive=True)

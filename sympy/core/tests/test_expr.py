@@ -1245,6 +1245,19 @@ def test_nonzero():
     assert bool(x*0) is False
 
 
+def test_sign_of_a_number_which_evaluates_to_zero():
+    class ZeroAsNumber(Expr):
+        def _eval_evalf(self, prec):
+            return self.args[0]._eval_evalf(prec)
+
+        def evalf(self, n=15, **options):
+            return self.args[0].evalf(n, **options)
+
+    e = ZeroAsNumber((1 + sqrt(2))**2 - 3 - 2*sqrt(2))
+    assert e.is_extended_positive is None
+    assert e.is_extended_negative is None
+
+
 def test_is_number():
     assert Float(3.14).is_number is True
     assert Integer(737).is_number is True
