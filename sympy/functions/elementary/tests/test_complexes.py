@@ -402,11 +402,7 @@ def test_Abs():
     assert Abs(2*pi*x*y) == 2*pi*Abs(x*y)
     assert Abs(conjugate(x)) == Abs(x)
     assert conjugate(Abs(x)) == Abs(x)
-    # re(zoo) is nan, so re(x)**2 + im(x)**2 is not known to be nonnegative
-    w = re(x)**2 + im(x)**2
-    r = expand(w**2)**Rational(1, 4)
-    assert Abs(x).expand(complex=True) == (
-        r*cos(atan2(0, w)/2) + I*r*sin(atan2(0, w)/2))
+    assert Abs(x).expand(complex=True) == sqrt(re(x)**2 + im(x)**2)
 
     a = Symbol('a', positive=True)
     assert Abs(2*pi*x*a) == 2*pi*a*Abs(x)
@@ -1034,9 +1030,10 @@ def test_assumptions_where_the_argument_may_be_infinite_or_zero():
     t = Symbol('t', transcendental=True)
 
     # re(zoo) and im(zoo) are nan, re(oo*I) is zero
-    assert re(x).is_extended_real is None
-    assert im(x).is_extended_real is None
-    assert re(x).is_imaginary is None
+    assert re(x).is_extended_real is True
+    assert im(x).is_extended_real is True
+    assert re(inf).is_extended_real is None
+    assert im(inf).is_extended_real is None
     assert re(r, evaluate=False).is_extended_real is True
     assert re(-oo, evaluate=False).is_extended_negative is True
     assert re(-oo, evaluate=False).is_extended_nonzero is True
@@ -1046,8 +1043,8 @@ def test_assumptions_where_the_argument_may_be_infinite_or_zero():
     # sign(oo*I) is I
     assert sign(inf).is_imaginary is None
     # arg(0) and arg(zoo) are nan
-    assert arg(x).is_real is None
-    assert arg(r).is_real is None
+    assert arg(x).is_real is True
+    assert arg(inf).is_real is None
     assert arg(cnz).is_real is True
     # Abs(exp(I)) is 1, re(I*pi) and im(pi) are 0
     assert Abs(t).is_algebraic is None

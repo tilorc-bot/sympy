@@ -140,8 +140,10 @@ class re(DefinedFunction):
         """
         return (self, S.Zero)
 
-    def _eval_conjugate(self):
-        return self
+    def _eval_is_extended_real(self):
+        # re(zoo) and im(zoo) are nan
+        if self.args[0].is_infinite is not True:
+            return True
 
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:
@@ -251,8 +253,10 @@ class im(DefinedFunction):
         """
         return (self, S.Zero)
 
-    def _eval_conjugate(self):
-        return self
+    def _eval_is_extended_real(self):
+        # re(zoo) and im(zoo) are nan
+        if self.args[0].is_infinite is not True:
+            return True
 
     def _eval_derivative(self, x):
         if x.is_extended_real or self.args[0].is_extended_real:
@@ -754,7 +758,13 @@ class arg(DefinedFunction):
         return (self, S.Zero)
 
     def _eval_is_real(self):
-        return _is_of_evaluated(self, 'is_real')
+        is_real = _is_of_evaluated(self, 'is_real')
+        if is_real is not None:
+            return is_real
+        # arg(0) and arg(zoo) are nan; an argument which is not known to be
+        # one of them stands for a finite number which is not 0
+        if self.args[0].is_zero is not True and self.args[0].is_infinite is not True:
+            return True
 
     def _eval_conjugate(self):
         return self

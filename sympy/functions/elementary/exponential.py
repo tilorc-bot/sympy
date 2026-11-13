@@ -435,6 +435,13 @@ class exp(ExpBase, metaclass=ExpMeta):
             return new**self.exp._subs(old, new)
         return super()._eval_subs(old, new)
 
+    def _eval_is_zero(self):
+        # exp(-oo) is 0; an argument of which nothing says that it may be
+        # infinite stands for a finite number
+        arg = self.exp
+        if arg.is_infinite is None and not arg.is_extended_real:
+            return False
+
     def _eval_is_extended_real(self):
         if self.args[0].is_extended_real:
             return True

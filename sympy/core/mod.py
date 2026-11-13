@@ -234,6 +234,18 @@ class Mod(DefinedFunction):
             G = Mul._from_args(G.args[1:])
         return G*cls(p, q, evaluate=(p, q) != (pwas, qwas))
 
+    def _eval_is_nonnegative(self):
+        # a dividend of which nothing says that it may be infinite or not
+        # real stands for a real number
+        p, q = self.args
+        if q.is_positive and p.is_extended_real is None and p.is_infinite is not True:
+            return True
+
+    def _eval_is_nonpositive(self):
+        p, q = self.args
+        if q.is_negative and p.is_extended_real is None and p.is_infinite is not True:
+            return True
+
     def _eval_rewrite_as_floor(self, a, b, **kwargs):
         from sympy.functions.elementary.integers import floor
         return a - b*floor(a/b)

@@ -405,9 +405,8 @@ def test_exp_assumptions():
         assert e(i).is_imaginary is None
         assert e(r).is_real is True
         assert e(r).is_imaginary is False
-        # re(zoo) is nan
-        assert e(re(x)).is_extended_real is None
-        assert e(re(x)).is_imaginary is None
+        assert e(re(x)).is_extended_real is True
+        assert e(re(x)).is_imaginary is False
 
     assert Pow(E, I*pi, evaluate=False).is_imaginary == False
     assert Pow(E, 2*I*pi, evaluate=False).is_imaginary == False
@@ -436,7 +435,7 @@ def test_exp_of_extended_real():
     assert exp(er).is_extended_positive is None
     assert exp(er).is_extended_nonnegative is True
     assert exp(er).is_zero is None
-    assert exp(y).is_zero is None
+    assert exp(y).is_zero is False
     en = Symbol('en', extended_negative=True)
     assert exp(en).is_complex is True
     assert exp(en).is_extended_positive is None

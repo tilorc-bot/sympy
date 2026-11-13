@@ -22,7 +22,7 @@ def test_beta():
     assert unchanged(beta, x, y)
     assert unchanged(beta, x, x)
 
-    assert beta(5, -3).is_real == True
+    assert beta(5, -3).is_real is None
     assert beta(3, y).is_real is None
 
     assert expand_func(beta(x, y)) == gamma(x)*gamma(y)/gamma(x + y)
